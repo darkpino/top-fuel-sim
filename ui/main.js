@@ -107,6 +107,7 @@ function updateEngineHints() {
     text += ` — let op: de baan/banden geven weinig grip, extra vermogen erbij zetten kost je nu waarschijnlijk meer aan wielspin dan het oplevert. Overweeg juist minder nitro/blower.`;
   }
   hint.textContent = text;
+  $("nitro-illegal-flag").hidden = fuelPct <= 90;
 
   const gripHint = $("grip-hint");
   const optimalTrackTempC = 24;
@@ -299,6 +300,7 @@ $("runBtn").addEventListener("click", () => {
     else if (r.cylinderDropCause === "lean") flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Bij aanhouden loopt dit uit op motorschade.</div>`;
     else flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% liep te heet. Bij aanhouden loopt dit uit op motorschade.</div>`;
   }
+  if (r.nitroIllegal) flags += `<div class="flag">Deze run gebruikt meer dan 90% nitro — buiten het reglement, alleen geldig als testrun.</div>`;
   if (r.anySpin && !r.engineFailed) flags += `<div class="flag">Wielenspin gedetecteerd tijdens de run — motorvermogen overschreed de beschikbare grip.</div>`;
   if (r.detonationRisk && !r.engineFailed) flags += `<div class="flag">Detonatierisico: hoge compressie + hoog nitropercentage + veel voorontsteking is een gevaarlijke combinatie.</div>`;
   spinFlag.innerHTML = flags;
