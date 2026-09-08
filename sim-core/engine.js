@@ -12,12 +12,20 @@
 // times during a run, while everything else here is a fixed per-run
 // setting - so this only covers the static half, and calcMult() below
 // folds in whatever the fuel curve is doing at a given instant.
+// NHRA Top Fuel is nominally capped at 90% nitromethane - that's the
+// legal reference point the "geschat piekvermogen" baseline is built
+// around, not just an arbitrary point partway up the slider. fuelFactor
+// hits exactly 1.0 there; the slider still goes to 98% for testing what
+// more nitro WOULD do, but anything past 90% is flagged illegal rather
+// than silently treated as a normal tuning knob.
+const LEGAL_NITRO_MAX = 90;
 export function calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition }) {
-  const fuelFactor = 0.60 + (fuelPct - 75) / 23 * 0.80;
+  const fuelFactor = 0.60 + (fuelPct - 75) / 15 * 0.40;
   const blowerNorm = Math.max(0, (blowerOD - 20) / 50);
   const blowerFactor = 0.85 + Math.sqrt(blowerNorm) * 0.27;
   const ignEff = 1 - Math.abs(ignition - 40) / 40 * 0.30;
   const compressionFactor = 0.85 + (60 - gasketThou) / 35 * 0.27;
+  const nitroIllegal = fuelPct > LEGAL_NITRO_MAX;
 
   // Detonation risk is mostly a blower/heat story: the faster the blower
   // spins, the hotter the mixture gets, with compression and nitro% as
@@ -25,7 +33,7 @@ export function calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition }) {
   const heatRisk = blowerNorm * 0.65 + Math.max(0, (compressionFactor - 1)) * 1.1 + Math.max(0, (fuelPct - 88)) / 10 * 0.15;
   const detonationRisk = heatRisk > 0.62;
 
-  return { fuelFactor, blowerNorm, blowerFactor, ignEff, compressionFactor, heatRisk, detonationRisk };
+  return { fuelFactor, blowerNorm, blowerFactor, ignEff, compressionFactor, heatRisk, detonationRisk, nitroIllegal };
 }
 
 // The fuelVolPct-dependent half of the power multiplier, computed
@@ -42,10 +50,10 @@ export function calcMult({ fuelFactor, fuelVolPct, blowerFactor, ignEff, compres
 // tune at reference (sea-level) conditions - used for the "recommended
 // nitro%" hint.
 export function calcRecommendedNitro(powerMultNow) {
-  const fuelFactor90 = 0.60 + (90 - 75) / 23 * 0.80;
+  const fuelFactor90 = 1.0; // fuelFactor is defined to hit exactly 1.0 at the 90% legal max
   const powerMultRef = 1;
   const targetFuelFactor = fuelFactor90 * (powerMultRef / powerMultNow);
-  const recommendedNitro = 75 + 23 * (targetFuelFactor - 0.60) / 0.80;
+  const recommendedNitro = 75 + 15 * (targetFuelFactor - 0.60) / 0.40;
   return Math.max(75, Math.min(98, Math.round(recommendedNitro)));
 }
 

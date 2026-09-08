@@ -14,8 +14,9 @@ const WEIGHT_LB = 2320;
 const V_FLOOR = 30;
 const CDA = 9.0;
 const RHO_REF = 0.00237;
-// Rear wing: NHRA rules cap adjustable trim at +-2 deg from level; the fixed
-// wing itself produces most of the ~5000-6000 lb of downforce at 300 mph.
+// Rear wing: NHRA rules cap adjustable trim at +-1.5 deg from level; the
+// fixed wing itself produces most of the ~5000-6000 lb of downforce at
+// 300 mph.
 const WING_BASE_K = 0.0284;
 // Effective rotating-mass weight for the rear wheel/driveline: much lower
 // than the car's weight, so a spinning tire can rev up far faster than the
@@ -25,9 +26,22 @@ const WHEEL_WEIGHT_LB = 260;
 const MAX_SLIP_EXCESS_FTS = 260;
 // Clutch temperature builds from tire slip AND from the clutch's own
 // internal slip (see CLUTCH_SLIP_HEAT_RATE below), and makes the pack
-// grabbier (aggressiveness boost), up to a capped ceiling.
+// grabbier (aggressiveness boost) up to a point - but past HEAT_GLAZE_START
+// (the same "oververhit" line the failure clock uses) the material starts
+// glazing over and loses bite instead, on top of accumulating damage. A
+// clutch that's just warm helps; one that's cooking is actively costing
+// forward force, not just risking a later failure.
 const HEAT_RATE = 3.2;
 const HEAT_CAP_BOOST = 0.22;
+const HEAT_GLAZE_START = 70;
+const HEAT_GLAZE_LOSS = 0.35;
+// Lifting off doesn't let the car freewheel - Top Fuel runs no gearbox, so
+// once the clutch is locked (or partway there) the crank is still
+// mechanically tied to the wheels and has to keep spinning against its own
+// pumping losses with no fuel to drive it. That engine braking, not just
+// aero drag, is why an early lift costs real time and trap speed instead
+// of just gently coasting out the rest of the pass.
+const ENGINE_BRAKE_COEFF = 12;
 const DT = 0.004;
 const MAX_T = 10.0;
 // Holding lockup back to stay under the traction ceiling isn't free: the
@@ -63,7 +77,7 @@ export function runSimulation(settings) {
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
   const powerMult = calcPowerMult(densityAltitude);
 
-  const { fuelFactor, blowerFactor, compressionFactor, ignEff, heatRisk, detonationRisk } =
+  const { fuelFactor, blowerFactor, compressionFactor, ignEff, heatRisk, detonationRisk, nitroIllegal } =
     calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition });
 
   const optimalPsi = calcOptimalPsi(trackTempC);
@@ -124,7 +138,11 @@ export function runSimulation(settings) {
     const target = activeSetpoint(t, stages);
     const speed = activeSpeed(t, stages);
     bearingPos = stepBearingPos(bearingPos, target, speed, DT);
-    const heatBoost = 1 + Math.min(clutchTemp / 100, 1) * HEAT_CAP_BOOST;
+    let heatBoost = 1 + Math.min(clutchTemp / 100, 1) * HEAT_CAP_BOOST;
+    if (clutchTemp > HEAT_GLAZE_START) {
+      const glazeFrac = Math.min(1, (clutchTemp - HEAT_GLAZE_START) / (100 - HEAT_GLAZE_START));
+      heatBoost *= 1 - glazeFrac * HEAT_GLAZE_LOSS;
+    }
     // clutchDamage here is last step's accumulated value - same
     // previous-step pattern as lastSlipPct below, avoiding a same-step
     // circular dependency (this step's damage is added further down).
@@ -139,8 +157,12 @@ export function runSimulation(settings) {
     const richness = calcMixtureRichness(fuelVolPctNow, idealFuelPct);
     richnessIntegral += richness * DT;
 
-    const LAUNCH_CAP = 13000 * mult;
-    const POWER_HP = 6500 * mult;
+    // Base HP/force scaled up from the original 6500/13000 baseline so that
+    // re-anchoring fuelFactor to hit 1.0 at the 90% legal nitro max (was
+    // ~1.12 at 90% under the old formula) reproduces the exact same power
+    // at 90% as before - the reference point moved, not the calibration.
+    const LAUNCH_CAP = 14583 * mult;
+    const POWER_HP = 7291 * mult;
 
     const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, driverShutoffFt, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
@@ -204,7 +226,11 @@ export function runSimulation(settings) {
     else if (cylindersDropped) appliedForce *= CYLINDER_DROP_FORCE_PENALTY;
 
     const drag = 0.5 * RHO_REF * CDA * v * v;
-    const net = appliedForce - drag;
+    // Mechanical engine braking through the locked (or partly locked)
+    // clutch - scales with how far off throttle the driver is and how
+    // much of the driveline is actually coupled (lf), not just aero.
+    const engineBrakeForce = ENGINE_BRAKE_COEFF * (1 - throttle) * lf * v;
+    const net = appliedForce - drag - engineBrakeForce;
     const accel = net * 32.174 / WEIGHT_LB;
     v = Math.max(0, v + accel * DT);
     x += v * DT;
@@ -251,7 +277,7 @@ export function runSimulation(settings) {
 
   return {
     finished, et, mph, et60, et330, et660, mph660, trace, densityAltitude,
-    clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk,
+    clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk, nitroIllegal,
     peakFuelGpm, engineFailed, engineFailTime, engineFailCause,
     cylindersDropped, cylinderDropTime, cylinderDropCause,
     clutchFailed, clutchFailTime,
