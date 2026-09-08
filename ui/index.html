@@ -28,7 +28,10 @@
         <div class="row"><label>Blower overdrive <span class="val" id="v-blower">48%</span></label><input type="range" id="blower" min="20" max="70" value="48" step="1"></div>
         <div class="row"><label>Nitro percentage <span class="val" id="v-fuel">90%</span></label><input type="range" id="fuel" min="75" max="98" value="90" step="1"></div>
         <p class="note" id="nitro-hint">Richtwaarde voor dit weer: 90% (rondom 90% is de norm; bij warmere, ijlere lucht wat meer, bij koude dichte lucht wat minder)</p>
-        <div class="row"><label>Brandstoftoevoer (pompvolume) <span class="val" id="v-fuelvol">70%</span></label><input type="range" id="fuelvol" min="40" max="100" value="70" step="1"></div>
+        <div class="row"><label>Brandstoftoevoer — launch <span class="val" id="v-fuel1">70%</span></label><input type="range" id="fuel1" min="40" max="100" value="70" step="1"></div>
+        <div class="row"><label>Brandstoftoevoer — lockup (pulldown) <span class="val" id="v-fuel2">78%</span></label><input type="range" id="fuel2" min="40" max="100" value="78" step="1"></div>
+        <div class="row"><label>Brandstoftoevoer — eindfase <span class="val" id="v-fuel3">63%</span></label><input type="range" id="fuel3" min="40" max="100" value="63" step="1"></div>
+        <p class="note">Brandstofpomp draait mee met de motor, dus die levert vanzelf meer bij hoger toerental en minder bij lager toerental. Bij de lockup (rond stage 2→3) zakt het toerental juist even weg terwijl de belasting piekt - daar moet de curve open, anders loopt hij te mager en blaas je 'm op. Ná de lockup loopt het toerental weer op met de snelheid mee - daar juist weer dicht, anders wordt-ie te rijk en gaan cilinders verzuipen. Stages delen de tijdgrenzen van de koppeling (stage 2/3-tijd hierboven).</p>
         <div class="row"><label>Koppakking dikte <span class="val" id="v-gasket">0.040"</span></label><input type="range" id="gasket" min="25" max="60" value="40" step="1"></div>
         <div class="row"><label>Ontstekingstiming <span class="val" id="v-ign">40°</span></label><input type="range" id="ign" min="30" max="50" value="40" step="1"></div>
         <p class="note" id="power-hint">Geschat piekvermogen: -- pk</p>
@@ -100,8 +103,15 @@
           </div>
           <div id="spinFlag"></div>
 
+          <div class="sec-title" style="margin-top:18px;">Motortoerental</div>
+          <p class="note" style="margin-top:0;">Indicatief kanaal, geen gekalibreerde uitkomst (zoals "geschat piekvermogen"). Top Fuel heeft geen versnellingsbak - de koppeling is het enige wat toerental en wielsnelheid koppelt. Het toerental blijft daardoor grotendeels in een band hangen, met een duidelijke "pulldown" rond de lockup (stage 2→3) waar de belasting piekt, en een lichte klim naar het einde toe naarmate de snelheid oploopt.</p>
+          <svg id="rpmChart" viewBox="0 0 640 140" role="img" aria-label="Motortoerental over tijd"></svg>
+          <div class="legend">
+            <span><span class="dot" style="background:#b98ee0"></span>toerental (rpm)</span>
+          </div>
+
           <div class="sec-title" style="margin-top:18px;">Brandstofdebiet</div>
-          <p class="note" style="margin-top:0;">Indicatief kanaal, geen gekalibreerde uitkomst (zoals "geschat piekvermogen"). Brandstofpomp is direct blower-gedreven, dus debiet volgt motortoerental; wielsnelheid dient hier als proxy voor toerental omdat die tijdens koppelingsslip - net als het echte toerental - harder oploopt dan de wagensnelheid.</p>
+          <p class="note" style="margin-top:0;">Indicatief kanaal. Brandstofpomp is motorgedreven, dus debiet volgt het toerental hierboven direct - de brandstofcurve (Engine-paneel) bepaalt vervolgens hoeveel daarvan de injectoren bereikt.</p>
           <svg id="fuelChart" viewBox="0 0 640 140" role="img" aria-label="Brandstofdebiet over tijd"></svg>
           <div class="legend">
             <span><span class="dot" style="background:#5ec8d8"></span>brandstofdebiet (gpm)</span>
@@ -121,6 +131,7 @@
           <div class="insp"><div class="lbl">Density altitude</div><div class="status" id="i-da">--</div></div>
           <div class="insp"><div class="lbl">Piek brandstofdebiet</div><div class="status" id="i-fuelpeak">--</div></div>
           <div class="insp"><div class="lbl">Rijdersactie</div><div class="status" id="i-driver">--</div></div>
+          <div class="insp"><div class="lbl">Cilinders</div><div class="status" id="i-cyl">--</div></div>
         </div>
       </div>
     </div>

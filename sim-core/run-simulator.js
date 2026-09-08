@@ -87,16 +87,18 @@ export function runSimulation(settings) {
   let slipIntegral = 0;
   let bearingPos = 0.05;
   // Engine failure: sustained high heat risk (aggressive blower/compression/
-  // nitro combo), OR sustained lean-under-load from an undersized fuel
-  // curve, accumulates damage on the same clock. Cross the threshold and
-  // the motor lets go mid-run - the real ceiling on "just turn everything
-  // up" (or "just leave the fuel curve flat"), not a cosmetic warning.
+  // nitro combo) and sustained lean-under-load (undersized fuel curve) are
+  // tracked on separate clocks so the eventual failure/cylinder-drop can
+  // report which one actually did it, but they sum to the same threshold -
+  // both are "you are killing this engine," just from opposite ends.
   // Running rich instead costs cylinders (fouling) via a separate clock
   // that never escalates to a full failure on its own.
-  let engineDamage = 0;
+  let heatDamage = 0;
+  let leanDamage = 0;
   let foulDamage = 0;
   let engineFailed = false;
   let engineFailTime = null;
+  let engineFailCause = null;
   let cylindersDropped = false;
   let cylinderDropTime = null;
   let cylinderDropCause = null;
@@ -144,20 +146,22 @@ export function runSimulation(settings) {
     clutchTemp += (slipPct / 100) * HEAT_RATE * DT * 10;
     slipIntegral += slipPct * DT;
 
-    engineDamage += Math.max(0, heatRisk - 0.62) * DT;
+    heatDamage += Math.max(0, heatRisk - 0.62) * DT;
     // Lean under load hurts the most right where lf is high - the clutch
     // is loaded, so the motor can least afford to be starved right then.
-    engineDamage += Math.max(0, -richness) * lf * LEAN_DAMAGE_RATE * DT;
+    leanDamage += Math.max(0, -richness) * lf * LEAN_DAMAGE_RATE * DT;
     foulDamage += Math.max(0, richness) * FOUL_DAMAGE_RATE * DT;
+    const engineDamage = heatDamage + leanDamage;
 
     if (!cylindersDropped && (engineDamage > CYLINDER_DROP_THRESHOLD || foulDamage > CYLINDER_DROP_THRESHOLD)) {
       cylindersDropped = true;
       cylinderDropTime = t;
-      cylinderDropCause = engineDamage > CYLINDER_DROP_THRESHOLD ? "power" : "rich";
+      cylinderDropCause = engineDamage > CYLINDER_DROP_THRESHOLD ? (heatDamage >= leanDamage ? "heat" : "lean") : "rich";
     }
     if (!engineFailed && engineDamage > ENGINE_FAILURE_THRESHOLD) {
       engineFailed = true;
       engineFailTime = t;
+      engineFailCause = heatDamage >= leanDamage ? "heat" : "lean";
     }
     if (engineFailed) appliedForce = 0;
     else if (cylindersDropped) appliedForce *= CYLINDER_DROP_FORCE_PENALTY;
@@ -207,7 +211,7 @@ export function runSimulation(settings) {
   return {
     finished, et, mph, et60, et330, et660, mph660, trace, densityAltitude,
     clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk,
-    peakFuelGpm, engineFailed, engineFailTime,
+    peakFuelGpm, engineFailed, engineFailTime, engineFailCause,
     cylindersDropped, cylinderDropTime, cylinderDropCause,
     driverLifted: driverState.lifted, driverLiftTime: driverState.liftTime, pedalCount: driverState.pedalCount,
     anySpin: trace.some(p => p.slip > 5),

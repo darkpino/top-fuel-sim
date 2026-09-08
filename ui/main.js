@@ -1,12 +1,12 @@
 import { calcDensityAltitude, calcPowerMult, calcGripCoeff } from "../sim-core/environment.js";
-import { calcEngineFactors, calcRecommendedNitro } from "../sim-core/engine.js";
+import { calcEngineFactors, calcMult, calcRecommendedNitro } from "../sim-core/engine.js";
 import { calcClutchReach } from "../sim-core/clutch.js";
 import { calcOptimalPsi, calcPsiPenalty } from "../sim-core/tires.js";
 import { runSimulation } from "../sim-core/run-simulator.js";
 
 function $(id) { return document.getElementById(id); }
 
-const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuelvol", "gasket", "ign", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "fw", "tpsi", "wing", "aggro"];
+const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "fuel2", "fuel3", "gasket", "ign", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "fw", "tpsi", "wing", "aggro"];
 
 function fmt(id, val) {
   switch (id) {
@@ -17,7 +17,7 @@ function fmt(id, val) {
     case "grip": return val + "%";
     case "blower": return val + "%";
     case "fuel": return val + "%";
-    case "fuelvol": return val + "%";
+    case "fuel1": case "fuel2": case "fuel3": return val + "%";
     case "gasket": return (val / 1000).toFixed(3) + '"';
     case "ign": return val + "°";
     case "s1t": return (val / 100).toFixed(2) + "s";
@@ -78,15 +78,16 @@ function updateEngineHints() {
   const gripSliderPct = +$("grip").value;
   const blowerOD = +$("blower").value;
   const fuelPct = +$("fuel").value;
-  const fuelVolPct = +$("fuelvol").value;
+  const fuel1Pct = +$("fuel1").value;
   const gasketThou = +$("gasket").value;
   const ignition = +$("ign").value;
   const tirePsi = +$("tpsi").value / 10;
 
   const da = calcDensityAltitude(airtempC, humidity, baroInHg);
   const powerMultNow = calcPowerMult(da);
-  const { mult } = calcEngineFactors({ blowerOD, fuelPct, fuelVolPct, gasketThou, ignition, powerMult: powerMultNow });
-  $("power-hint").textContent = `Geschat piekvermogen: ${Math.round(12000 * mult).toLocaleString("nl-NL")} pk (basis 12.000 pk bij standaard lucht, voor eigen koppeling/grip-verlies)`;
+  const { fuelFactor, blowerFactor, ignEff, compressionFactor } = calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition });
+  const { mult } = calcMult({ fuelFactor, fuelVolPct: fuel1Pct, blowerFactor, ignEff, compressionFactor, powerMult: powerMultNow });
+  $("power-hint").textContent = `Geschat piekvermogen bij launch: ${Math.round(12000 * mult).toLocaleString("nl-NL")} pk (basis 12.000 pk bij standaard lucht, voor eigen koppeling/grip-verlies; verandert tijdens de run met de brandstofcurve)`;
 
   const recommendedNitro = calcRecommendedNitro(powerMultNow);
   const hint = $("nitro-hint");
@@ -118,7 +119,7 @@ function updateEngineHints() {
   const gripKN = Math.round(2600 + Math.max(0, Math.min(1, (gripEstimate - 0.6) / 6.0)) * 800);
   gripHint.textContent = `Effectieve grip: ${gripKN} kN (${tempQuality})`;
 }
-["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuelvol", "gasket", "ign", "tpsi"].forEach(id => {
+["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "gasket", "ign", "tpsi"].forEach(id => {
   $(id).addEventListener("input", updateEngineHints);
 });
 updateEngineHints();
@@ -197,6 +198,34 @@ function drawFuelChart(trace) {
   $("fuelChart").innerHTML = svg;
 }
 
+function drawRpmChart(trace) {
+  const W = 640, H = 140, padL = 42, padR = 12, padT = 10, padB = 22;
+  const rpms = trace.map(p => p.rpm);
+  const minRpm = Math.min(...rpms) * 0.97;
+  const maxRpm = Math.max(...rpms) * 1.03;
+  const maxT = trace[trace.length - 1].t;
+  function xs(t) { return padL + (t / maxT) * (W - padL - padR); }
+  function ys(rpm) { return H - padB - ((rpm - minRpm) / (maxRpm - minRpm)) * (H - padT - padB); }
+
+  const rpmPath = "M " + trace.map(p => `${xs(p.t).toFixed(1)},${ys(p.rpm).toFixed(1)}`).join(" L ");
+
+  let gridLines = "";
+  for (let i = 0; i <= 2; i++) {
+    const yy = padT + i * (H - padT - padB) / 2;
+    const val = Math.round(maxRpm - i * (maxRpm - minRpm) / 2);
+    gridLines += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="#2c333b" stroke-width="1"/>`;
+    gridLines += `<text x="${padL - 6}" y="${yy + 4}" text-anchor="end" font-size="10" fill="#8b939b" font-family="ui-monospace,monospace">${val}</text>`;
+  }
+
+  const svg = `
+    ${gridLines}
+    <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#2c333b" stroke-width="1"/>
+    <path d="${rpmPath}" fill="none" stroke="#b98ee0" stroke-width="2"/>
+  `;
+  $("rpmChart").setAttribute("viewBox", `0 0 ${W} ${H}`);
+  $("rpmChart").innerHTML = svg;
+}
+
 function statusClass(val, warnAt, badAt) {
   if (val >= badAt) return "bad";
   if (val >= warnAt) return "warn";
@@ -212,7 +241,9 @@ function readSettings() {
     gripSliderPct: +$("grip").value,
     blowerOD: +$("blower").value,
     fuelPct: +$("fuel").value,
-    fuelVolPct: +$("fuelvol").value,
+    fuel1Pct: +$("fuel1").value,
+    fuel2Pct: +$("fuel2").value,
+    fuel3Pct: +$("fuel3").value,
     gasketThou: +$("gasket").value,
     ignition: +$("ign").value,
     ...readClutchStages(),
@@ -245,13 +276,23 @@ $("runBtn").addEventListener("click", () => {
     { label: r.finished ? "1000'" : null, t: r.finished ? r.et : null },
   ]);
   drawFuelChart(r.trace);
+  drawRpmChart(r.trace);
 
   const spinFlag = $("spinFlag");
   let flags = "";
-  if (r.engineFailed) flags += `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% was te heet om vol te houden.</div>`;
+  if (r.engineFailed) {
+    flags += r.engineFailCause === "lean"
+      ? `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Zet stage 2 (lockup) verder open.</div>`
+      : `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% was te heet om vol te houden.</div>`;
+  }
   else if (r.driverLifted && !r.finished) flags += `<div class="flag">Rijder is van het gas gegaan na aanhoudende bandenrook op ${r.driverLiftTime.toFixed(2)}s — run afgebroken. Verhoog de rijder-agressiviteit als hij vaker moet doorpedalen, of pak de tune aan voor minder wielspin.</div>`;
   else if (!r.finished) flags += `<div class="flag">Auto bereikte de 1000 ft niet binnen ${r.et.toFixed(1)}s — te weinig grip/vermogen om op snelheid te komen. Draai bij.</div>`;
   else if (r.driverLifted) flags += `<div class="flag">Rijder is na aanhoudende bandenrook op ${r.driverLiftTime.toFixed(2)}s van het gas gegaan, maar de auto heeft de 1000 ft alsnog op momentum gehaald.</div>`;
+  if (r.cylindersDropped) {
+    if (r.cylinderDropCause === "rich") flags += `<div class="flag">Cilinder(s) verzopen na ${r.cylinderDropTime.toFixed(2)}s — de brandstofcurve stond op dat moment te rijk voor het toerental. Kost vermogen, maar de motor overleeft het.</div>`;
+    else if (r.cylinderDropCause === "lean") flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Bij aanhouden loopt dit uit op motorschade.</div>`;
+    else flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% liep te heet. Bij aanhouden loopt dit uit op motorschade.</div>`;
+  }
   if (r.anySpin && !r.engineFailed) flags += `<div class="flag">Wielenspin gedetecteerd tijdens de run — motorvermogen overschreed de beschikbare grip.</div>`;
   if (r.detonationRisk && !r.engineFailed) flags += `<div class="flag">Detonatierisico: hoge compressie + hoog nitropercentage + veel voorontsteking is een gevaarlijke combinatie.</div>`;
   spinFlag.innerHTML = flags;
@@ -297,4 +338,11 @@ $("runBtn").addEventListener("click", () => {
   else { driverTxt = "volle run"; driverCls = "ok"; }
   $("i-driver").textContent = driverTxt;
   $("i-driver").className = "status " + driverCls;
+
+  let cylTxt, cylCls;
+  if (r.engineFailed) { cylTxt = "motor kapot"; cylCls = "bad"; }
+  else if (r.cylindersDropped) { cylTxt = (r.cylinderDropCause === "rich" ? "verzopen" : "missen") + ` @ ${r.cylinderDropTime.toFixed(2)}s`; cylCls = "warn"; }
+  else { cylTxt = "alle vuren"; cylCls = "ok"; }
+  $("i-cyl").textContent = cylTxt;
+  $("i-cyl").className = "status " + cylCls;
 });
