@@ -220,6 +220,7 @@ function readSettings() {
     tirePsi: +$("tpsi").value / 10,
     wingAngle: +$("wing").value / 10,
     driverAggressiveness: +$("aggro").value,
+    driverWatchUntilFt: +$("watchft").value,
   };
 }
 

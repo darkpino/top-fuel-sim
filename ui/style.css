@@ -19,6 +19,7 @@ h1{font-family:var(--disp); font-weight:800; letter-spacing:0.5px; font-size:28p
 .row label{display:flex; justify-content:space-between; font-size:13px; color:var(--muted); margin-bottom:4px;}
 .row label span.val{font-family:var(--mono); color:var(--text); font-weight:600;}
 input[type=range]{width:100%; accent-color:var(--amber);}
+select{width:100%; background:var(--panel-alt); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-size:13px; font-family:inherit;}
 button.run{width:100%; background:var(--amber); color:#1a1200; border:none; border-radius:6px; padding:14px; font-family:var(--disp); font-weight:800; font-size:18px; letter-spacing:1px; cursor:pointer; margin-top:6px;}
 button.run:active{transform:scale(0.98);}
 .results-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:10px;}
