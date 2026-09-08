@@ -2,8 +2,8 @@
 // into a full 1000ft run trace. Pure function, no DOM access.
 
 import { calcDensityAltitude, calcPowerMult, calcGripCoeff } from "./environment.js";
-import { calcEngineFactors } from "./engine.js";
-import { activeSetpoint, calcFingerDesired, stepBearingPos } from "./clutch.js";
+import { calcEngineFactors, calcFuelFlowGpm } from "./engine.js";
+import { activeSetpoint, activeSpeed, calcFingerDesired, stepBearingPos } from "./clutch.js";
 import { calcOptimalPsi, calcPsiPenalty, calcTireWear } from "./tires.js";
 
 const WEIGHT_LB = 2320;
@@ -30,14 +30,14 @@ export function runSimulation(settings) {
   const {
     airtempC, humidity, baroInHg, trackTempC, gripSliderPct,
     blowerOD, fuelPct, fuelVolPct, gasketThou, ignition,
-    s1time, s1pct, s2time, s2pct, s3time, s3pct,
-    fingerWeight, bearingSpeed, tirePsi, wingAngle,
+    s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
+    fingerWeight, tirePsi, wingAngle,
   } = settings;
 
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
   const powerMult = calcPowerMult(densityAltitude);
 
-  const { fuelFactor, compressionFactor, ignEff, mult, heatRisk, detonationRisk } =
+  const { fuelFactor, fuelVolFactor, compressionFactor, ignEff, mult, heatRisk, detonationRisk } =
     calcEngineFactors({ blowerOD, fuelPct, fuelVolPct, gasketThou, ignition, powerMult });
 
   const optimalPsi = calcOptimalPsi(trackTempC);
@@ -60,7 +60,7 @@ export function runSimulation(settings) {
   const wingTrim = 1 + (wingAngle / 2.5) * 0.45;
   const WING_K = WING_BASE_K * wingTrim;
 
-  const stages = { s1time, s1pct, s2time, s2pct, s3time, s3pct };
+  const stages = { s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed };
   const fingerDesired = calcFingerDesired(fingerWeight);
 
   let t = 0, v = 0, x = 0, wheelV = 0;
@@ -79,7 +79,8 @@ export function runSimulation(settings) {
 
   while (x < 1000 && t < MAX_T) {
     const target = activeSetpoint(t, stages);
-    bearingPos = stepBearingPos(bearingPos, target, bearingSpeed, DT);
+    const speed = activeSpeed(t, stages);
+    bearingPos = stepBearingPos(bearingPos, target, speed, DT);
     const heatBoost = 1 + Math.min(clutchTemp / 100, 1) * HEAT_CAP_BOOST;
     const lf = Math.min(fingerDesired, bearingPos) * heatBoost;
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
@@ -122,10 +123,12 @@ export function runSimulation(settings) {
       wheelV = v;
     }
 
+    const fuelGpm = calcFuelFlowGpm(wheelV, fuelVolFactor);
+
     if (et60 === null && x >= 60) et60 = t;
     if (et330 === null && x >= 330) et330 = t;
     if (et660 === null && x >= 660) { et660 = t; mph660 = v / 1.4667; }
-    trace.push({ t, x, v_mph: v / 1.4667, wheel_mph: wheelV / 1.4667, slip: slipPct, clutch_pos: bearingPos * 100, effective_lockup: Math.min(1, lf) * 100 });
+    trace.push({ t, x, v_mph: v / 1.4667, wheel_mph: wheelV / 1.4667, slip: slipPct, clutch_pos: bearingPos * 100, effective_lockup: Math.min(1, lf) * 100, fuel_gpm: fuelGpm });
     t += DT;
   }
 
@@ -139,11 +142,12 @@ export function runSimulation(settings) {
   const plugBalance = (fuelFactor - 1) + (compressionFactor - 1) - (ignEff - 1) * 0.5;
   const bearingWear = Math.min(100, (blowerOD - 20) * 0.9 + Math.max(0, (et - 3.8)) * 8);
   const tireWear = calcTireWear(tirePsi, optimalPsi, slipEnergy);
+  const peakFuelGpm = trace.reduce((acc, p) => Math.max(acc, p.fuel_gpm), 0);
 
   return {
     finished, et, mph, et60, et330, et660, mph660, trace, densityAltitude,
     clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk,
-    engineFailed, engineFailTime,
+    peakFuelGpm, engineFailed, engineFailTime,
     anySpin: trace.some(p => p.slip > 5),
   };
 }

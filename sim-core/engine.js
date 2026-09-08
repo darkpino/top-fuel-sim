@@ -34,3 +34,20 @@ export function calcRecommendedNitro(powerMultNow) {
   const recommendedNitro = 75 + 23 * (targetFuelFactor - 0.60) / 0.80;
   return Math.max(75, Math.min(98, Math.round(recommendedNitro)));
 }
+
+// Fuel flow: informational channel only (same status as "geschat
+// piekvermogen"), not a calibrated output like ET/mph. A nitro fuel pump is
+// a positive-displacement gear pump driven directly off the blower, so flow
+// scales with engine RPM rather than load - fuelVolPct only sets the
+// bypass/pill circuit (how much of that flow reaches the injectors), it
+// doesn't vary during the run. We don't model RPM directly, so wheel speed
+// is used as an RPM proxy: it free-revs above ground speed exactly when the
+// engine is spinning faster than the car, i.e. during clutch slip, which is
+// the same behavior a real nitro motor's RPM shows through the launch.
+const FUEL_FLOW_BASE_GPM = 90;
+const FUEL_FLOW_REF_FTS = 220; // ~150 mph wheel speed -> proxy RPM approaching peak
+
+export function calcFuelFlowGpm(wheelVFtS, fuelVolFactor) {
+  const rpmProxy = Math.min(1.15, wheelVFtS / FUEL_FLOW_REF_FTS);
+  return FUEL_FLOW_BASE_GPM * fuelVolFactor * rpmProxy;
+}
