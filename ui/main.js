@@ -265,7 +265,7 @@ $("runBtn").addEventListener("click", () => {
   $("r-330").textContent = r.et330 ? r.et330.toFixed(3) + "s" : "n.v.t.";
   $("r-660").textContent = r.et660 ? r.et660.toFixed(3) + "s" : "n.v.t.";
   $("r-660mph").textContent = r.mph660 ? r.mph660.toFixed(1) + " mph" : "n.v.t.";
-  $("r-et").textContent = r.finished ? r.et.toFixed(3) + "s" : (r.engineFailed ? "MOTOR" : (r.driverLifted ? "LIFT" : "DNF"));
+  $("r-et").textContent = r.finished ? r.et.toFixed(3) + "s" : (r.engineFailed ? "MOTOR" : (r.clutchFailed ? "KOPPELING" : (r.driverLifted ? "LIFT" : "DNF")));
   $("r-et").style.color = r.finished ? "var(--text)" : "var(--red)";
   $("r-mph").textContent = r.mph.toFixed(1) + " mph";
 
@@ -285,6 +285,7 @@ $("runBtn").addEventListener("click", () => {
       ? `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Zet stage 2 (lockup) verder open.</div>`
       : `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% was te heet om vol te houden.</div>`;
   }
+  else if (r.clutchFailed) flags += `<div class="flag">Koppeling kapot na ${r.clutchFailTime.toFixed(2)}s — te lang te ver teruggehouden onder te veel vermogen. Dat beschermde de banden, maar de koppeling zelf hield het niet vol. Geef 'm iets meer lockup, of neem er genoegen mee dat dit 'm kost.</div>`;
   else if (r.driverLifted && !r.finished) flags += `<div class="flag">Rijder is van het gas gegaan na aanhoudende bandenrook op ${r.driverLiftTime.toFixed(2)}s — run afgebroken. Verhoog de rijder-agressiviteit als hij vaker moet doorpedalen, of pak de tune aan voor minder wielspin.</div>`;
   else if (!r.finished) flags += `<div class="flag">Auto bereikte de 1000 ft niet binnen ${r.et.toFixed(1)}s — te weinig grip/vermogen om op snelheid te komen. Draai bij.</div>`;
   else if (r.driverLifted) flags += `<div class="flag">Rijder is na aanhoudende bandenrook op ${r.driverLiftTime.toFixed(2)}s van het gas gegaan, maar de auto heeft de 1000 ft alsnog op momentum gehaald.</div>`;
@@ -298,9 +299,14 @@ $("runBtn").addEventListener("click", () => {
   spinFlag.innerHTML = flags;
 
   const ch = r.clutchHeat;
-  const chCls = statusClass(ch, 45, 70);
-  $("i-clutch").textContent = ch.toFixed(0) + "/100 " + (chCls === "ok" ? "(optimaal)" : chCls === "warn" ? "(warm)" : "(oververhit)");
-  $("i-clutch").className = "status " + chCls;
+  if (r.clutchFailed) {
+    $("i-clutch").textContent = `kapot @ ${r.clutchFailTime.toFixed(2)}s`;
+    $("i-clutch").className = "status bad";
+  } else {
+    const chCls = statusClass(ch, 45, 70);
+    $("i-clutch").textContent = ch.toFixed(0) + "/100 " + (chCls === "ok" ? "(optimaal)" : chCls === "warn" ? "(warm)" : "(oververhit)");
+    $("i-clutch").className = "status " + chCls;
+  }
 
   const slipCls = statusClass(r.avgSlipPct, 15, 30);
   $("i-slip").textContent = r.avgSlipPct.toFixed(1) + "% gem.";
