@@ -42,8 +42,11 @@ import { runSimulation } from "./sim-core/run-simulator.js";
 const result = runSimulation({
   airtempC: 30, humidity: 40, baroInHg: 29.90, trackTempC: 28, gripSliderPct: 70,
   blowerOD: 48, fuelPct: 90, fuelVolPct: 70, gasketThou: 40, ignition: 40,
-  s1time: 0.10, s1pct: 0.90, s2time: 1.00, s2pct: 0.65, s3time: 2.15, s3pct: 0.90,
-  fingerWeight: 100, bearingSpeed: 2.0, tirePsi: 7.5, wingAngle: 0.0,
+  s1time: 0.85, s1pct: 0.78, s1speed: 7.0,
+  s2time: 1.05, s2pct: 0.65, s2speed: 2.0,
+  s3time: 2.15, s3pct: 0.90, s3speed: 2.0,
+  fingerWeight: 100, tirePsi: 7.5, wingAngle: 0.0,
+  driverAggressiveness: 70, driverWatchUntilFt: 1000,
 });
 // result.et60, result.et330, result.et660, result.et, result.mph, result.trace, ...
 ```
@@ -54,5 +57,20 @@ De fysica-constanten (`LAUNCH_CAP`, `POWER_HP`, grip-formules,
 detonatie-drempels, etc.) zijn het resultaat van meerdere kalibratierondes
 tegen echte NHRA-tijdkaarten en telemetrie — zie `HANDOFF.md` en de
 kalibratie-ijkpunten in `ARCHITECTURE.md`/`HANDOFF.md`. Wijzig ze niet zonder
-reden; deze refactor was puur structureel (UI vs. simulatielogica scheiden),
-geen fysica-wijziging.
+reden.
+
+## Kalibratie-update (60ft)
+
+Het oorspronkelijke prototype liep structureel te traag op de 60ft (~1.09s bij
+de meegeleverde tune, tegen .827s in de echte tijdkaart — een bekende,
+gedocumenteerde afwijking). Root cause was niet de fysica-constanten, maar de
+meegeleverde clutch-schedule: die hield de koppeling het grootste deel van het
+60ft-venster op ~65% lockup. Echte telemetrie laat de dip pas ná de 60ft zien,
+niet erin. De default clutch-stages zijn herzien (sterke, snelle bite die
+vastgehouden wordt tot ná de 60ft, dan de dip, dan volledige lockup zoals
+voorheen) zodat de meegeleverde tune nu op 0.952s 60ft uitkomt — en de
+lager-snelheid-sliders zijn verbreed (tot 800%/s) zodat een scherp getunede
+auto tot ~0.82s (schoon, zonder wielspin) haalbaar is, en een zwakke-maar-
+schone tune boven de 1.5s blijft. Geen van de kern-fysicaformules
+(`LAUNCH_CAP`, `POWER_HP`, grip-coëfficiënt) is aangepast — dit was puur een
+tune-wijziging van de meegeleverde standaardinstellingen.
