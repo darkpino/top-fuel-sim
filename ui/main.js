@@ -6,7 +6,7 @@ import { runSimulation } from "../sim-core/run-simulator.js";
 
 function $(id) { return document.getElementById(id); }
 
-const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "fuel2", "fuel3", "gasket", "ign", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "fw", "tpsi", "wing", "aggro"];
+const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "fuel2", "fuel3", "gasket", "ign", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "fw", "tpsi", "wing", "aggro", "shutoff"];
 
 function fmt(id, val) {
   switch (id) {
@@ -31,6 +31,7 @@ function fmt(id, val) {
     case "tpsi": return (val / 10).toFixed(1) + " psi";
     case "wing": return (val / 10).toFixed(1) + "°";
     case "aggro": return val;
+    case "shutoff": return val + " ft";
   }
 }
 sliders.forEach(id => {
@@ -252,6 +253,7 @@ function readSettings() {
     wingAngle: +$("wing").value / 10,
     driverAggressiveness: +$("aggro").value,
     driverWatchUntilFt: +$("watchft").value,
+    driverShutoffFt: +$("shutoff").value,
   };
 }
 
@@ -265,7 +267,7 @@ $("runBtn").addEventListener("click", () => {
   $("r-330").textContent = r.et330 ? r.et330.toFixed(3) + "s" : "n.v.t.";
   $("r-660").textContent = r.et660 ? r.et660.toFixed(3) + "s" : "n.v.t.";
   $("r-660mph").textContent = r.mph660 ? r.mph660.toFixed(1) + " mph" : "n.v.t.";
-  $("r-et").textContent = r.finished ? r.et.toFixed(3) + "s" : (r.engineFailed ? "MOTOR" : (r.clutchFailed ? "KOPPELING" : (r.driverLifted ? "LIFT" : "DNF")));
+  $("r-et").textContent = r.finished ? r.et.toFixed(3) + "s" : (r.engineFailed ? "MOTOR" : (r.clutchFailed ? "KOPPELING" : (r.driverLifted ? (r.driverLiftReason === "shutoff" ? "UIT" : "LIFT") : "DNF")));
   $("r-et").style.color = r.finished ? "var(--text)" : "var(--red)";
   $("r-mph").textContent = r.mph.toFixed(1) + " mph";
 
@@ -286,9 +288,12 @@ $("runBtn").addEventListener("click", () => {
       : `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% was te heet om vol te houden.</div>`;
   }
   else if (r.clutchFailed) flags += `<div class="flag">Koppeling kapot na ${r.clutchFailTime.toFixed(2)}s — te lang te ver teruggehouden onder te veel vermogen. Dat beschermde de banden, maar de koppeling zelf hield het niet vol. Geef 'm iets meer lockup, of neem er genoegen mee dat dit 'm kost.</div>`;
+  else if (r.driverLifted && r.driverLiftReason === "shutoff" && !r.finished) flags += `<div class="flag">Rijder heeft het ingestelde afschakelpunt bereikt op ${r.driverLiftTime.toFixed(2)}s en is van het gas gegaan — geplande shutoff, geen paniek. De auto heeft de 1000 ft niet op momentum gehaald.</div>`;
   else if (r.driverLifted && !r.finished) flags += `<div class="flag">Rijder is van het gas gegaan na aanhoudende bandenrook op ${r.driverLiftTime.toFixed(2)}s — run afgebroken. Verhoog de rijder-agressiviteit als hij vaker moet doorpedalen, of pak de tune aan voor minder wielspin.</div>`;
   else if (!r.finished) flags += `<div class="flag">Auto bereikte de 1000 ft niet binnen ${r.et.toFixed(1)}s — te weinig grip/vermogen om op snelheid te komen. Draai bij.</div>`;
+  else if (r.driverLifted && r.driverLiftReason === "shutoff") flags += `<div class="flag">Rijder is op het ingestelde afschakelpunt (${r.driverLiftTime.toFixed(2)}s) van het gas gegaan — geplande shutoff, de auto heeft de 1000 ft alsnog op momentum gehaald.</div>`;
   else if (r.driverLifted) flags += `<div class="flag">Rijder is na aanhoudende bandenrook op ${r.driverLiftTime.toFixed(2)}s van het gas gegaan, maar de auto heeft de 1000 ft alsnog op momentum gehaald.</div>`;
+  if (r.clutchWearLockupGainPct > 3 && !r.clutchFailed) flags += `<div class="flag">Koppelingsslijtage heeft de lockup tijdens deze run zo'n ${r.clutchWearLockupGainPct.toFixed(0)} procentpunt verder laten locken dan ingesteld — de vingers konden door slijtage van het lager verder naar buiten. Bij nog meer slip op deze tune wordt de koppeling geleidelijk agressiever dan bedoeld.</div>`;
   if (r.cylindersDropped) {
     if (r.cylinderDropCause === "rich") flags += `<div class="flag">Cilinder(s) verzopen na ${r.cylinderDropTime.toFixed(2)}s — de brandstofcurve stond op dat moment te rijk voor het toerental. Kost vermogen, maar de motor overleeft het.</div>`;
     else if (r.cylinderDropCause === "lean") flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Bij aanhouden loopt dit uit op motorschade.</div>`;
@@ -339,7 +344,8 @@ $("runBtn").addEventListener("click", () => {
   $("i-fuelpeak").className = "status ok";
 
   let driverTxt, driverCls;
-  if (r.driverLifted) { driverTxt = `gas los @ ${r.driverLiftTime.toFixed(2)}s`; driverCls = "bad"; }
+  if (r.driverLifted && r.driverLiftReason === "shutoff") { driverTxt = `shutoff @ ${r.driverLiftTime.toFixed(2)}s`; driverCls = "ok"; }
+  else if (r.driverLifted) { driverTxt = `gas los @ ${r.driverLiftTime.toFixed(2)}s`; driverCls = "bad"; }
   else if (r.pedalCount > 0) { driverTxt = `gepedald (${r.pedalCount}x)`; driverCls = "warn"; }
   else { driverTxt = "volle run"; driverCls = "ok"; }
   $("i-driver").textContent = driverTxt;
