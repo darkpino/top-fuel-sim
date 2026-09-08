@@ -5,6 +5,7 @@ import { calcDensityAltitude, calcPowerMult, calcGripCoeff } from "./environment
 import { calcEngineFactors, calcFuelFlowGpm } from "./engine.js";
 import { activeSetpoint, activeSpeed, calcFingerDesired, stepBearingPos } from "./clutch.js";
 import { calcOptimalPsi, calcPsiPenalty, calcTireWear } from "./tires.js";
+import { createDriverState, stepDriver } from "./driver.js";
 
 const WEIGHT_LB = 2320;
 const V_FLOOR = 30;
@@ -31,7 +32,7 @@ export function runSimulation(settings) {
     airtempC, humidity, baroInHg, trackTempC, gripSliderPct,
     blowerOD, fuelPct, fuelVolPct, gasketThou, ignition,
     s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
-    fingerWeight, tirePsi, wingAngle,
+    fingerWeight, tirePsi, wingAngle, driverAggressiveness,
   } = settings;
 
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
@@ -76,6 +77,8 @@ export function runSimulation(settings) {
   let engineDamage = 0;
   let engineFailed = false;
   let engineFailTime = null;
+  const driverState = createDriverState();
+  let lastSlipPct = 0;
 
   while (x < 1000 && t < MAX_T) {
     const target = activeSetpoint(t, stages);
@@ -83,8 +86,9 @@ export function runSimulation(settings) {
     bearingPos = stepBearingPos(bearingPos, target, speed, DT);
     const heatBoost = 1 + Math.min(clutchTemp / 100, 1) * HEAT_CAP_BOOST;
     const lf = Math.min(fingerDesired, bearingPos) * heatBoost;
+    const throttle = stepDriver(driverState, t, lastSlipPct, driverAggressiveness, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
-    const engineForce = Math.min(powerForce, LAUNCH_CAP * lf);
+    const engineForce = Math.min(powerForce, LAUNCH_CAP * lf) * throttle;
     const wingDownforce = WING_K * v * v;
     const maxTraction = (WEIGHT_LB + wingDownforce) * baseGripCoeff;
     let appliedForce, slipPct, slipping;
@@ -101,6 +105,7 @@ export function runSimulation(settings) {
       slipPct = 0;
       slipping = false;
     }
+    lastSlipPct = slipPct;
     clutchTemp += (slipPct / 100) * HEAT_RATE * DT * 10;
     slipIntegral += slipPct * DT;
     engineDamage += Math.max(0, heatRisk - 0.62) * DT;
@@ -148,6 +153,7 @@ export function runSimulation(settings) {
     finished, et, mph, et60, et330, et660, mph660, trace, densityAltitude,
     clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk,
     peakFuelGpm, engineFailed, engineFailTime,
+    driverLifted: driverState.lifted, driverLiftTime: driverState.liftTime, pedalCount: driverState.pedalCount,
     anySpin: trace.some(p => p.slip > 5),
   };
 }
