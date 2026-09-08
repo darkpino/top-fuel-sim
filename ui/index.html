@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top Fuel Crew Chief — Run Sim v0.22</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Top Fuel Crew Chief — Run Sim</h1>
+  <p class="sub">v0.3 prototype · 1000 ft · realistischere telemetrie: wheel speed vs ground speed + split-markers</p>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <div class="sec-title">Environment</div>
+        <div class="row"><label>Luchttemperatuur <span class="val" id="v-airtemp">30°C</span></label><input type="range" id="airtemp" min="10" max="45" value="30" step="1"></div>
+        <div class="row"><label>Luchtvochtigheid <span class="val" id="v-hum">40%</span></label><input type="range" id="hum" min="0" max="100" value="40" step="1"></div>
+        <div class="row"><label>Luchtdruk <span class="val" id="v-baro">29.90 inHg</span></label><input type="range" id="baro" min="2880" max="3020" value="2990" step="1"></div>
+        <div class="row"><label>Baan temperatuur <span class="val" id="v-track">28°C</span></label><input type="range" id="track" min="15" max="65" value="28" step="1"></div>
+        <div class="row"><label>VHT / baanprep <span class="val" id="v-grip">70%</span></label><input type="range" id="grip" min="0" max="100" value="70" step="1"></div>
+        <p class="note" id="grip-hint">Effectieve grip: -- (uitkomst van VHT% + baantemperatuur + bandenspanning)</p>
+      </div>
+
+      <div class="panel">
+        <div class="sec-title">Engine</div>
+        <div class="row"><label>Blower overdrive <span class="val" id="v-blower">48%</span></label><input type="range" id="blower" min="20" max="70" value="48" step="1"></div>
+        <div class="row"><label>Nitro percentage <span class="val" id="v-fuel">90%</span></label><input type="range" id="fuel" min="75" max="98" value="90" step="1"></div>
+        <p class="note" id="nitro-hint">Richtwaarde voor dit weer: 90% (rondom 90% is de norm; bij warmere, ijlere lucht wat meer, bij koude dichte lucht wat minder)</p>
+        <div class="row"><label>Brandstoftoevoer (pompvolume) <span class="val" id="v-fuelvol">70%</span></label><input type="range" id="fuelvol" min="40" max="100" value="70" step="1"></div>
+        <div class="row"><label>Koppakking dikte <span class="val" id="v-gasket">0.040"</span></label><input type="range" id="gasket" min="25" max="60" value="40" step="1"></div>
+        <div class="row"><label>Ontstekingstiming <span class="val" id="v-ign">40°</span></label><input type="range" id="ign" min="30" max="50" value="40" step="1"></div>
+        <p class="note" id="power-hint">Geschat piekvermogen: -- pk</p>
+      </div>
+
+      <div class="panel">
+        <div class="sec-title">Clutch</div>
+        <div class="row"><label>Stage 1 tijd <span class="val" id="v-s1t">0.10s</span></label><input type="range" id="s1t" min="0" max="100" value="10" step="5"></div>
+        <div class="row"><label>Stage 1 max lockup <span class="val" id="v-s1p">90%</span></label><input type="range" id="s1p" min="10" max="90" value="90" step="1"></div>
+        <div class="row"><label>Stage 2 tijd <span class="val" id="v-s2t">1.00s</span></label><input type="range" id="s2t" min="100" max="200" value="100" step="5"></div>
+        <div class="row"><label>Stage 2 max lockup <span class="val" id="v-s2p">65%</span></label><input type="range" id="s2p" min="30" max="90" value="65" step="1"></div>
+        <div class="row"><label>Stage 3 tijd <span class="val" id="v-s3t">2.15s</span></label><input type="range" id="s3t" min="200" max="350" value="215" step="5"></div>
+        <div class="row"><label>Stage 3 max lockup <span class="val" id="v-s3p">90%</span></label><input type="range" id="s3p" min="60" max="100" value="90" step="1"></div>
+        <div class="row"><label>Vingergewicht (gewenste lockup) <span class="val" id="v-fw">100</span></label><input type="range" id="fw" min="0" max="100" value="100" step="1"></div>
+        <div class="row"><label>Lager snelheid (hydraulisch) <span class="val" id="v-bspeed">200%/s</span></label><input type="range" id="bspeed" min="20" max="250" value="200" step="5"></div>
+        <p class="note" id="clutch-reach-hint">Haalbare lockup per stage: --</p>
+        <p class="note">Na stage 3 gaat de koppeling naar volledige lockup (100%) - dat moment geeft in echte telemetrie de piek-G, niet de launch. Stage-percentages hoeven niet oplopend te zijn: een lichte dip tussen stage 1 en 2 (drag haalt de nog niet bijgetrokken koppeling in) is normaal.</p>
+      </div>
+
+      <div class="panel">
+        <div class="sec-title">Chassis &amp; banden</div>
+        <div class="row"><label>Bandenspanning <span class="val" id="v-tpsi">7.5 psi</span></label><input type="range" id="tpsi" min="60" max="90" value="75" step="1"></div>
+        <div class="row"><label>Vleugelhoek (trim) <span class="val" id="v-wing">0.0°</span></label><input type="range" id="wing" min="-25" max="25" value="0" step="1"></div>
+        <p class="note">Bandenspanning: NHRA Top Fuel loopt doorgaans 6–9 psi. Vleugeltrim mag van het reglement maximaal 2° plus 0,5° tolerantie van vlak (dus ±2,5°).</p>
+      </div>
+
+      <button class="run" id="runBtn">Run it</button>
+    </div>
+
+    <div>
+      <div class="panel" id="resultsPanel">
+        <div class="sec-title">Resultaat</div>
+        <div id="placeholder" class="placeholder">Stel je tune in en druk op "Run it"</div>
+        <div id="resultsContent" style="display:none;">
+          <div class="results-grid">
+            <div class="stat"><div class="lbl">60 ft</div><div class="num" id="r-60">--</div></div>
+            <div class="stat"><div class="lbl">330 ft</div><div class="num" id="r-330">--</div></div>
+            <div class="stat"><div class="lbl">660 ft (1/8)</div><div class="num" id="r-660">--</div></div>
+          </div>
+          <div class="results-grid second">
+            <div class="stat"><div class="lbl">660 ft snelheid</div><div class="num" id="r-660mph">--</div></div>
+            <div class="stat"><div class="lbl">ET (1000 ft)</div><div class="num" id="r-et">--</div></div>
+            <div class="stat"><div class="lbl">Trap snelheid</div><div class="num" id="r-mph">--</div></div>
+          </div>
+          <svg id="traceChart" viewBox="0 0 640 260"></svg>
+          <div class="legend">
+            <span><span class="dot" style="background:#f2a71b"></span>ground speed (mph)</span>
+            <span><span class="dot" style="background:#c23b32"></span>wheel speed (mph)</span>
+            <span><span class="dot" style="background:#7a8fae"></span>lagerpositie (werkelijk, %, rechteras)</span>
+            <span><span class="dot" style="background:#8bc98b"></span>effectieve lockup (na vingergewicht+warmte, %, rechteras)</span>
+          </div>
+          <div id="spinFlag"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="inspPanel" style="display:none;">
+        <div class="sec-title">Inspectie na de run</div>
+        <div class="insp-grid">
+          <div class="insp"><div class="lbl">Koppelingswarmte</div><div class="status" id="i-clutch">--</div></div>
+          <div class="insp"><div class="lbl">Geschatte slip</div><div class="status" id="i-slip">--</div></div>
+          <div class="insp"><div class="lbl">Bougies (mengsel)</div><div class="status" id="i-plugs">--</div></div>
+          <div class="insp"><div class="lbl">Lagerslijtage</div><div class="status" id="i-bearing">--</div></div>
+          <div class="insp"><div class="lbl">Koppakking</div><div class="status" id="i-gasket">--</div></div>
+          <div class="insp"><div class="lbl">Bandenslijtage</div><div class="status" id="i-tire">--</div></div>
+          <div class="insp"><div class="lbl">Density altitude</div><div class="status" id="i-da">--</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>
