@@ -2,7 +2,10 @@
 // into a full 1000ft run trace. Pure function, no DOM access.
 
 import { calcDensityAltitude, calcPowerMult, calcGripCoeff } from "./environment.js";
-import { calcEngineFactors, calcFuelFlowGpm } from "./engine.js";
+import {
+  calcEngineFactors, calcMult, calcEngineRpm, calcFuelFlowGpm,
+  calcIdealFuelPct, calcMixtureRichness, activeFuelPct,
+} from "./engine.js";
 import { activeSetpoint, activeSpeed, calcFingerDesired, stepBearingPos } from "./clutch.js";
 import { calcOptimalPsi, calcPsiPenalty, calcTireWear } from "./tires.js";
 import { createDriverState, stepDriver } from "./driver.js";
@@ -26,20 +29,32 @@ const HEAT_RATE = 3.2;
 const HEAT_CAP_BOOST = 0.22;
 const DT = 0.004;
 const MAX_T = 10.0;
+// Sustained lean-under-load (not enough fuel curve to cover the RPM the
+// pump is losing) accumulates damage on the SAME clock as heat-risk damage
+// below - both represent "you are killing this engine," just from opposite
+// ends of the mixture. Sustained rich (fouling) is tracked separately: it
+// costs cylinders, but on its own it never escalates to a full failure the
+// way running lean under load does.
+const LEAN_DAMAGE_RATE = 0.5;
+const FOUL_DAMAGE_RATE = 0.4;
+const CYLINDER_DROP_THRESHOLD = 0.075;
+const ENGINE_FAILURE_THRESHOLD = 0.15;
+const CYLINDER_DROP_FORCE_PENALTY = 0.85; // one or more cylinders misfiring
 
 export function runSimulation(settings) {
   const {
     airtempC, humidity, baroInHg, trackTempC, gripSliderPct,
-    blowerOD, fuelPct, fuelVolPct, gasketThou, ignition,
+    blowerOD, fuelPct, gasketThou, ignition,
     s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
+    fuel1Pct, fuel2Pct, fuel3Pct,
     fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt,
   } = settings;
 
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
   const powerMult = calcPowerMult(densityAltitude);
 
-  const { fuelFactor, fuelVolFactor, compressionFactor, ignEff, mult, heatRisk, detonationRisk } =
-    calcEngineFactors({ blowerOD, fuelPct, fuelVolPct, gasketThou, ignition, powerMult });
+  const { fuelFactor, blowerFactor, compressionFactor, ignEff, heatRisk, detonationRisk } =
+    calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition });
 
   const optimalPsi = calcOptimalPsi(trackTempC);
   const psiPenalty = calcPsiPenalty(tirePsi, optimalPsi);
@@ -56,12 +71,13 @@ export function runSimulation(settings) {
   //    through the back half instead of holding a flat plateau to the
   //    finish - a flat-force model was the structural reason incrementals
   //    never lined up no matter how the individual constants were tuned.
-  const LAUNCH_CAP = 13000 * mult;
-  const POWER_HP = 6500 * mult;
+  // Both now depend on the fuel curve (fuelVolPct), which changes over the
+  // run, so they're recomputed each timestep below instead of once here.
   const wingTrim = 1 + (wingAngle / 2.5) * 0.45;
   const WING_K = WING_BASE_K * wingTrim;
 
   const stages = { s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed };
+  const fuelStages = { s2time, fuel1Pct, s3time, fuel2Pct, fuel3Pct };
   const fingerDesired = calcFingerDesired(fingerWeight);
 
   let t = 0, v = 0, x = 0, wheelV = 0;
@@ -71,12 +87,20 @@ export function runSimulation(settings) {
   let slipIntegral = 0;
   let bearingPos = 0.05;
   // Engine failure: sustained high heat risk (aggressive blower/compression/
-  // nitro combo) accumulates damage. Cross the threshold and the motor lets
-  // go mid-run - this is the real ceiling on "just turn everything up", not
-  // a cosmetic warning.
+  // nitro combo), OR sustained lean-under-load from an undersized fuel
+  // curve, accumulates damage on the same clock. Cross the threshold and
+  // the motor lets go mid-run - the real ceiling on "just turn everything
+  // up" (or "just leave the fuel curve flat"), not a cosmetic warning.
+  // Running rich instead costs cylinders (fouling) via a separate clock
+  // that never escalates to a full failure on its own.
   let engineDamage = 0;
+  let foulDamage = 0;
   let engineFailed = false;
   let engineFailTime = null;
+  let cylindersDropped = false;
+  let cylinderDropTime = null;
+  let cylinderDropCause = null;
+  let richnessIntegral = 0;
   const driverState = createDriverState();
   let lastSlipPct = 0;
 
@@ -86,6 +110,17 @@ export function runSimulation(settings) {
     bearingPos = stepBearingPos(bearingPos, target, speed, DT);
     const heatBoost = 1 + Math.min(clutchTemp / 100, 1) * HEAT_CAP_BOOST;
     const lf = Math.min(fingerDesired, bearingPos) * heatBoost;
+
+    const rpm = calcEngineRpm({ t, groundSpeedFtS: v, s2time, s3time });
+    const fuelVolPctNow = activeFuelPct(t, fuelStages);
+    const { fuelVolFactor, mult } = calcMult({ fuelFactor, fuelVolPct: fuelVolPctNow, blowerFactor, ignEff, compressionFactor, powerMult });
+    const idealFuelPct = calcIdealFuelPct(rpm, fuel1Pct);
+    const richness = calcMixtureRichness(fuelVolPctNow, idealFuelPct);
+    richnessIntegral += richness * DT;
+
+    const LAUNCH_CAP = 13000 * mult;
+    const POWER_HP = 6500 * mult;
+
     const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
     const engineForce = Math.min(powerForce, LAUNCH_CAP * lf) * throttle;
@@ -108,12 +143,25 @@ export function runSimulation(settings) {
     lastSlipPct = slipPct;
     clutchTemp += (slipPct / 100) * HEAT_RATE * DT * 10;
     slipIntegral += slipPct * DT;
+
     engineDamage += Math.max(0, heatRisk - 0.62) * DT;
-    if (!engineFailed && engineDamage > 0.15) {
+    // Lean under load hurts the most right where lf is high - the clutch
+    // is loaded, so the motor can least afford to be starved right then.
+    engineDamage += Math.max(0, -richness) * lf * LEAN_DAMAGE_RATE * DT;
+    foulDamage += Math.max(0, richness) * FOUL_DAMAGE_RATE * DT;
+
+    if (!cylindersDropped && (engineDamage > CYLINDER_DROP_THRESHOLD || foulDamage > CYLINDER_DROP_THRESHOLD)) {
+      cylindersDropped = true;
+      cylinderDropTime = t;
+      cylinderDropCause = engineDamage > CYLINDER_DROP_THRESHOLD ? "power" : "rich";
+    }
+    if (!engineFailed && engineDamage > ENGINE_FAILURE_THRESHOLD) {
       engineFailed = true;
       engineFailTime = t;
     }
     if (engineFailed) appliedForce = 0;
+    else if (cylindersDropped) appliedForce *= CYLINDER_DROP_FORCE_PENALTY;
+
     const drag = 0.5 * RHO_REF * CDA * v * v;
     const net = appliedForce - drag;
     const accel = net * 32.174 / WEIGHT_LB;
@@ -128,12 +176,12 @@ export function runSimulation(settings) {
       wheelV = v;
     }
 
-    const fuelGpm = calcFuelFlowGpm(wheelV, fuelVolFactor);
+    const fuelGpm = calcFuelFlowGpm(rpm, fuelVolFactor);
 
     if (et60 === null && x >= 60) et60 = t;
     if (et330 === null && x >= 330) et330 = t;
     if (et660 === null && x >= 660) { et660 = t; mph660 = v / 1.4667; }
-    trace.push({ t, x, v_mph: v / 1.4667, wheel_mph: wheelV / 1.4667, slip: slipPct, clutch_pos: bearingPos * 100, effective_lockup: Math.min(1, lf) * 100, fuel_gpm: fuelGpm });
+    trace.push({ t, x, v_mph: v / 1.4667, wheel_mph: wheelV / 1.4667, slip: slipPct, clutch_pos: bearingPos * 100, effective_lockup: Math.min(1, lf) * 100, fuel_gpm: fuelGpm, rpm });
     t += DT;
   }
 
@@ -144,7 +192,14 @@ export function runSimulation(settings) {
   const slipEnergy = trace.reduce((acc, p) => acc + p.slip, 0) / trace.length;
   const clutchHeat = Math.min(100, clutchTemp);
   const avgSlipPct = slipIntegral / Math.max(et, 0.001);
-  const plugBalance = (fuelFactor - 1) + (compressionFactor - 1) - (ignEff - 1) * 0.5;
+  // Mixture reading now tracks how well the fuel CURVE matched what the
+  // RPM trace actually called for (see calcMixtureRichness), not just a
+  // static nitro%/compression balance that read "rich" at any normal nitro
+  // percentage regardless of tune. Compression/ignition still nudge it -
+  // a hotter motor burns fuel more completely, reading slightly leaner for
+  // the same delivered mixture.
+  const avgRichness = richnessIntegral / Math.max(et, 0.001);
+  const plugBalance = avgRichness + (compressionFactor - 1) * 0.3 - (ignEff - 1) * 0.5;
   const bearingWear = Math.min(100, (blowerOD - 20) * 0.9 + Math.max(0, (et - 3.8)) * 8);
   const tireWear = calcTireWear(tirePsi, optimalPsi, slipEnergy);
   const peakFuelGpm = trace.reduce((acc, p) => Math.max(acc, p.fuel_gpm), 0);
@@ -153,6 +208,7 @@ export function runSimulation(settings) {
     finished, et, mph, et60, et330, et660, mph660, trace, densityAltitude,
     clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk,
     peakFuelGpm, engineFailed, engineFailTime,
+    cylindersDropped, cylinderDropTime, cylinderDropCause,
     driverLifted: driverState.lifted, driverLiftTime: driverState.liftTime, pedalCount: driverState.pedalCount,
     anySpin: trace.some(p => p.slip > 5),
   };
