@@ -32,7 +32,7 @@ export function runSimulation(settings) {
     airtempC, humidity, baroInHg, trackTempC, gripSliderPct,
     blowerOD, fuelPct, fuelVolPct, gasketThou, ignition,
     s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
-    fingerWeight, tirePsi, wingAngle, driverAggressiveness,
+    fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt,
   } = settings;
 
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
@@ -86,7 +86,7 @@ export function runSimulation(settings) {
     bearingPos = stepBearingPos(bearingPos, target, speed, DT);
     const heatBoost = 1 + Math.min(clutchTemp / 100, 1) * HEAT_CAP_BOOST;
     const lf = Math.min(fingerDesired, bearingPos) * heatBoost;
-    const throttle = stepDriver(driverState, t, lastSlipPct, driverAggressiveness, DT);
+    const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
     const engineForce = Math.min(powerForce, LAUNCH_CAP * lf) * throttle;
     const wingDownforce = WING_K * v * v;

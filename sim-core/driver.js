@@ -29,10 +29,15 @@ export function createDriverState() {
 // Called once per timestep with the PREVIOUS step's slip% (the driver
 // reacts to what the car just did, not what it's about to do this instant -
 // this also avoids a circular dependency, since this step's slip% depends
-// on the throttle this function returns). Returns the throttle fraction
+// on the throttle this function returns) and the car's current distance x
+// (ft). watchUntilX caps how far into the run the driver is actively
+// watching for smoke and reacting to it - past that point (but not before
+// it, and not overriding an already-lifted or already-pedaling driver) the
+// commanded throttle is left alone, as if the driver has settled in and is
+// just holding what the tune gives him. Returns the throttle fraction
 // (0-1) to apply to commanded engine force this step, and mutates
 // driverState in place.
-export function stepDriver(driverState, t, prevSlipPct, aggressiveness, dt) {
+export function stepDriver(driverState, t, x, prevSlipPct, aggressiveness, watchUntilX, dt) {
   if (driverState.lifted) return 0;
 
   if (driverState.pedaling) {
@@ -42,6 +47,11 @@ export function stepDriver(driverState, t, prevSlipPct, aggressiveness, dt) {
       driverState.smokeTime = 0;
     }
     return PEDAL_THROTTLE;
+  }
+
+  if (x > watchUntilX) {
+    driverState.smokeTime = 0;
+    return 1;
   }
 
   if (prevSlipPct >= SMOKE_SLIP_THRESHOLD) {
