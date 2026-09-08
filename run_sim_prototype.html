@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top Fuel Crew Chief — Run Sim v0.22</title>
+<style>
+  :root{
+    --bg:#14171a; --panel:#1c2126; --panel-alt:#20262c; --border:#2c333b;
+    --text:#e9e6de; --muted:#8b939b; --amber:#f2a71b; --amber-dim:#8a611c;
+    --red:#c23b32; --green:#4c9a6a;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --disp: "Arial Narrow", "Helvetica Neue Condensed", Impact, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,sans-serif;}
+  .wrap{max-width:1100px; margin:0 auto; padding:20px;}
+  h1{font-family:var(--disp); font-weight:800; letter-spacing:0.5px; font-size:28px; margin:0 0 4px;}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 20px;}
+  .grid{display:grid; grid-template-columns: 1fr; gap:16px;}
+  @media(min-width:820px){ .grid{grid-template-columns: 380px 1fr;} }
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:16px;}
+  .panel + .panel{margin-top:16px;}
+  .sec-title{font-family:var(--disp); font-weight:800; font-size:15px; letter-spacing:0.3px; color:var(--amber); border-top:3px solid var(--amber); padding-top:8px; margin:0 0 14px;}
+  .row{margin-bottom:14px;}
+  .row label{display:flex; justify-content:space-between; font-size:13px; color:var(--muted); margin-bottom:4px;}
+  .row label span.val{font-family:var(--mono); color:var(--text); font-weight:600;}
+  input[type=range]{width:100%; accent-color:var(--amber);}
+  button.run{width:100%; background:var(--amber); color:#1a1200; border:none; border-radius:6px; padding:14px; font-family:var(--disp); font-weight:800; font-size:18px; letter-spacing:1px; cursor:pointer; margin-top:6px;}
+  button.run:active{transform:scale(0.98);}
+  .results-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:10px;}
+  .results-grid.second{margin-top:10px;}
+  .stat{background:var(--panel-alt); border-radius:6px; padding:10px 12px;}
+  .stat .lbl{font-size:11px; color:var(--muted); margin-bottom:2px;}
+  .stat .num{font-family:var(--mono); font-size:20px; font-weight:700;}
+  svg{width:100%; height:auto; display:block; margin-top:10px;}
+  .legend{display:flex; gap:16px; font-size:12px; color:var(--muted); margin-top:6px; flex-wrap:wrap;}
+  .legend span{display:inline-flex; align-items:center; gap:6px;}
+  .dot{width:10px; height:10px; border-radius:2px; display:inline-block;}
+  .insp-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:10px;}
+  .insp{background:var(--panel-alt); border-radius:6px; padding:10px 12px;}
+  .insp .lbl{font-size:11px; color:var(--muted); margin-bottom:4px;}
+  .insp .status{font-family:var(--mono); font-weight:700; font-size:14px;}
+  .status.ok{color:var(--green);} .status.warn{color:var(--amber);} .status.bad{color:var(--red);}
+  .placeholder{color:var(--muted); font-size:13px; text-align:center; padding:40px 0;}
+  .flag{background:rgba(194,59,50,0.15); border:1px solid var(--red); color:#f2938c; font-size:12px; padding:8px 10px; border-radius:4px; margin-top:10px;}
+  .note{font-size:11px; color:var(--muted); margin-top:8px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Top Fuel Crew Chief — Run Sim</h1>
+  <p class="sub">v0.3 prototype · 1000 ft · realistischere telemetrie: wheel speed vs ground speed + split-markers</p>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <div class="sec-title">Environment</div>
+        <div class="row"><label>Luchttemperatuur <span class="val" id="v-airtemp">30°C</span></label><input type="range" id="airtemp" min="10" max="45" value="30" step="1"></div>
+        <div class="row"><label>Luchtvochtigheid <span class="val" id="v-hum">40%</span></label><input type="range" id="hum" min="0" max="100" value="40" step="1"></div>
+        <div class="row"><label>Luchtdruk <span class="val" id="v-baro">29.90 inHg</span></label><input type="range" id="baro" min="2880" max="3020" value="2990" step="1"></div>
+        <div class="row"><label>Baan temperatuur <span class="val" id="v-track">28°C</span></label><input type="range" id="track" min="15" max="65" value="28" step="1"></div>
+        <div class="row"><label>VHT / baanprep <span class="val" id="v-grip">70%</span></label><input type="range" id="grip" min="0" max="100" value="70" step="1"></div>
+        <p class="note" id="grip-hint">Effectieve grip: -- (uitkomst van VHT% + baantemperatuur + bandenspanning)</p>
+      </div>
+
+      <div class="panel">
+        <div class="sec-title">Engine</div>
+        <div class="row"><label>Blower overdrive <span class="val" id="v-blower">48%</span></label><input type="range" id="blower" min="20" max="70" value="48" step="1"></div>
+        <div class="row"><label>Nitro percentage <span class="val" id="v-fuel">90%</span></label><input type="range" id="fuel" min="75" max="98" value="90" step="1"></div>
+        <p class="note" id="nitro-hint">Richtwaarde voor dit weer: 90% (rondom 90% is de norm; bij warmere, ijlere lucht wat meer, bij koude dichte lucht wat minder)</p>
+        <div class="row"><label>Brandstoftoevoer (pompvolume) <span class="val" id="v-fuelvol">70%</span></label><input type="range" id="fuelvol" min="40" max="100" value="70" step="1"></div>
+        <div class="row"><label>Koppakking dikte <span class="val" id="v-gasket">0.040"</span></label><input type="range" id="gasket" min="25" max="60" value="40" step="1"></div>
+        <div class="row"><label>Ontstekingstiming <span class="val" id="v-ign">40°</span></label><input type="range" id="ign" min="30" max="50" value="40" step="1"></div>
+        <p class="note" id="power-hint">Geschat piekvermogen: -- pk</p>
+      </div>
+
+      <div class="panel">
+        <div class="sec-title">Clutch</div>
+        <div class="row"><label>Stage 1 tijd <span class="val" id="v-s1t">0.10s</span></label><input type="range" id="s1t" min="0" max="100" value="10" step="5"></div>
+        <div class="row"><label>Stage 1 max lockup <span class="val" id="v-s1p">90%</span></label><input type="range" id="s1p" min="10" max="90" value="90" step="1"></div>
+        <div class="row"><label>Stage 2 tijd <span class="val" id="v-s2t">1.00s</span></label><input type="range" id="s2t" min="100" max="200" value="100" step="5"></div>
+        <div class="row"><label>Stage 2 max lockup <span class="val" id="v-s2p">65%</span></label><input type="range" id="s2p" min="30" max="90" value="65" step="1"></div>
+        <div class="row"><label>Stage 3 tijd <span class="val" id="v-s3t">2.15s</span></label><input type="range" id="s3t" min="200" max="350" value="215" step="5"></div>
+        <div class="row"><label>Stage 3 max lockup <span class="val" id="v-s3p">90%</span></label><input type="range" id="s3p" min="60" max="100" value="90" step="1"></div>
+        <div class="row"><label>Vingergewicht (gewenste lockup) <span class="val" id="v-fw">100</span></label><input type="range" id="fw" min="0" max="100" value="100" step="1"></div>
+        <div class="row"><label>Lager snelheid (hydraulisch) <span class="val" id="v-bspeed">200%/s</span></label><input type="range" id="bspeed" min="20" max="250" value="200" step="5"></div>
+        <p class="note" id="clutch-reach-hint">Haalbare lockup per stage: --</p>
+        <p class="note">Na stage 3 gaat de koppeling naar volledige lockup (100%) - dat moment geeft in echte telemetrie de piek-G, niet de launch. Stage-percentages hoeven niet oplopend te zijn: een lichte dip tussen stage 1 en 2 (drag haalt de nog niet bijgetrokken koppeling in) is normaal.</p>
+      </div>
+
+      <div class="panel">
+        <div class="sec-title">Chassis &amp; banden</div>
+        <div class="row"><label>Bandenspanning <span class="val" id="v-tpsi">7.5 psi</span></label><input type="range" id="tpsi" min="60" max="90" value="75" step="1"></div>
+        <div class="row"><label>Vleugelhoek (trim) <span class="val" id="v-wing">0.0°</span></label><input type="range" id="wing" min="-25" max="25" value="0" step="1"></div>
+        <p class="note">Bandenspanning: NHRA Top Fuel loopt doorgaans 6–9 psi. Vleugeltrim mag van het reglement maximaal 2° plus 0,5° tolerantie van vlak (dus ±2,5°).</p>
+      </div>
+
+      <button class="run" id="runBtn">Run it</button>
+    </div>
+
+    <div>
+      <div class="panel" id="resultsPanel">
+        <div class="sec-title">Resultaat</div>
+        <div id="placeholder" class="placeholder">Stel je tune in en druk op "Run it"</div>
+        <div id="resultsContent" style="display:none;">
+          <div class="results-grid">
+            <div class="stat"><div class="lbl">60 ft</div><div class="num" id="r-60">--</div></div>
+            <div class="stat"><div class="lbl">330 ft</div><div class="num" id="r-330">--</div></div>
+            <div class="stat"><div class="lbl">660 ft (1/8)</div><div class="num" id="r-660">--</div></div>
+          </div>
+          <div class="results-grid second">
+            <div class="stat"><div class="lbl">660 ft snelheid</div><div class="num" id="r-660mph">--</div></div>
+            <div class="stat"><div class="lbl">ET (1000 ft)</div><div class="num" id="r-et">--</div></div>
+            <div class="stat"><div class="lbl">Trap snelheid</div><div class="num" id="r-mph">--</div></div>
+          </div>
+          <svg id="traceChart" viewBox="0 0 640 260"></svg>
+          <div class="legend">
+            <span><span class="dot" style="background:#f2a71b"></span>ground speed (mph)</span>
+            <span><span class="dot" style="background:#c23b32"></span>wheel speed (mph)</span>
+            <span><span class="dot" style="background:#7a8fae"></span>lagerpositie (werkelijk, %, rechteras)</span>
+            <span><span class="dot" style="background:#8bc98b"></span>effectieve lockup (na vingergewicht+warmte, %, rechteras)</span>
+          </div>
+          <div id="spinFlag"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="inspPanel" style="display:none;">
+        <div class="sec-title">Inspectie na de run</div>
+        <div class="insp-grid">
+          <div class="insp"><div class="lbl">Koppelingswarmte</div><div class="status" id="i-clutch">--</div></div>
+          <div class="insp"><div class="lbl">Geschatte slip</div><div class="status" id="i-slip">--</div></div>
+          <div class="insp"><div class="lbl">Bougies (mengsel)</div><div class="status" id="i-plugs">--</div></div>
+          <div class="insp"><div class="lbl">Lagerslijtage</div><div class="status" id="i-bearing">--</div></div>
+          <div class="insp"><div class="lbl">Koppakking</div><div class="status" id="i-gasket">--</div></div>
+          <div class="insp"><div class="lbl">Bandenslijtage</div><div class="status" id="i-tire">--</div></div>
+          <div class="insp"><div class="lbl">Density altitude</div><div class="status" id="i-da">--</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function $(id){ return document.getElementById(id); }
+
+const sliders = ["airtemp","hum","baro","track","grip","blower","fuel","fuelvol","gasket","ign","s1t","s1p","s2t","s2p","s3t","s3p","fw","bspeed","tpsi","wing"];
+function fmt(id, val){
+  switch(id){
+    case "airtemp": return val + "°C";
+    case "hum": return val + "%";
+    case "baro": return (val/100).toFixed(2) + " inHg";
+    case "track": return val + "°C";
+    case "grip": return val + "%";
+    case "blower": return val + "%";
+    case "fuel": return val + "%";
+    case "fuelvol": return val + "%";
+    case "gasket": return (val/1000).toFixed(3) + '"';
+    case "ign": return val + "°";
+    case "s1t": return (val/100).toFixed(2) + "s";
+    case "s1p": return val + "%";
+    case "s2t": return (val/100).toFixed(2) + "s";
+    case "s2p": return val + "%";
+    case "s3t": return (val/100).toFixed(2) + "s";
+    case "s3p": return val + "%";
+    case "bspeed": return val + "%/s";
+    case "fw": return val;
+    case "tpsi": return (val/10).toFixed(1) + " psi";
+    case "wing": return (val/10).toFixed(1) + "°";
+  }
+}
+sliders.forEach(id=>{
+  const el = $(id);
+  const out = $("v-"+id);
+  out.textContent = fmt(id, el.value);
+  el.addEventListener("input", ()=>{ out.textContent = fmt(id, el.value); });
+});
+
+function updateClutchReachHint(){
+  const s1time = +$("s1t").value/100;
+  const s1pct = +$("s1p").value/100;
+  const s2time = +$("s2t").value/100;
+  const s2pct = +$("s2p").value/100;
+  const s3time = +$("s3t").value/100;
+  const s3pct = +$("s3p").value/100;
+  const bearingSpeed = +$("bspeed").value/100;
+
+  // Reachable lockup within a stage = however far the bearing can travel at
+  // bearingSpeed in the time available, capped by the setpoint itself. If
+  // the reachable value is below the setpoint, that setpoint is currently
+  // "dead" - raising it further won't do anything until you also give the
+  // bearing more time or more speed.
+  let pos = 0.05;
+  const reach1 = Math.min(s1pct, pos + bearingSpeed*s1time);
+  pos = reach1;
+  const reach2 = s2pct >= pos
+    ? Math.min(s2pct, pos + bearingSpeed*(s2time-s1time))
+    : Math.max(s2pct, pos - bearingSpeed*(s2time-s1time));
+  pos = reach2;
+  const reach3 = s3pct >= pos
+    ? Math.min(s3pct, pos + bearingSpeed*(s3time-s2time))
+    : Math.max(s3pct, pos - bearingSpeed*(s3time-s2time));
+
+  function fmtReach(setpoint, reached){
+    const dead = Math.abs(reached-setpoint) > 0.02;
+    const pct = Math.round(reached*100);
+    return dead ? `${pct}% <span style="color:var(--red)">(setpoint ${Math.round(setpoint*100)}% niet gehaald - te weinig tijd/snelheid)</span>` : `${pct}%`;
+  }
+  $("clutch-reach-hint").innerHTML = `Haalbare lockup per stage: S1 ${fmtReach(s1pct,reach1)} · S2 ${fmtReach(s2pct,reach2)} · S3 ${fmtReach(s3pct,reach3)}`;
+}
+["s1t","s1p","s2t","s2p","s3t","s3p","bspeed"].forEach(id=>{
+  $(id).addEventListener("input", updateClutchReachHint);
+});
+updateClutchReachHint();
+
+function calcDensityAltitude(airtempC, humidity, baroInHg){
+  const airtempF = airtempC*9/5+32;
+  const pressureAltitude = (29.92 - baroInHg) * 1000;
+  let da = pressureAltitude + 120*(airtempF-59) + humidity*3;
+  return Math.max(-3000, Math.min(10000, da));
+}
+
+function calcPowerMult(da){
+  const daClamped = Math.max(-3000, Math.min(8000, da));
+  return 1 - daClamped/60000;
+}
+
+function calcEngineMult(blowerOD, fuelPct, fuelVolPct, gasketThou, ignition, powerMultNow){
+  const fuelFactor = 0.60 + (fuelPct-75)/23*0.80;
+  const fuelVolFactor = 0.60 + (fuelVolPct-40)/60*0.80;
+  const blowerNorm = Math.max(0, (blowerOD-20)/50);
+  const blowerFactor = 0.85 + Math.sqrt(blowerNorm)*0.27;
+  const ignEff = 1 - Math.abs(ignition-40)/40*0.30;
+  const compressionFactor = 0.85 + (60-gasketThou)/35*0.27;
+  return fuelFactor*fuelVolFactor*blowerFactor*ignEff*compressionFactor*powerMultNow;
+}
+
+function updateEngineHints(){
+  const airtempC = +$("airtemp").value;
+  const humidity = +$("hum").value;
+  const baroInHg = +$("baro").value/100;
+  const trackTempC = +$("track").value;
+  const gripSlider = +$("grip").value;
+  const blowerOD = +$("blower").value;
+  const fuelPct = +$("fuel").value;
+  const fuelVolPct = +$("fuelvol").value;
+  const gasketThou = +$("gasket").value;
+  const ignition = +$("ign").value;
+
+  const da = calcDensityAltitude(airtempC, humidity, baroInHg);
+  const powerMultNow = calcPowerMult(da);
+  const mult = calcEngineMult(blowerOD, fuelPct, fuelVolPct, gasketThou, ignition, powerMultNow);
+  $("power-hint").textContent = `Geschat piekvermogen: ${Math.round(12000*mult).toLocaleString("nl-NL")} pk (basis 12.000 pk bij standaard lucht, voor eigen koppeling/grip-verlies)`;
+
+  // Nitro%: solve for the fuelPct that restores the same effective power as
+  // a 90% tune at reference (sea-level) conditions.
+  const fuelFactor90 = 0.60 + (90-75)/23*0.80;
+  const powerMultRef = 1;
+  const targetFuelFactor = fuelFactor90 * (powerMultRef/powerMultNow);
+  let recommendedNitro = 75 + 23*(targetFuelFactor-0.60)/0.80;
+  recommendedNitro = Math.max(75, Math.min(98, Math.round(recommendedNitro)));
+
+  const hint = $("nitro-hint");
+  const delta = da;
+  const trend = delta > 300 ? "warmer/ijlere lucht → wat meer nitro (of blower) om het vermogen op peil te houden"
+              : (delta < -300 ? "koudere/dichtere lucht → wat minder nitro kan al genoeg zijn" : "conditie dicht bij standaard");
+  let text = `Richtwaarde voor dit weer: ${recommendedNitro}% (${trend})`;
+
+  // Bad track: recommend backing OFF power rather than compensating upward,
+  // since more power you can't put to the ground just costs you via slip.
+  const optimalPsi = 6.5 + (trackTempC-15)/50*2.3;
+  const tirePsi = +$("tpsi").value/10;
+  const psiPenalty = Math.abs(tirePsi-optimalPsi)*0.45;
+  const optimalTrackTempC = 24;
+  const trackTempDiff = trackTempC - optimalTrackTempC;
+  const trackHeatPenalty = trackTempDiff < 0 ? 0.031*trackTempDiff*trackTempDiff : 0.0025*trackTempDiff*trackTempDiff;
+  const gripFraction = gripSlider/100;
+  const gripEstimate = Math.max(0.6, (0.9+gripFraction*5.7)-trackHeatPenalty-psiPenalty);
+  if(gripEstimate < 2.2){
+    text += ` — let op: de baan/banden geven weinig grip, extra vermogen erbij zetten kost je nu waarschijnlijk meer aan wielspin dan het oplevert. Overweeg juist minder nitro/blower.`;
+  }
+  hint.textContent = text;
+
+  const gripHint = $("grip-hint");
+  const tempQuality = trackTempDiff < 0
+    ? (trackTempDiff < -15 ? "veel te koud, traction compound activeert nauwelijks" : "iets aan de koude kant")
+    : (trackTempDiff > 25 ? "veel te heet, baan wordt gooey/glad" : (trackTempDiff > 8 ? "iets aan de warme kant" : "in de sweet spot (~24°C / 75°F)"));
+  // Displayed purely as a kN-flavored readout (2600-3400 span), rescaled
+  // from the internal grip coefficient (0.6-6.6) after temp/tire penalties -
+  // this is the OUTCOME of VHT% + track temp + tire pressure, not an input.
+  const gripKN = Math.round(2600 + Math.max(0, Math.min(1, (gripEstimate-0.6)/6.0)) * 800);
+  gripHint.textContent = `Effectieve grip: ${gripKN} kN (${tempQuality})`;
+}
+["airtemp","hum","baro","track","grip","blower","fuel","fuelvol","gasket","ign","tpsi"].forEach(id=>{
+  $(id).addEventListener("input", updateEngineHints);
+});
+updateEngineHints();
+
+function runSimulation(){
+  const airtempC = +$("airtemp").value;
+  const humidity = +$("hum").value;
+  const baroInHg = +$("baro").value/100;
+  const trackTempC = +$("track").value;
+  const gripSlider = +$("grip").value;
+  const blowerOD = +$("blower").value;
+  const fuelPct = +$("fuel").value;
+  const fuelVolPct = +$("fuelvol").value;
+  const gasketThou = +$("gasket").value;
+  const ignition = +$("ign").value;
+  const s1time = +$("s1t").value/100;
+  const s1pct = +$("s1p").value/100;
+  const s2time = +$("s2t").value/100;
+  const s2pct = +$("s2p").value/100;
+  const s3time = +$("s3t").value/100;
+  const s3pct = +$("s3p").value/100;
+  const fingerWeight = +$("fw").value;
+  const bearingSpeed = (+$("bspeed").value/100);
+  const tirePsi = +$("tpsi").value/10;
+  const wingAngle = +$("wing").value/10;
+
+  const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
+  const powerMult = calcPowerMult(densityAltitude);
+
+  // Nitro% en brandstoftoevoer zijn de grote vermogensknoppen (chemische
+  // energie-inhoud van het mengsel). Blower en koppakking geven een
+  // vergelijkbaar, kleiner bereik. Blower heeft bovendien afnemende
+  // meeropbrengst (sqrt-curve): hoe hoger de overdrive, hoe minder extra
+  // vermogen elke stap oplevert, en hoe meer warmte er in het mengsel komt.
+  const fuelFactor = 0.60 + (fuelPct-75)/23*0.80;
+  const fuelVolFactor = 0.60 + (fuelVolPct-40)/60*0.80;
+  const blowerNorm = Math.max(0, (blowerOD-20)/50);
+  const blowerFactor = 0.85 + Math.sqrt(blowerNorm)*0.27;
+  const ignEff = 1 - Math.abs(ignition-40)/40*0.30;
+  const compressionFactor = 0.85 + (60-gasketThou)/35*0.27;
+
+  // Detonatierisico is nu vooral een blower/warmte-verhaal: hoe sneller de
+  // blower draait, hoe heter het mengsel wordt, met compressie en nitro% als
+  // versterkende factoren.
+  const heatRisk = blowerNorm*0.65 + Math.max(0,(compressionFactor-1))*1.1 + Math.max(0,(fuelPct-88))/10*0.15;
+  const detonationRisk = heatRisk > 0.62;
+
+  // Grip: NHRA Top Fuel rear tire pressure typically runs 6-9 psi. On a hot,
+  // greasy track higher pressure helps; on a cool, grippy track lower helps.
+  // Range widened so a well-tuned launch can approach real peak launch g's
+  // (~5.6g per published Top Fuel figures) - the old ceiling capped effective
+  // launch acceleration at ~3g, which made a 0.8s 60ft physically impossible
+  // no matter how the clutch was tuned.
+  const optimalPsi = 6.5 + (trackTempC-15)/50*2.3;
+  const psiPenalty = Math.abs(tirePsi-optimalPsi)*0.45;
+  // Track temp vs grip is a real inverted-U, not a simple "hotter = worse":
+  // below ~70F (21C) traction drops off fast (compound doesn't activate,
+  // dew risk); 70-90F (21-32C) is the sweet spot most crew chiefs cite;
+  // above ~100-115F (38-46C) the traction compound gets "gooey" and grip
+  // falls off again, though more gradually than the cold-side drop.
+  const optimalTrackTempC = 24;
+  const trackTempDiff = trackTempC - optimalTrackTempC;
+  const trackHeatPenalty = trackTempDiff < 0 ? 0.031*trackTempDiff*trackTempDiff : 0.0025*trackTempDiff*trackTempDiff;
+  const gripFraction = gripSlider/100;
+  const baseGripCoeff = Math.max(0.6, (0.9 + gripFraction*5.7) - trackHeatPenalty - psiPenalty);
+
+  const WEIGHT_LB = 2320;
+  // Two engine-side ceilings, calibrated against real published Top Fuel
+  // reference points (60ft ~0.8s @ ~100mph, 1000ft ~3.65s @ ~330-338mph,
+  // peak launch g ~5.6, ~297mph+ by 660ft):
+  // 1) LAUNCH_CAP - the clutch's maximum transmittable torque as a wheel
+  //    force. This governs the early-mid run and is what gives the sharp
+  //    early g's - constant regardless of speed.
+  // 2) A power-based ceiling (force = power/speed) that naturally FALLS as
+  //    speed rises. This is what makes real Top Fuel acceleration taper
+  //    through the back half instead of holding a flat plateau to the
+  //    finish - a flat-force model was the structural reason incrementals
+  //    never lined up no matter how the individual constants were tuned.
+  const mult = fuelFactor * fuelVolFactor * blowerFactor * ignEff * compressionFactor * powerMult;
+  const LAUNCH_CAP = 13000 * mult;
+  const POWER_HP = 6500 * mult;
+  const V_FLOOR = 30;
+  const CDA = 9.0;
+  const RHO_REF = 0.00237;
+  // Rear wing: NHRA rules cap adjustable trim at +-2 deg from level; the fixed
+  // wing itself produces most of the ~5000-6000 lb of downforce at 300 mph.
+  const WING_BASE_K = 0.0284;
+  const wingTrim = 1 + (wingAngle/2.5)*0.45;
+  const WING_K = WING_BASE_K * wingTrim;
+
+
+  function activeSetpoint(t){
+    // Each stage timer commands a new target for the bearing; it does not
+    // jump there, it travels toward it hydraulically (see bearingSpeed).
+    // Real telemetry (G-meter trace) shows the G-peak happening at FULL
+    // lockup, not at launch - launch gives a moderate plateau, there's often
+    // a dip as drag catches up before the next stage clamps harder, then a
+    // climb to the peak right as the clutch fully locks, followed by a
+    // decay as speed/drag take over. s3time is when full lockup (1.0) is
+    // commanded - that's the moment the peak G in real telemetry occurs.
+    if(t < s1time) return s1pct;
+    if(t < s2time) return s2pct;
+    if(t < s3time) return s3pct;
+    return 1.0;
+  }
+  // Finger-desired lockup: how far centrifugal force wants to push the
+  // fingers out, purely from finger weight (assumes launch RPM is reached
+  // and roughly held through the run - real cars do vary RPM, but that's a
+  // future refinement). Noted for later: as the friction pack wears/thins
+  // from slip heat, the fingers can travel further for the same weight,
+  // which would raise this value progressively - not modeled yet.
+  const fingerDesired = 0.30 + (fingerWeight/100)*0.70;
+
+  const dt = 0.004;
+  let t=0, v=0, x=0, wheelV=0;
+  let et60=null, et330=null, et660=null, mph660=null;
+  const trace = [];
+  const maxT = 10.0;
+  // Effective rotating-mass weight for the rear wheel/driveline: much lower
+  // than the car's weight, so a spinning tire can rev up far faster than the
+  // chassis accelerates - this is what produces the characteristic early
+  // wheel-speed spike above ground speed on real telemetry traces.
+  const WHEEL_WEIGHT_LB = 260;
+  const MAX_SLIP_EXCESS_FTS = 260;
+  // Clutch temperature builds from slip and makes the pack grabbier
+  // (aggressiveness boost), up to a capped ceiling.
+  let clutchTemp = 0;
+  const HEAT_RATE = 3.2;
+  const HEAT_CAP_BOOST = 0.22;
+  let slipIntegral = 0;
+  let bearingPos = 0.05;
+  // Engine failure: sustained high heat risk (aggressive blower/compression/
+  // nitro combo) accumulates damage. Cross the threshold and the motor lets
+  // go mid-run - this is the real ceiling on "just turn everything up",
+  // not a cosmetic warning.
+  let engineDamage = 0;
+  let engineFailed = false;
+  let engineFailTime = null;
+
+  while(x < 1000 && t < maxT){
+    const target = activeSetpoint(t);
+    if(bearingPos < target) bearingPos = Math.min(target, bearingPos + bearingSpeed*dt);
+    else if(bearingPos > target) bearingPos = Math.max(target, bearingPos - bearingSpeed*dt);
+    const heatBoost = 1 + Math.min(clutchTemp/100, 1) * HEAT_CAP_BOOST;
+    const lf = Math.min(fingerDesired, bearingPos) * heatBoost;
+    const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
+    const engineForce = Math.min(powerForce, LAUNCH_CAP * lf);
+    const wingDownforce = WING_K * v * v;
+    const maxTraction = (WEIGHT_LB + wingDownforce) * baseGripCoeff;
+    let appliedForce, slipPct, slipping;
+    if(engineForce > maxTraction){
+      slipPct = Math.min(100, ((engineForce-maxTraction)/engineForce)*100);
+      // Progressive penalty: a little managed slip barely costs anything,
+      // but heavy overpowering the tires (going up in smoke) costs real
+      // forward force, not just a flat 7% haircut.
+      const efficiency = 0.93 - Math.min(0.45, (slipPct/100) * 0.65);
+      appliedForce = maxTraction * efficiency;
+      slipping = true;
+    } else {
+      appliedForce = engineForce;
+      slipPct = 0;
+      slipping = false;
+    }
+    clutchTemp += (slipPct/100) * HEAT_RATE * dt * 10;
+    slipIntegral += slipPct * dt;
+    engineDamage += Math.max(0, heatRisk - 0.62) * dt;
+    if(!engineFailed && engineDamage > 0.15){
+      engineFailed = true;
+      engineFailTime = t;
+    }
+    if(engineFailed) appliedForce = 0;
+    const drag = 0.5*RHO_REF*CDA*v*v;
+    const net = appliedForce - drag;
+    const accel = net*32.174/WEIGHT_LB;
+    v = Math.max(0, v + accel*dt);
+    x += v*dt;
+
+    if(slipping){
+      const wheelAccel = (engineForce-appliedForce)*32.174/WHEEL_WEIGHT_LB + accel;
+      wheelV = Math.min(v + MAX_SLIP_EXCESS_FTS, wheelV + wheelAccel*dt);
+      if(wheelV < v) wheelV = v;
+    } else {
+      wheelV = v;
+    }
+
+    if(et60===null && x>=60) et60 = t;
+    if(et330===null && x>=330) et330 = t;
+    if(et660===null && x>=660){ et660 = t; mph660 = v/1.4667; }
+    trace.push({t, x, v_mph: v/1.4667, wheel_mph: wheelV/1.4667, slip: slipPct, clutch_pos: bearingPos*100, effective_lockup: Math.min(1,lf)*100});
+    t += dt;
+  }
+
+  const finished = x >= 1000;
+  const et = t;
+  const mph = trace.length ? trace[trace.length-1].v_mph : 0;
+
+  const slipEnergy = trace.reduce((acc,p)=>acc + p.slip, 0) / trace.length;
+  const clutchHeat = Math.min(100, clutchTemp);
+  const avgSlipPct = slipIntegral / Math.max(et, 0.001);
+  const plugBalance = (fuelFactor-1) + (compressionFactor-1) - (ignEff-1)*0.5;
+  const bearingWear = Math.min(100, (blowerOD-20)*0.9 + Math.max(0,(et-3.8))*8);
+  const tireWear = Math.min(100, Math.abs(tirePsi-optimalPsi)*8 + slipEnergy*1.5);
+
+  return {
+    finished, et, mph, et60, et330, et660, mph660, trace, densityAltitude,
+    clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk,
+    engineFailed, engineFailTime,
+    anySpin: trace.some(p=>p.slip>5)
+  };
+}
+
+function drawChart(trace, splits){
+  const W=640,H=280, padL=42, padR=38, padT=10, padB=34;
+  const maxV = Math.max(...trace.map(p=>Math.max(p.v_mph,p.wheel_mph)), 10) * 1.05;
+  const maxT = trace[trace.length-1].t;
+  function xs(t){ return padL + (t/maxT)*(W-padL-padR); }
+  function ysV(v){ return H-padB - (v/maxV)*(H-padT-padB); }
+  function ysPct(p){ return H-padB - (p/100)*(H-padT-padB); }
+
+  let speedPath = "M " + trace.map(p=>`${xs(p.t).toFixed(1)},${ysV(p.v_mph).toFixed(1)}`).join(" L ");
+  let wheelPath = "M " + trace.map(p=>`${xs(p.t).toFixed(1)},${ysV(p.wheel_mph).toFixed(1)}`).join(" L ");
+  let clutchPath = "M " + trace.map(p=>`${xs(p.t).toFixed(1)},${ysPct(p.clutch_pos).toFixed(1)}`).join(" L ");
+  let effLockupPath = "M " + trace.map(p=>`${xs(p.t).toFixed(1)},${ysPct(p.effective_lockup).toFixed(1)}`).join(" L ");
+
+  let gridLines = "";
+  for(let i=0;i<=4;i++){
+    const yy = padT + i*(H-padT-padB)/4;
+    const val = Math.round(maxV - i*maxV/4);
+    const pctVal = Math.round(100 - i*100/4);
+    gridLines += `<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="#2c333b" stroke-width="1"/>`;
+    gridLines += `<text x="${padL-6}" y="${yy+4}" text-anchor="end" font-size="10" fill="#8b939b" font-family="ui-monospace,monospace">${val}</text>`;
+    gridLines += `<text x="${W-padR+6}" y="${yy+4}" text-anchor="start" font-size="10" fill="#7a8fae" font-family="ui-monospace,monospace">${pctVal}</text>`;
+  }
+
+  let splitLines = "";
+  splits.forEach(s=>{
+    if(s.t==null) return;
+    const sx = xs(s.t);
+    splitLines += `<line x1="${sx.toFixed(1)}" y1="${padT}" x2="${sx.toFixed(1)}" y2="${H-padB}" stroke="#5f5e5a" stroke-width="1" stroke-dasharray="3,3"/>`;
+    splitLines += `<text x="${sx.toFixed(1)}" y="${H-padB+13}" text-anchor="middle" font-size="9" fill="#8b939b" font-family="ui-monospace,monospace">${s.label}</text>`;
+    splitLines += `<text x="${sx.toFixed(1)}" y="${H-padB+25}" text-anchor="middle" font-size="9" fill="#5f5e5a" font-family="ui-monospace,monospace">${s.t.toFixed(2)}s</text>`;
+  });
+
+  const svg = `
+    ${gridLines}
+    <line x1="${padL}" y1="${H-padB}" x2="${W-padR}" y2="${H-padB}" stroke="#2c333b" stroke-width="1"/>
+    ${splitLines}
+    <path d="${effLockupPath}" fill="none" stroke="#8bc98b" stroke-width="1.5" opacity="0.9"/>
+    <path d="${clutchPath}" fill="none" stroke="#7a8fae" stroke-width="1.5" stroke-dasharray="4,2" opacity="0.9"/>
+    <path d="${wheelPath}" fill="none" stroke="#c23b32" stroke-width="1.5" opacity="0.85"/>
+    <path d="${speedPath}" fill="none" stroke="#f2a71b" stroke-width="2.5"/>
+  `;
+  $("traceChart").setAttribute("viewBox", `0 0 ${W} ${H}`);
+  $("traceChart").innerHTML = svg;
+}
+
+function statusClass(val, warnAt, badAt){
+  if(val>=badAt) return "bad";
+  if(val>=warnAt) return "warn";
+  return "ok";
+}
+
+$("runBtn").addEventListener("click", ()=>{
+  const r = runSimulation();
+  $("placeholder").style.display="none";
+  $("resultsContent").style.display="block";
+  $("inspPanel").style.display="block";
+
+  $("r-60").textContent = r.et60 ? r.et60.toFixed(3)+"s" : "n.v.t.";
+  $("r-330").textContent = r.et330 ? r.et330.toFixed(3)+"s" : "n.v.t.";
+  $("r-660").textContent = r.et660 ? r.et660.toFixed(3)+"s" : "n.v.t.";
+  $("r-660mph").textContent = r.mph660 ? r.mph660.toFixed(1)+" mph" : "n.v.t.";
+  $("r-et").textContent = r.finished ? r.et.toFixed(3)+"s" : (r.engineFailed ? "MOTOR" : "DNF");
+  $("r-et").style.color = r.finished ? "var(--text)" : "var(--red)";
+  $("r-mph").textContent = r.mph.toFixed(1)+" mph";
+
+  drawChart(r.trace, [
+    {label:"60'", t:r.et60},
+    {label:"330'", t:r.et330},
+    {label:"660'", t:r.et660},
+    {label: r.finished ? "1000'" : null, t: r.finished ? r.et : null}
+  ]);
+
+  const spinFlag = $("spinFlag");
+  let flags = "";
+  if(r.engineFailed) flags += `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% was te heet om vol te houden.</div>`;
+  else if(!r.finished) flags += `<div class="flag">Auto bereikte de 1000 ft niet binnen ${r.et.toFixed(1)}s — te weinig grip/vermogen om op snelheid te komen. Draai bij.</div>`;
+  if(r.anySpin && !r.engineFailed) flags += `<div class="flag">Wielenspin gedetecteerd tijdens de run — motorvermogen overschreed de beschikbare grip.</div>`;
+  if(r.detonationRisk && !r.engineFailed) flags += `<div class="flag">Detonatierisico: hoge compressie + hoog nitropercentage + veel voorontsteking is een gevaarlijke combinatie.</div>`;
+  spinFlag.innerHTML = flags;
+
+  const ch = r.clutchHeat;
+  const chCls = statusClass(ch,45,70);
+  $("i-clutch").textContent = ch.toFixed(0)+"/100 " + (chCls==="ok"?"(optimaal)":chCls==="warn"?"(warm)":"(oververhit)");
+  $("i-clutch").className = "status "+chCls;
+
+  const slipCls = statusClass(r.avgSlipPct,15,30);
+  $("i-slip").textContent = r.avgSlipPct.toFixed(1)+"% gem.";
+  $("i-slip").className = "status "+slipCls;
+
+  let plugTxt, plugCls;
+  if(r.plugBalance > 0.08){ plugTxt="rijk mengsel"; plugCls="warn"; }
+  else if(r.plugBalance < -0.08){ plugTxt="mager mengsel"; plugCls="bad"; }
+  else { plugTxt="optimaal"; plugCls="ok"; }
+  $("i-plugs").textContent = plugTxt;
+  $("i-plugs").className = "status "+plugCls;
+
+  const bw = r.bearingWear;
+  const bwCls = statusClass(bw,40,70);
+  $("i-bearing").textContent = bw.toFixed(0)+"% slijtage";
+  $("i-bearing").className = "status "+bwCls;
+
+  $("i-gasket").textContent = r.detonationRisk ? "risico op doorslaan" : "intact";
+  $("i-gasket").className = "status " + (r.detonationRisk ? "bad" : "ok");
+
+  const tw = r.tireWear;
+  const twCls = statusClass(tw,35,65);
+  $("i-tire").textContent = tw.toFixed(0)+"% slijtage";
+  $("i-tire").className = "status "+twCls;
+
+  $("i-da").textContent = Math.round(r.densityAltitude).toLocaleString("nl-NL")+" ft";
+  $("i-da").className = "status ok";
+});
+</script>
+</body>
+</html>
