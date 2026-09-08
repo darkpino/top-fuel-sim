@@ -50,20 +50,20 @@ export function calcRecommendedNitro(powerMultNow) {
 }
 
 // Engine RPM: informational channel (same status as "geschat piekvermogen"),
-// not a calibrated output like ET/mph. Top Fuel runs no gearbox - the clutch
-// IS the only thing between engine and wheel, and it's tuned to keep RPM in
-// a fairly narrow band for most of the run rather than let it follow ground
-// speed 1:1 from a stop. We model that directly against time and speed
-// (not against the clutch's lockup fraction, which produced runaway values
-// at moderate lockup + low speed - a slipping clutch does not simply
-// interpolate RPM linearly toward "locked"): RPM holds near LAUNCH_RPM,
-// dips through a "pulldown" bump centered on the clutch's s2->s3 lockup
-// ramp (the real load spike crew chiefs tune the fuel curve around), and
-// climbs gently above LAUNCH_RPM as ground speed builds through the rest
-// of the run.
-const LAUNCH_RPM = 8200;
-const PULLDOWN_DEPTH_RPM = 1200;
-const CLIMB_RPM_PER_FTS = 2.4; // ~1200rpm climb by trap speed
+// not a calibrated output like ET/mph. Real onboard RPM traces (data
+// loggers, not driver lore) show a sharp rise off the line to a plateau
+// that then holds FLAT for nearly the whole run - not a pronounced dip and
+// climb. Top Fuel runs no gearbox, so the clutch is the only thing between
+// engine and wheel, and it's tuned specifically to keep RPM flat despite
+// ground speed climbing; the "pulldown" crew chiefs tune the fuel curve
+// around is a real but comparatively subtle sag layered on top of that
+// flat band, centered on the clutch's s2->s3 lockup ramp where the load
+// spikes hardest.
+const STAGING_RPM = 3000; // idling, staged, before the tree drops
+const LAUNCH_RPM = 8600; // the flat plateau band the clutch holds RPM in
+const RISE_DURATION = 0.3; // s - how fast RPM climbs off the line to the plateau
+const PULLDOWN_DEPTH_RPM = 400;
+const DRIFT_RPM_PER_FTS = 0.3; // faint drift with speed - the band is not perfectly flat
 
 function pulldownBump(t, s2time, s3time) {
   if (t < s2time || t >= s3time) return 0;
@@ -72,9 +72,11 @@ function pulldownBump(t, s2time, s3time) {
 }
 
 export function calcEngineRpm({ t, groundSpeedFtS, s2time, s3time }) {
-  const climb = CLIMB_RPM_PER_FTS * groundSpeedFtS;
+  const riseFrac = Math.min(1, t / RISE_DURATION);
+  const plateau = STAGING_RPM + (LAUNCH_RPM - STAGING_RPM) * riseFrac;
+  const drift = DRIFT_RPM_PER_FTS * groundSpeedFtS;
   const dip = PULLDOWN_DEPTH_RPM * pulldownBump(t, s2time, s3time);
-  return LAUNCH_RPM + climb - dip;
+  return plateau + drift - dip;
 }
 
 // Fuel flow: a nitro fuel pump is a positive-displacement gear pump driven
@@ -95,9 +97,14 @@ export function calcFuelFlowGpm(rpm, fuelVolFactor) {
 // afford to go lean. This is the target curve a crew chief is chasing with
 // timed fuel stages: open the valve further when RPM sags, pull it back
 // when RPM climbs, to keep the delivered mixture roughly constant despite
-// the pump's own RPM-driven swings.
+// the pump's own RPM-driven swings. Floored at the pulldown's own minimum
+// so the brief staging-to-launch spin-up (RPM starting well below the
+// plateau by design, not from being under load) doesn't read as a lean
+// spike - that transient isn't a mixture problem, just the motor coming up
+// to speed.
 export function calcIdealFuelPct(rpm, referenceFuelPct) {
-  return referenceFuelPct * (LAUNCH_RPM / rpm);
+  const rpmFloor = LAUNCH_RPM - PULLDOWN_DEPTH_RPM;
+  return referenceFuelPct * (LAUNCH_RPM / Math.max(rpm, rpmFloor));
 }
 
 // Deviation between what's actually being fed in and what the RPM at that
