@@ -6,7 +6,7 @@ import { runSimulation } from "../sim-core/run-simulator.js";
 
 function $(id) { return document.getElementById(id); }
 
-const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuelvol", "gasket", "ign", "s1t", "s1p", "s2t", "s2p", "s3t", "s3p", "fw", "bspeed", "tpsi", "wing"];
+const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuelvol", "gasket", "ign", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "fw", "tpsi", "wing"];
 
 function fmt(id, val) {
   switch (id) {
@@ -26,7 +26,7 @@ function fmt(id, val) {
     case "s2p": return val + "%";
     case "s3t": return (val / 100).toFixed(2) + "s";
     case "s3p": return val + "%";
-    case "bspeed": return val + "%/s";
+    case "s1speed": case "s2speed": case "s3speed": return val + "%/s";
     case "fw": return val;
     case "tpsi": return (val / 10).toFixed(1) + " psi";
     case "wing": return (val / 10).toFixed(1) + "°";
@@ -43,17 +43,19 @@ function readClutchStages() {
   return {
     s1time: +$("s1t").value / 100,
     s1pct: +$("s1p").value / 100,
+    s1speed: +$("s1speed").value / 100,
     s2time: +$("s2t").value / 100,
     s2pct: +$("s2p").value / 100,
+    s2speed: +$("s2speed").value / 100,
     s3time: +$("s3t").value / 100,
     s3pct: +$("s3p").value / 100,
+    s3speed: +$("s3speed").value / 100,
   };
 }
 
 function updateClutchReachHint() {
   const stages = readClutchStages();
-  const bearingSpeed = +$("bspeed").value / 100;
-  const { reach1, reach2, reach3 } = calcClutchReach(stages, bearingSpeed);
+  const { reach1, reach2, reach3 } = calcClutchReach(stages);
 
   function fmtReach(setpoint, reached) {
     const dead = Math.abs(reached - setpoint) > 0.02;
@@ -62,7 +64,7 @@ function updateClutchReachHint() {
   }
   $("clutch-reach-hint").innerHTML = `Haalbare lockup per stage: S1 ${fmtReach(stages.s1pct, reach1)} · S2 ${fmtReach(stages.s2pct, reach2)} · S3 ${fmtReach(stages.s3pct, reach3)}`;
 }
-["s1t", "s1p", "s2t", "s2p", "s3t", "s3p", "bspeed"].forEach(id => {
+["s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed"].forEach(id => {
   $(id).addEventListener("input", updateClutchReachHint);
 });
 updateClutchReachHint();
@@ -165,6 +167,35 @@ function drawChart(trace, splits) {
   $("traceChart").innerHTML = svg;
 }
 
+function drawFuelChart(trace) {
+  const W = 640, H = 140, padL = 42, padR = 12, padT = 10, padB = 22;
+  const maxGpm = Math.max(...trace.map(p => p.fuel_gpm), 10) * 1.1;
+  const maxT = trace[trace.length - 1].t;
+  function xs(t) { return padL + (t / maxT) * (W - padL - padR); }
+  function ys(gpm) { return H - padB - (gpm / maxGpm) * (H - padT - padB); }
+
+  const linePoints = trace.map(p => `${xs(p.t).toFixed(1)},${ys(p.fuel_gpm).toFixed(1)}`).join(" L ");
+  const fuelPath = "M " + linePoints;
+  const areaPath = `M ${xs(0).toFixed(1)},${ys(0).toFixed(1)} L ${linePoints} L ${xs(maxT).toFixed(1)},${ys(0).toFixed(1)} Z`;
+
+  let gridLines = "";
+  for (let i = 0; i <= 2; i++) {
+    const yy = padT + i * (H - padT - padB) / 2;
+    const val = Math.round(maxGpm - i * maxGpm / 2);
+    gridLines += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="#2c333b" stroke-width="1"/>`;
+    gridLines += `<text x="${padL - 6}" y="${yy + 4}" text-anchor="end" font-size="10" fill="#8b939b" font-family="ui-monospace,monospace">${val}</text>`;
+  }
+
+  const svg = `
+    ${gridLines}
+    <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#2c333b" stroke-width="1"/>
+    <path d="${areaPath}" fill="#5ec8d8" opacity="0.15" stroke="none"/>
+    <path d="${fuelPath}" fill="none" stroke="#5ec8d8" stroke-width="2"/>
+  `;
+  $("fuelChart").setAttribute("viewBox", `0 0 ${W} ${H}`);
+  $("fuelChart").innerHTML = svg;
+}
+
 function statusClass(val, warnAt, badAt) {
   if (val >= badAt) return "bad";
   if (val >= warnAt) return "warn";
@@ -185,7 +216,6 @@ function readSettings() {
     ignition: +$("ign").value,
     ...readClutchStages(),
     fingerWeight: +$("fw").value,
-    bearingSpeed: +$("bspeed").value / 100,
     tirePsi: +$("tpsi").value / 10,
     wingAngle: +$("wing").value / 10,
   };
@@ -211,6 +241,7 @@ $("runBtn").addEventListener("click", () => {
     { label: "660'", t: r.et660 },
     { label: r.finished ? "1000'" : null, t: r.finished ? r.et : null },
   ]);
+  drawFuelChart(r.trace);
 
   const spinFlag = $("spinFlag");
   let flags = "";
@@ -251,4 +282,7 @@ $("runBtn").addEventListener("click", () => {
 
   $("i-da").textContent = Math.round(r.densityAltitude).toLocaleString("nl-NL") + " ft";
   $("i-da").className = "status ok";
+
+  $("i-fuelpeak").textContent = r.peakFuelGpm.toFixed(1) + " gpm";
+  $("i-fuelpeak").className = "status ok";
 });
