@@ -23,7 +23,7 @@ export function calcSmokeTolerance(aggressiveness) {
 }
 
 export function createDriverState() {
-  return { smokeTime: 0, pedaling: false, pedalTimeLeft: 0, pedalCount: 0, lifted: false, liftTime: null };
+  return { smokeTime: 0, pedaling: false, pedalTimeLeft: 0, pedalCount: 0, lifted: false, liftTime: null, liftReason: null };
 }
 
 // Called once per timestep with the PREVIOUS step's slip% (the driver
@@ -34,11 +34,22 @@ export function createDriverState() {
 // watching for smoke and reacting to it - past that point (but not before
 // it, and not overriding an already-lifted or already-pedaling driver) the
 // commanded throttle is left alone, as if the driver has settled in and is
-// just holding what the tune gives him. Returns the throttle fraction
-// (0-1) to apply to commanded engine force this step, and mutates
+// just holding what the tune gives him. shutoffX is a separate, planned
+// lift point - a shutoff distance the driver commits to before the run,
+// same as a real delay box / preset shutoff, and takes it regardless of
+// how the run is going (clean or smoking); it does not depend on
+// aggressiveness or the smoke-reaction system at all. Returns the throttle
+// fraction (0-1) to apply to commanded engine force this step, and mutates
 // driverState in place.
-export function stepDriver(driverState, t, x, prevSlipPct, aggressiveness, watchUntilX, dt) {
+export function stepDriver(driverState, t, x, prevSlipPct, aggressiveness, watchUntilX, shutoffX, dt) {
   if (driverState.lifted) return 0;
+
+  if (x >= shutoffX) {
+    driverState.lifted = true;
+    driverState.liftTime = t;
+    driverState.liftReason = "shutoff";
+    return 0;
+  }
 
   if (driverState.pedaling) {
     driverState.pedalTimeLeft -= dt;
@@ -67,6 +78,7 @@ export function stepDriver(driverState, t, x, prevSlipPct, aggressiveness, watch
   if (aggressiveness < LIFT_AGGRESSIVENESS_THRESHOLD || driverState.pedalCount >= MAX_PEDALS_BEFORE_LIFT) {
     driverState.lifted = true;
     driverState.liftTime = t;
+    driverState.liftReason = "smoke";
     return 0;
   }
 

@@ -6,7 +6,7 @@ import {
   calcEngineFactors, calcMult, calcEngineRpm, calcFuelFlowGpm,
   calcIdealFuelPct, calcMixtureRichness, activeFuelPct,
 } from "./engine.js";
-import { activeSetpoint, activeSpeed, calcFingerDesired, stepBearingPos } from "./clutch.js";
+import { activeSetpoint, activeSpeed, calcFingerDesired, calcWornFingerDesired, stepBearingPos } from "./clutch.js";
 import { calcOptimalPsi, calcPsiPenalty, calcTireWear } from "./tires.js";
 import { createDriverState, stepDriver } from "./driver.js";
 
@@ -57,7 +57,7 @@ export function runSimulation(settings) {
     blowerOD, fuelPct, gasketThou, ignition,
     s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
     fuel1Pct, fuel2Pct, fuel3Pct,
-    fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt,
+    fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt, driverShutoffFt,
   } = settings;
 
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
@@ -118,13 +118,19 @@ export function runSimulation(settings) {
   let richnessIntegral = 0;
   const driverState = createDriverState();
   let lastSlipPct = 0;
+  let peakWornGain = 0;
 
   while (x < 1000 && t < MAX_T) {
     const target = activeSetpoint(t, stages);
     const speed = activeSpeed(t, stages);
     bearingPos = stepBearingPos(bearingPos, target, speed, DT);
     const heatBoost = 1 + Math.min(clutchTemp / 100, 1) * HEAT_CAP_BOOST;
-    const lf = Math.min(fingerDesired, bearingPos) * heatBoost;
+    // clutchDamage here is last step's accumulated value - same
+    // previous-step pattern as lastSlipPct below, avoiding a same-step
+    // circular dependency (this step's damage is added further down).
+    const wornFingerDesired = calcWornFingerDesired(fingerDesired, clutchDamage);
+    peakWornGain = Math.max(peakWornGain, wornFingerDesired - fingerDesired);
+    const lf = Math.min(wornFingerDesired, bearingPos) * heatBoost;
 
     const rpm = calcEngineRpm({ t, groundSpeedFtS: v, s2time, s3time });
     const fuelVolPctNow = activeFuelPct(t, fuelStages);
@@ -136,7 +142,7 @@ export function runSimulation(settings) {
     const LAUNCH_CAP = 13000 * mult;
     const POWER_HP = 6500 * mult;
 
-    const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, DT);
+    const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, driverShutoffFt, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
     const engineForce = Math.min(powerForce, LAUNCH_CAP * lf) * throttle;
     // What the motor could send through a FULLY locked clutch right now,
@@ -235,7 +241,11 @@ export function runSimulation(settings) {
   // the same delivered mixture.
   const avgRichness = richnessIntegral / Math.max(et, 0.001);
   const plugBalance = avgRichness + (compressionFactor - 1) * 0.3 - (ignEff - 1) * 0.5;
-  const bearingWear = Math.min(100, (blowerOD - 20) * 0.9 + Math.max(0, (et - 3.8)) * 8);
+  // Bearing wear now tracks the same clutchDamage clock that drives
+  // failure risk AND the widening finger-to-bearing gap (see
+  // calcWornFingerDesired) - it's the direct readout of how much extra
+  // lockup ceiling sustained slip has quietly bought the clutch.
+  const bearingWear = Math.min(100, (clutchDamage / CLUTCH_FAILURE_THRESHOLD) * 100);
   const tireWear = calcTireWear(tirePsi, optimalPsi, slipEnergy);
   const peakFuelGpm = trace.reduce((acc, p) => Math.max(acc, p.fuel_gpm), 0);
 
@@ -245,7 +255,8 @@ export function runSimulation(settings) {
     peakFuelGpm, engineFailed, engineFailTime, engineFailCause,
     cylindersDropped, cylinderDropTime, cylinderDropCause,
     clutchFailed, clutchFailTime,
-    driverLifted: driverState.lifted, driverLiftTime: driverState.liftTime, pedalCount: driverState.pedalCount,
+    driverLifted: driverState.lifted, driverLiftTime: driverState.liftTime, driverLiftReason: driverState.liftReason, pedalCount: driverState.pedalCount,
+    clutchWearLockupGainPct: peakWornGain * 100,
     anySpin: trace.some(p => p.slip > 5),
   };
 }
