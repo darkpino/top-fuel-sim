@@ -8,14 +8,17 @@
 // at launch - launch gives a moderate plateau, there's often a dip as drag
 // catches up before the next stage clamps harder, then a climb to the peak
 // right as the clutch fully locks, followed by a decay as speed/drag take
-// over. s3time is when full lockup (1.0) is commanded - that's the moment
-// the peak G in real telemetry occurs.
+// over. Stage 3's target IS the ceiling for the rest of the run - it does
+// NOT keep climbing to 100% on its own after s3time. Set it to 100% for a
+// normal full-lockup finish (the peak G in real telemetry happens right as
+// that's reached); leave it lower to deliberately keep the clutch slipping
+// for the whole run - protects the tires from a traction ceiling the tune
+// can't otherwise reach, at the cost of cooking the clutch itself.
 export function activeSetpoint(t, stages) {
   const { s1time, s1pct, s2time, s2pct, s3time, s3pct } = stages;
   if (t < s1time) return s1pct;
   if (t < s2time) return s2pct;
-  if (t < s3time) return s3pct;
-  return 1.0;
+  return s3pct;
 }
 
 // Finger-desired lockup: how far centrifugal force wants to push the

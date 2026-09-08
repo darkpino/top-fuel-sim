@@ -23,12 +23,22 @@ const WING_BASE_K = 0.0284;
 // wheel-speed spike above ground speed on real telemetry traces.
 const WHEEL_WEIGHT_LB = 260;
 const MAX_SLIP_EXCESS_FTS = 260;
-// Clutch temperature builds from slip and makes the pack grabbier
-// (aggressiveness boost), up to a capped ceiling.
+// Clutch temperature builds from tire slip AND from the clutch's own
+// internal slip (see CLUTCH_SLIP_HEAT_RATE below), and makes the pack
+// grabbier (aggressiveness boost), up to a capped ceiling.
 const HEAT_RATE = 3.2;
 const HEAT_CAP_BOOST = 0.22;
 const DT = 0.004;
 const MAX_T = 10.0;
+// Holding lockup back to stay under the traction ceiling isn't free: the
+// clutch itself is slipping under whatever torque the motor is making but
+// not transmitting, and that difference is dissipated as heat in the
+// pack. CLUTCH_DAMAGE_RATE only starts counting once clutchTemp is
+// already deep in the "oververhit" zone (>70/100) - a brief flash of heat
+// early in a stage transition isn't fatal, sustained cooking is.
+const CLUTCH_SLIP_HEAT_RATE = 0.0025;
+const CLUTCH_DAMAGE_RATE = 0.006;
+const CLUTCH_FAILURE_THRESHOLD = 0.15;
 // Sustained lean-under-load (not enough fuel curve to cover the RPM the
 // pump is losing) accumulates damage on the SAME clock as heat-risk damage
 // below - both represent "you are killing this engine," just from opposite
@@ -102,6 +112,9 @@ export function runSimulation(settings) {
   let cylindersDropped = false;
   let cylinderDropTime = null;
   let cylinderDropCause = null;
+  let clutchDamage = 0;
+  let clutchFailed = false;
+  let clutchFailTime = null;
   let richnessIntegral = 0;
   const driverState = createDriverState();
   let lastSlipPct = 0;
@@ -126,6 +139,14 @@ export function runSimulation(settings) {
     const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
     const engineForce = Math.min(powerForce, LAUNCH_CAP * lf) * throttle;
+    // What the motor could send through a FULLY locked clutch right now,
+    // vs. what's actually getting through at the current lockup fraction -
+    // the gap is torque the clutch is holding back, dissipated as heat in
+    // the pack rather than reaching the wheel. Holding lockup back on
+    // purpose to stay under the traction ceiling protects the tires, but
+    // it's the clutch that pays for it.
+    const availableForce = Math.min(powerForce, LAUNCH_CAP) * throttle;
+    const clutchSlipLoss = Math.max(0, availableForce - engineForce);
     const wingDownforce = WING_K * v * v;
     const maxTraction = (WEIGHT_LB + wingDownforce) * baseGripCoeff;
     let appliedForce, slipPct, slipping;
@@ -144,7 +165,17 @@ export function runSimulation(settings) {
     }
     lastSlipPct = slipPct;
     clutchTemp += (slipPct / 100) * HEAT_RATE * DT * 10;
+    clutchTemp += clutchSlipLoss * CLUTCH_SLIP_HEAT_RATE * DT;
     slipIntegral += slipPct * DT;
+
+    // Only counts once the pack is already deep in the "oververhit" zone -
+    // a brief spike during a stage transition isn't fatal, cooking it there
+    // for a while is.
+    clutchDamage += Math.max(0, clutchTemp - 70) * CLUTCH_DAMAGE_RATE * DT;
+    if (!clutchFailed && clutchDamage > CLUTCH_FAILURE_THRESHOLD) {
+      clutchFailed = true;
+      clutchFailTime = t;
+    }
 
     heatDamage += Math.max(0, heatRisk - 0.62) * DT;
     // Lean under load hurts the most right where lf is high - the clutch
@@ -163,7 +194,7 @@ export function runSimulation(settings) {
       engineFailTime = t;
       engineFailCause = heatDamage >= leanDamage ? "heat" : "lean";
     }
-    if (engineFailed) appliedForce = 0;
+    if (engineFailed || clutchFailed) appliedForce = 0;
     else if (cylindersDropped) appliedForce *= CYLINDER_DROP_FORCE_PENALTY;
 
     const drag = 0.5 * RHO_REF * CDA * v * v;
@@ -213,6 +244,7 @@ export function runSimulation(settings) {
     clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk,
     peakFuelGpm, engineFailed, engineFailTime, engineFailCause,
     cylindersDropped, cylinderDropTime, cylinderDropCause,
+    clutchFailed, clutchFailTime,
     driverLifted: driverState.lifted, driverLiftTime: driverState.liftTime, pedalCount: driverState.pedalCount,
     anySpin: trace.some(p => p.slip > 5),
   };
