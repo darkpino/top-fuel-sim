@@ -29,6 +29,21 @@ export function calcFingerDesired(fingerWeight) {
   return 0.30 + (fingerWeight / 100) * 0.70;
 }
 
+const WEAR_LOCKUP_GAIN = 1.0;
+
+// As the pack wears from slip, the friction material thins and the
+// mechanical gap between the fingers and the bearing grows - the fingers
+// can now travel further than a fresh pack would allow, raising the
+// lockup ceiling beyond what was dialed in. This is what makes clutch
+// damage dangerous beyond the eventual failure it also causes: hold a
+// tune with sustained slip and the effective clutch quietly gets more
+// aggressive than intended, right when the tune was counting on it NOT
+// to - a tune that started out safely under the traction ceiling can
+// creep past it as the run goes on.
+export function calcWornFingerDesired(baseFingerDesired, clutchDamage) {
+  return Math.min(1.0, baseFingerDesired + clutchDamage * WEAR_LOCKUP_GAIN);
+}
+
 export function stepBearingPos(bearingPos, target, bearingSpeed, dt) {
   if (bearingPos < target) return Math.min(target, bearingPos + bearingSpeed * dt);
   if (bearingPos > target) return Math.max(target, bearingPos - bearingSpeed * dt);
