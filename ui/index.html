@@ -57,6 +57,12 @@
         <p class="note">Bandenspanning: NHRA Top Fuel loopt doorgaans 6–9 psi. Vleugeltrim mag van het reglement maximaal 2° plus 0,5° tolerantie van vlak (dus ±2,5°).</p>
       </div>
 
+      <div class="panel">
+        <div class="sec-title">Rijder</div>
+        <div class="row"><label>Agressiviteit <span class="val" id="v-aggro">70</span></label><input type="range" id="aggro" min="0" max="100" value="70" step="5"></div>
+        <p class="note">Bij aanhoudende bandenrook (&gt;~55% slip) pedalt een agressieve rijder de auto (korte gas-tik om de banden weer te laten grippen) tot 3x voor hij het opgeeft. Een minder agressieve rijder gaat sneller - of meteen - van het gas en breekt de run af.</p>
+      </div>
+
       <button class="run" id="runBtn">Run it</button>
     </div>
 
@@ -104,6 +110,7 @@
           <div class="insp"><div class="lbl">Bandenslijtage</div><div class="status" id="i-tire">--</div></div>
           <div class="insp"><div class="lbl">Density altitude</div><div class="status" id="i-da">--</div></div>
           <div class="insp"><div class="lbl">Piek brandstofdebiet</div><div class="status" id="i-fuelpeak">--</div></div>
+          <div class="insp"><div class="lbl">Rijdersactie</div><div class="status" id="i-driver">--</div></div>
         </div>
       </div>
     </div>

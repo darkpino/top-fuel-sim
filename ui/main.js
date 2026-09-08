@@ -6,7 +6,7 @@ import { runSimulation } from "../sim-core/run-simulator.js";
 
 function $(id) { return document.getElementById(id); }
 
-const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuelvol", "gasket", "ign", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "fw", "tpsi", "wing"];
+const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuelvol", "gasket", "ign", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "fw", "tpsi", "wing", "aggro"];
 
 function fmt(id, val) {
   switch (id) {
@@ -30,6 +30,7 @@ function fmt(id, val) {
     case "fw": return val;
     case "tpsi": return (val / 10).toFixed(1) + " psi";
     case "wing": return (val / 10).toFixed(1) + "°";
+    case "aggro": return val;
   }
 }
 sliders.forEach(id => {
@@ -218,6 +219,7 @@ function readSettings() {
     fingerWeight: +$("fw").value,
     tirePsi: +$("tpsi").value / 10,
     wingAngle: +$("wing").value / 10,
+    driverAggressiveness: +$("aggro").value,
   };
 }
 
@@ -231,7 +233,7 @@ $("runBtn").addEventListener("click", () => {
   $("r-330").textContent = r.et330 ? r.et330.toFixed(3) + "s" : "n.v.t.";
   $("r-660").textContent = r.et660 ? r.et660.toFixed(3) + "s" : "n.v.t.";
   $("r-660mph").textContent = r.mph660 ? r.mph660.toFixed(1) + " mph" : "n.v.t.";
-  $("r-et").textContent = r.finished ? r.et.toFixed(3) + "s" : (r.engineFailed ? "MOTOR" : "DNF");
+  $("r-et").textContent = r.finished ? r.et.toFixed(3) + "s" : (r.engineFailed ? "MOTOR" : (r.driverLifted ? "LIFT" : "DNF"));
   $("r-et").style.color = r.finished ? "var(--text)" : "var(--red)";
   $("r-mph").textContent = r.mph.toFixed(1) + " mph";
 
@@ -246,7 +248,9 @@ $("runBtn").addEventListener("click", () => {
   const spinFlag = $("spinFlag");
   let flags = "";
   if (r.engineFailed) flags += `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% was te heet om vol te houden.</div>`;
+  else if (r.driverLifted && !r.finished) flags += `<div class="flag">Rijder is van het gas gegaan na aanhoudende bandenrook op ${r.driverLiftTime.toFixed(2)}s — run afgebroken. Verhoog de rijder-agressiviteit als hij vaker moet doorpedalen, of pak de tune aan voor minder wielspin.</div>`;
   else if (!r.finished) flags += `<div class="flag">Auto bereikte de 1000 ft niet binnen ${r.et.toFixed(1)}s — te weinig grip/vermogen om op snelheid te komen. Draai bij.</div>`;
+  else if (r.driverLifted) flags += `<div class="flag">Rijder is na aanhoudende bandenrook op ${r.driverLiftTime.toFixed(2)}s van het gas gegaan, maar de auto heeft de 1000 ft alsnog op momentum gehaald.</div>`;
   if (r.anySpin && !r.engineFailed) flags += `<div class="flag">Wielenspin gedetecteerd tijdens de run — motorvermogen overschreed de beschikbare grip.</div>`;
   if (r.detonationRisk && !r.engineFailed) flags += `<div class="flag">Detonatierisico: hoge compressie + hoog nitropercentage + veel voorontsteking is een gevaarlijke combinatie.</div>`;
   spinFlag.innerHTML = flags;
@@ -285,4 +289,11 @@ $("runBtn").addEventListener("click", () => {
 
   $("i-fuelpeak").textContent = r.peakFuelGpm.toFixed(1) + " gpm";
   $("i-fuelpeak").className = "status ok";
+
+  let driverTxt, driverCls;
+  if (r.driverLifted) { driverTxt = `gas los @ ${r.driverLiftTime.toFixed(2)}s`; driverCls = "bad"; }
+  else if (r.pedalCount > 0) { driverTxt = `gepedald (${r.pedalCount}x)`; driverCls = "warn"; }
+  else { driverTxt = "volle run"; driverCls = "ok"; }
+  $("i-driver").textContent = driverTxt;
+  $("i-driver").className = "status " + driverCls;
 });
