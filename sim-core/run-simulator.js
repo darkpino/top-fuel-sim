@@ -191,6 +191,7 @@ export function runSimulation(settings) {
 
   let t = 0, v = 0, x = 0, wheelV = 0;
   let et60 = null, et330 = null, et660 = null, mph660 = null;
+  let finishT = null;
   const trace = [];
   let clutchTemp = 0;
   let slipIntegral = 0;
@@ -226,6 +227,7 @@ export function runSimulation(settings) {
   let ignEffIntegral = 0;
 
   while (x < 1000 && t < MAX_T) {
+    const xBefore = x;
     const target = activeSetpoint(t, stages);
     const speed = activeSpeed(t, stages);
     bearingPos = stepBearingPos(bearingPos, target, speed, DT);
@@ -411,15 +413,23 @@ export function runSimulation(settings) {
 
     const fuelGpm = calcFuelFlowGpm(rpm, fuelVolFactor);
 
-    if (et60 === null && x >= 60) et60 = t;
-    if (et330 === null && x >= 330) et330 = t;
-    if (et660 === null && x >= 660) { et660 = t; mph660 = v / 1.4667; }
+    // Interpolated crossing time within this DT=0.004s step, not the raw
+    // simulation-grid time - without this, two cars whose true finish
+    // times differ by only a couple milliseconds could land in the same
+    // 4ms tick and report a bit-identical ET (the actual cause behind
+    // "veel auto's rijden dezelfde tijd" - not insufficient tune variety,
+    // just display/output precision finer than the integration step).
+    const crossingTime = (threshold) => t + DT * (threshold - xBefore) / Math.max(x - xBefore, 1e-9);
+    if (et60 === null && x >= 60) et60 = crossingTime(60);
+    if (et330 === null && x >= 330) et330 = crossingTime(330);
+    if (et660 === null && x >= 660) { et660 = crossingTime(660); mph660 = v / 1.4667; }
+    if (finishT === null && x >= 1000) finishT = crossingTime(1000);
     trace.push({ t, x, v_mph: v / 1.4667, wheel_mph: wheelV / 1.4667, slip: slipPct, clutch_pos: bearingPos * 100, effective_lockup: Math.min(1, lf) * 100, fuel_gpm: fuelGpm, rpm, ignition_set: ignitionSet, ignition_retard: ignitionRetardDeg, ignition_effective: ignitionEffective });
     t += DT;
   }
 
-  const finished = x >= 1000;
-  const et = t;
+  const finished = finishT !== null;
+  const et = finished ? finishT : t;
   const mph = trace.length ? trace[trace.length - 1].v_mph : 0;
 
   const slipEnergy = trace.reduce((acc, p) => acc + p.slip, 0) / trace.length;

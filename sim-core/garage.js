@@ -219,12 +219,21 @@ export function installUnit(config, part, index) {
 // Failure-triggered swap: mount the next available spare (discarding the
 // failed part - it's scrapped, not returned to inventory) and report
 // whether one was available at all. Called from finances.js's
-// chargeEngineFailure/chargeClutchFailure.
+// chargePartFailure.
 export function consumeSpareOnFailure(config, part) {
   const inv = config[part + "Inventory"];
   if (!inv.length) return false;
   setEquippedUnit(config, part, inv.shift());
   return true;
+}
+
+// A catastrophic failure (see finances.js's chargePartFailure) - the
+// equipped unit is a write-off, full stop, not something even a spare on
+// the trailer can fix trackside. Unlike consumeSpareOnFailure this never
+// touches inventory: any spare stays put, ready to be mounted by hand
+// (installUnit) before the next event, but not this one.
+export function unequipPart(config, part) {
+  setEquippedUnit(config, part, { brandId: null, secondhand: false });
 }
 
 // A purchase of a part the team doesn't have yet becomes the equipped

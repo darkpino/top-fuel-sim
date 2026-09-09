@@ -18,7 +18,7 @@ import {
 } from "../sim-core/garage.js";
 import {
   ENTRY_FEE, defaultFinancesState, addTransaction, chargeEntryFee, chargeRunCost,
-  chargeEngineFailure, chargeClutchFailure, awardEventPrize, generateSponsorOffers,
+  rollEnginePartsFailed, chargePartFailure, awardEventPrize, generateSponsorOffers,
 } from "../sim-core/finances.js";
 
 function $(id) { return document.getElementById(id); }
@@ -846,34 +846,40 @@ function renderFinalResult(text) {
   updateEnvLock();
 }
 
-const FATAL_FAILURE_NOUN = { engine: "Motor", clutch: "Koppeling" };
-const FATAL_FAILURE_SPARE_NOUN = { engine: "reservemotorblok", clutch: "reservekoppeling" };
+const FATAL_FAILURE_NOUN = { engine: "Motorblok", head: "Cilinderkop", blower: "Blower", clutch: "Koppeling" };
+
+// Joins 1+ Dutch part nouns into a natural list ("Motorblok", "Motorblok
+// en blower") for the fatal-failure messages below - a failure can now
+// take out more than one part at once (see rollEnginePartsFailed).
+function fatalPartsText(parts) {
+  return parts.map((p) => FATAL_FAILURE_NOUN[p]).join(" en ");
+}
 
 // Every actual player run during an event (qualifying pass, elimination
 // pass, bye pass - not a skipped qualifying round, not a Testrun-tab
-// run) costs run money, plus a repair cost on top if the motor or
-// koppeling let go - waived (and a spare swapped in - possibly a
-// different brand, see installUnit/consumeSpareOnFailure in garage.js) if
-// one is on hand. Returns which part had a FATAL failure - "engine",
-// "clutch", or null - meaning no spare left to swap in for that part, so
-// the team has no working car and the event is over, not just an
-// expensive rebuild. Engine is checked first: on the rare run where both
-// fail, that's the one reported.
+// run) costs run money, plus damage cost(s) on top if the motor side or
+// koppeling let go. An "engine" failure doesn't always mean the block
+// itself - rollEnginePartsFailed picks which of engine/head/blower (1 or
+// 2 of them) actually took the hit, and chargePartFailure charges each
+// independently on an escalating spare/repair/catastrophic-write-off
+// ladder (see finances.js). Returns the part(s) left with no working unit
+// for the REST of this event (empty array if the car survived).
 function chargePlayerRun(r) {
   chargeRunCost(financesState);
-  let fatalPart = null;
+  const fatalParts = [];
   if (r.engineFailed) {
-    if (garageConfig.engineInventory.length === 0) fatalPart = "engine";
-    chargeEngineFailure(financesState, garageConfig);
+    const parts = rollEnginePartsFailed(r.engineFailCause, ladderState.rng);
+    parts.forEach((part) => {
+      if (chargePartFailure(financesState, garageConfig, part, ladderState.rng) === "fatal") fatalParts.push(part);
+    });
   }
   if (r.clutchFailed) {
-    if (!fatalPart && garageConfig.clutchInventory.length === 0) fatalPart = "clutch";
-    chargeClutchFailure(financesState, garageConfig);
+    if (chargePartFailure(financesState, garageConfig, "clutch", ladderState.rng) === "fatal") fatalParts.push("clutch");
   }
   saveFinancesState();
   saveGarageConfig();
   renderFinancePanel();
-  return fatalPart;
+  return fatalParts;
 }
 
 // Awards prize money for how the event ended, offers 1-2 sponsor deals
@@ -894,13 +900,13 @@ function runPlayerQualifying(skip) {
   const sessionIndex = roundDef.roundNumber - 1;
   const player = ladderState.field.find(e => e.isPlayer);
   applyConditions(roundDef.conditions);
-  let fatalPart = null;
+  let fatalParts = [];
   if (!skip) {
     const r = runSimulation(readSettings());
     player.quals[sessionIndex] = r;
     if (r.finished && !r.weightIllegal && !r.engineFailed && !r.clutchFailed && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
     ladderState.playerHistory[ladderState.roundIndex] = { result: r };
-    fatalPart = chargePlayerRun(r);
+    fatalParts = chargePlayerRun(r);
     renderRunResult(r);
   } else {
     player.quals[sessionIndex] = null;
@@ -911,11 +917,11 @@ function runPlayerQualifying(skip) {
   for (let i = playerIdx + 1; i < order.length; i++) runQualifyingAttempt(order[i], sessionIndex, roundDef.conditions, false);
   renderQualiTable(roundDef);
   renderHistoryTable();
-  if (fatalPart) {
+  if (fatalParts.length) {
     ladderState.playerOutcome = "dnq";
     finishEvent(
       { qualified: false },
-      `${FATAL_FAILURE_NOUN[fatalPart]} kapot zonder ${FATAL_FAILURE_SPARE_NOUN[fatalPart]} tijdens de kwalificatie — zonder ${fatalPart === "clutch" ? "koppeling" : "motor"} kun je niet verder racen. Het evenement is voorbij voor je team.`
+      `${fatalPartsText(fatalParts)} kapot tijdens de kwalificatie en niet meer inzetbaar deze ronde — het evenement is voorbij voor je team.`
     );
     return;
   }
@@ -930,7 +936,7 @@ function runPlayerBye() {
   const r = runSimulation(readSettings());
   ladderState.elimRounds[ladderState.roundIndex].byeResult = r;
   ladderState.playerHistory[ladderState.roundIndex] = { result: r, bye: true };
-  const fatalPart = chargePlayerRun(r);
+  const fatalParts = chargePlayerRun(r);
   renderRunResult(r);
   renderBracketTable(roundDef);
   renderHistoryTable();
@@ -941,11 +947,11 @@ function runPlayerBye() {
       { qualified: true, champion: true, totalElimRounds: totalElimRoundsFor(ladderState.bracketSize) },
       `Kampioen! Je won de finale van dit evenement (bye in de laatste ronde) (${ladderState.totalEntries} auto's).`
     );
-  } else if (fatalPart) {
+  } else if (fatalParts.length) {
     ladderState.playerOutcome = "eliminated";
     finishEvent(
       { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber + 1 },
-      `${FATAL_FAILURE_NOUN[fatalPart]} kapot zonder ${FATAL_FAILURE_SPARE_NOUN[fatalPart]} — je kreeg deze ronde een bye, maar zonder ${fatalPart === "clutch" ? "koppeling" : "motor"} kun je niet verder racen. Het evenement is voorbij voor je team.`
+      `${fatalPartsText(fatalParts)} kapot — je kreeg deze ronde een bye, maar bent niet meer race-klaar. Het evenement is voorbij voor je team.`
     );
   } else {
     advanceLadderRound();
@@ -982,7 +988,7 @@ function runPlayerElimination() {
   ed.results[ed.playerPairIndex] = { a, b, resultA, resultB, reactA, reactB, winner };
   ladderState.playerHistory[ladderState.roundIndex] = { result: rPlayer, opponent, opponentResult: rOpponent, won: winner.isPlayer };
 
-  const fatalPart = chargePlayerRun(rPlayer);
+  const fatalParts = chargePlayerRun(rPlayer);
   renderRunResult(rPlayer);
   renderBracketTable(roundDef);
   renderHistoryTable();
@@ -995,19 +1001,19 @@ function runPlayerElimination() {
         { qualified: true, champion: true, totalElimRounds: totalElimRoundsFor(ladderState.bracketSize) },
         `Kampioen! Je won de finale van dit evenement (${ladderState.totalEntries} auto's).`
       );
-    } else if (fatalPart) {
+    } else if (fatalParts.length) {
       ladderState.playerOutcome = "eliminated";
       finishEvent(
         { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber + 1 },
-        `${FATAL_FAILURE_NOUN[fatalPart]} kapot zonder ${FATAL_FAILURE_SPARE_NOUN[fatalPart]} — je won deze ronde nog wel, maar zonder ${fatalPart === "clutch" ? "koppeling" : "motor"} kun je niet verder racen. Het evenement is voorbij voor je team.`
+        `${fatalPartsText(fatalParts)} kapot — je won deze ronde nog wel, maar bent niet meer race-klaar. Het evenement is voorbij voor je team.`
       );
     } else {
       advanceLadderRound();
     }
   } else {
     ladderState.playerOutcome = "eliminated";
-    const failureNote = fatalPart
-      ? ` Je ${fatalPart === "clutch" ? "koppeling" : "motor"} ging bovendien kapot zonder ${FATAL_FAILURE_SPARE_NOUN[fatalPart]} — die moet voor het volgende evenement vervangen worden.`
+    const failureNote = fatalParts.length
+      ? ` Je ${fatalPartsText(fatalParts).toLowerCase()} ging bovendien kapot — die moet(en) voor het volgende evenement vervangen worden.`
       : "";
     const dqNote = rPlayer.weightIllegal
       ? ` Je auto woog ${Math.round(rPlayer.weightLb)} lbs, onder het minimum van ${WEIGHT_LB_MIN} lbs — automatisch verlies ongeacht de tijd.`

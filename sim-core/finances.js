@@ -2,17 +2,36 @@
 // money and sponsor offers. Pure data/functions, no DOM access - mirrors
 // the pattern in sim-core/garage.js and sim-core/ladder.js. Repair costs
 // scale with the price of the equipped part that failed (so a Vortan
-// motor costs more to fix than an Ironclad one), and are waived (aside
-// from consuming a spare) when the player is carrying a spare for that
-// part - the direct payoff for having bought inventory ahead of time.
+// motor costs more to fix than an Ironclad one).
 
-import { equippedPartPrice, consumeSpareOnFailure } from "./garage.js";
+import { equippedPartPrice, consumeSpareOnFailure, unequipPart, spareLabel } from "./garage.js";
 
 export const STARTING_BUDGET = 75000;
 export const ENTRY_FEE = 2500;
 export const RUN_COST = 850;
-export const ENGINE_REPAIR_FRACTION = 0.35;
-export const CLUTCH_REPAIR_FRACTION = 0.5;
+
+// Repair cost (no spare on hand) as a fraction of the equipped part's
+// price - a full bottom-end rebuild (engine) or a clutch pack (labor-
+// intensive, has to come apart every time regardless of what failed) run
+// higher than a head or blower swap.
+export const REPAIR_FRACTION = { engine: 0.35, head: 0.3, blower: 0.3, clutch: 0.5 };
+
+// Even with a spare on the trailer, a crew still has to pull the dead
+// part and mount the spare between rounds - real labor, on the clock.
+// Small next to a full repair, but no longer zero: carrying spares stays
+// clearly the right call, it just isn't a free one anymore.
+export const SPARE_SWAP_LABOR_FRACTION = 0.08;
+
+// Some failures are too violent to fix at the track at all - not just an
+// expensive rebuild, but something a spare can't paper over either (a
+// blower explosion that takes the manifold and wiring with it, a rod
+// through the block that wrecks the oiling system). On this roll the
+// equipped part is a genuine write-off: unmounted outright regardless of
+// what's sitting in the trailer, and the team can't finish THIS event on
+// that part - a spare (if any) is still there to hand-install before the
+// next one, see garage.js's unequipPart/installUnit.
+export const CATASTROPHIC_CHANCE = 0.15;
+export const CATASTROPHIC_FEE_FRACTION = 0.12;
 
 export const SPONSOR_NAMES = [
   "Redline Energy", "Apex Fuels", "Thunderbolt Batteries", "Ironhide Tools",
@@ -40,20 +59,58 @@ export function chargeRunCost(state, label = "Run kosten (brandstof, crew)") {
   return addTransaction(state, label, -RUN_COST);
 }
 
-export function chargeEngineFailure(state, garageConfig) {
-  if (consumeSpareOnFailure(garageConfig, "engine")) {
-    return addTransaction(state, "Motorschade — reservemotorblok gemonteerd", 0);
+// Real nitro engine failures are rarely a clean single-part event - an
+// over-driven blower running hot can let go on its own or take the short
+// block with it; a lean burn-down just as often shows up as a holed
+// piston or a burnt head as "the engine" in the abstract. cause comes
+// straight from run-simulator.js's engineFailCause ("heat" or "lean") -
+// heat-side failures skew toward the blower, lean-side skew toward the
+// heads, and either can (SECONDARY_FAILURE_CHANCE) take a second part
+// with it. Returns 1 or 2 part names from {engine, head, blower}; the
+// actual charge for each happens separately via chargePartFailure so a
+// spare (or lack of one) is checked per part, independently.
+const ENGINE_SIDE_PARTS = ["engine", "head", "blower"];
+const SECONDARY_FAILURE_CHANCE = 0.25;
+
+export function rollEnginePartsFailed(cause, rng = Math.random) {
+  const primary = cause === "heat"
+    ? (rng() < 0.6 ? "blower" : "engine")
+    : (rng() < 0.55 ? "head" : "engine");
+  const parts = [primary];
+  if (rng() < SECONDARY_FAILURE_CHANCE) {
+    const rest = ENGINE_SIDE_PARTS.filter((p) => p !== primary);
+    parts.push(rest[Math.floor(rng() * rest.length)]);
   }
-  const cost = Math.round(equippedPartPrice(garageConfig, "engine") * ENGINE_REPAIR_FRACTION);
-  return addTransaction(state, "Motorschade — reparatie", -cost);
+  return parts;
 }
 
-export function chargeClutchFailure(state, garageConfig) {
-  if (consumeSpareOnFailure(garageConfig, "clutch")) {
-    return addTransaction(state, "Koppelingschade — reservekoppeling gemonteerd", 0);
+// The one place money actually changes hands for a broken part - engine,
+// head, blower or clutch alike. Three outcomes, in escalating cost and
+// consequence:
+//  - a spare on hand: swap-labor fee only (SPARE_SWAP_LABOR_FRACTION)
+//  - no spare: full repair, fixed in time for the NEXT event, not this one
+//  - catastrophic (rolled independently of spare availability): the part
+//    is a write-off, unmounted on the spot, regardless of any spare
+// Returns "spared", "repaired", or "fatal" (no working unit of this part
+// for the rest of THIS event).
+export function chargePartFailure(state, garageConfig, part, rng = Math.random) {
+  const label = spareLabel(part);
+  const cap = label.charAt(0).toUpperCase() + label.slice(1);
+  const priceBefore = equippedPartPrice(garageConfig, part);
+  if (rng() < CATASTROPHIC_CHANCE) {
+    unequipPart(garageConfig, part);
+    const fee = Math.round(priceBefore * CATASTROPHIC_FEE_FRACTION);
+    addTransaction(state, `${cap} total loss — onherstelbaar aan de baan, moet voor het volgende evenement vervangen worden`, -fee);
+    return "fatal";
   }
-  const cost = Math.round(equippedPartPrice(garageConfig, "clutch") * CLUTCH_REPAIR_FRACTION);
-  return addTransaction(state, "Koppelingschade — reparatie", -cost);
+  if (consumeSpareOnFailure(garageConfig, part)) {
+    const fee = Math.round(priceBefore * SPARE_SWAP_LABOR_FRACTION);
+    addTransaction(state, `${cap}schade — reserve gemonteerd (montagekosten)`, -fee);
+    return "spared";
+  }
+  const cost = Math.round(priceBefore * REPAIR_FRACTION[part]);
+  addTransaction(state, `${cap}schade — reparatie`, -cost);
+  return "repaired";
 }
 
 function prizeForRoundsWon(roundsWon, champion) {

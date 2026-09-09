@@ -6,11 +6,14 @@
 // (via environment.js) turns elevationFt into real density-altitude
 // effects on both power AND drag.
 //
-// Only 10 of the ~20 real national-event venues, picked for climate/
-// altitude spread rather than completeness: a high-altitude mountain
-// track (Denver), two low-humidity deserts (Vegas, Phoenix), three
-// humid/hot venues (Gainesville, Houston, Charlotte), a cool damp one
+// 11 of the ~20 real national-event venues, picked for climate/altitude
+// spread rather than completeness: a high-altitude mountain track
+// (Denver), two low-humidity deserts (Vegas, Phoenix), four humid/hot
+// venues (Gainesville, Houston, Charlotte, Indianapolis), a cool damp one
 // (Seattle), and three more temperate ones (Pomona, Epping, Chicago).
+// Indianapolis (Lucas Oil Raceway) is the U.S. Nationals - the sport's
+// biggest and oldest national event, run over Labor Day weekend, so late-
+// summer Midwest heat and humidity rather than a mild spring/fall day.
 //
 // airtempBaseMin/Max and airtempPeakDeltaMin/Max together set that
 // track's day-arc (see conditionsForDayFrac): the day starts somewhere
@@ -59,6 +62,11 @@ export const TRACKS = [
     id: "chicago", name: "Route 66 Raceway (Joliet, IL)", elevationFt: 600,
     airtempBaseMin: 12, airtempBaseMax: 19, airtempPeakDeltaMin: 6, airtempPeakDeltaMax: 12,
     humidityMin: 45, humidityMax: 70, trackTempDeltaMin: 9, trackTempDeltaMax: 17,
+  },
+  {
+    id: "indianapolis", name: "Lucas Oil Raceway (Indianapolis, IN)", elevationFt: 800,
+    airtempBaseMin: 16, airtempBaseMax: 23, airtempPeakDeltaMin: 7, airtempPeakDeltaMax: 13,
+    humidityMin: 55, humidityMax: 78, trackTempDeltaMin: 9, trackTempDeltaMax: 18,
   },
   {
     id: "seattle", name: "Pacific Raceways (Kent, WA)", elevationFt: 500,

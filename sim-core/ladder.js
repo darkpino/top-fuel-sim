@@ -153,6 +153,15 @@ const AI_ARCHETYPES = [
 // in: this model is sensitive enough near the calibration point that
 // even "random luck" at the old magnitude could push an already-decent
 // tune past the sport's real-world ET floor.
+//
+// The clutch curve (s1..s6 time/pct) and fingerWeight were originally left
+// UNjittered - only the archetype's own baked-in curve varied them, and
+// several cars in a field share an archetype. That meant every car on a
+// given archetype ran an identical clutch curve, the single biggest lever
+// on ET, so qualifying often showed a cluster of cars running suspiciously
+// close to the same time. Jittering the curve too (same small magnitude
+// as everything else here) means no two cars - even same-archetype ones -
+// ever share an exactly identical tune.
 function jitterTune(base, rng) {
   const jit = (v, pct) => v * (1 + (rng() * 2 - 1) * pct);
   return {
@@ -167,6 +176,37 @@ function jitterTune(base, rng) {
     gasketThou: clamp(Math.round(jit(base.gasketThou, 0.02)), 25, 60),
     ignitionCurve: base.ignitionCurve.map((v) => clamp(jit(v, 0.015), 20, 75)),
     driverAggressiveness: clamp(Math.round(jit(base.driverAggressiveness, 0.025)), 0, 100),
+    s1time: clamp(jit(base.s1time, 0.008), 0, 1.0),
+    s2time: clamp(jit(base.s2time, 0.008), 0.5, 1.5),
+    s3time: clamp(jit(base.s3time, 0.008), 1.0, 2.0),
+    s4time: clamp(jit(base.s4time, 0.008), 1.5, 2.5),
+    s5time: clamp(jit(base.s5time, 0.008), 1.8, 3.0),
+    s6time: clamp(jit(base.s6time, 0.008), 2.0, 3.5),
+    s1pct: clamp(jit(base.s1pct, 0.008), 0.1, 0.9),
+    s2pct: clamp(jit(base.s2pct, 0.008), 0.1, 0.9),
+    s3pct: clamp(jit(base.s3pct, 0.008), 0.1, 0.95),
+    s4pct: clamp(jit(base.s4pct, 0.008), 0.1, 0.97),
+    s5pct: clamp(jit(base.s5pct, 0.008), 0.1, 0.99),
+    // Stage 6 (full-lockup ceiling) is the single biggest lever on ET of
+    // any of these - kept to the tightest jitter of the curve so this
+    // diversity pass can't reopen the "well under the sport's real ET
+    // floor" outlier the earlier calibration pass fixed.
+    s6pct: clamp(jit(base.s6pct, 0.004), 0.1, 1.0),
+    fingerWeight: clamp(Math.round(jit(base.fingerWeight, 0.008)), 0, 100),
+    // Chassis-level fields: previously identical across every car sharing
+    // an archetype (only the powertrain/fuel/ignition side was jittered).
+    // Modest effect on ET on their own (grip/wheelie-risk, not raw power),
+    // which is exactly why they're useful here - variety without pushing
+    // the pace envelope.
+    tirePsi: clamp(jit(base.tirePsi, 0.03), 6.0, 9.0),
+    // Additive, not multiplicative: several archetypes sit at exactly 0
+    // (no wing trim / no ballast) - a multiplicative jitter on zero stays
+    // zero forever, which would leave those archetypes' cars undiversified.
+    wingAngle: clamp(base.wingAngle + (rng() * 2 - 1) * 0.15, -2, 1),
+    frontWingPct: clamp(Math.round(jit(base.frontWingPct, 0.06)), 0, 100),
+    wheelieBarHeightIn: clamp(jit(base.wheelieBarHeightIn, 0.04), 0.5, 4.0),
+    ballastFrontLb: clamp(Math.round(base.ballastFrontLb + (rng() * 2 - 1) * 15), 0, 250),
+    ballastRearLb: clamp(Math.round(base.ballastRearLb + (rng() * 2 - 1) * 10), 0, 150),
   };
 }
 
