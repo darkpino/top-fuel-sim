@@ -67,11 +67,18 @@ export const BODY_MATERIALS = {
 // wordt heter tijdens slippen en kan je dus minder lang laten slippen") -
 // now just a property of the cheap end of the catalog instead of an
 // independent dropdown.
+// capacityMult: how much force the pack itself can actually hold before it
+// starts slipping past whatever lf (lockup fraction) alone dictates - the
+// direct ask for "als de motor te veel vermogen maakt t.o.v. de koppeling,
+// rijdt hij door de koppeling heen." 1.0 (the baseline SteadyHold) makes
+// this a complete no-op against LAUNCH_CAP itself (see run-simulator.js's
+// clutchCapacityForce), so the existing calibration is untouched unless a
+// tune's power actually exceeds what the chosen clutch can hold.
 export const CLUTCH_BRANDS = [
-  { id: "basicgrip5", name: "BasicGrip 5-plaats", priceNew: 4500, plates: 5, heatRateMult: 1.35, reliabilityMult: 0.93, weightDeltaLb: 8 },
-  { id: "steadyhold6", name: "SteadyHold 6-plaats", priceNew: 6500, plates: 6, heatRateMult: 1.0, reliabilityMult: 1.00, weightDeltaLb: 0 },
-  { id: "apexclutch6", name: "Apex Billet 6-plaats", priceNew: 9500, plates: 6, heatRateMult: 0.9, reliabilityMult: 1.06, weightDeltaLb: -6 },
-  { id: "vortanclutch6", name: "Vortan Carbon 6-plaats", priceNew: 13000, plates: 6, heatRateMult: 0.82, reliabilityMult: 1.12, weightDeltaLb: -12 },
+  { id: "basicgrip5", name: "BasicGrip 5-plaats", priceNew: 4500, plates: 5, heatRateMult: 1.35, reliabilityMult: 0.93, weightDeltaLb: 8, capacityMult: 0.80 },
+  { id: "steadyhold6", name: "SteadyHold 6-plaats", priceNew: 6500, plates: 6, heatRateMult: 1.0, reliabilityMult: 1.00, weightDeltaLb: 0, capacityMult: 1.00 },
+  { id: "apexclutch6", name: "Apex Billet 6-plaats", priceNew: 9500, plates: 6, heatRateMult: 0.9, reliabilityMult: 1.06, weightDeltaLb: -6, capacityMult: 1.15 },
+  { id: "vortanclutch6", name: "Vortan Carbon 6-plaats", priceNew: 13000, plates: 6, heatRateMult: 0.82, reliabilityMult: 1.12, weightDeltaLb: -12, capacityMult: 1.30 },
 ];
 
 // Setback blowers move the supercharger's mass rearward and shorten the
@@ -84,14 +91,20 @@ export const BLOWER_TYPES = {
   setback: { name: "Setback blower", priceDelta: 4000, tractionMult: 1.015, powerMult: 1.04, reliabilityMult: 1.08 },
 };
 
-// Fuel tank position acts like ballast placement for wheelie-risk
-// purposes: a forward tank helps keep the nose down, a rearward one
-// works against it.
+// Fuel tank position: the tank's OWN weight (how much it's carrying over
+// baseline, see TANK_WEIGHT_PER_GAL_LB below) shifts toward whichever axle
+// it's mounted near, same signed convention as engine position further
+// down (positive = toward the front/nose) - a forward tank helps keep the
+// nose down, a rearward one works against it. Only a fraction of that
+// weight actually counts as an axle shift (TANK_POSITION_SHIFT_FRACTION) -
+// the tank isn't a point mass sitting right on one axle the way ballast is.
 export const TANK_POSITIONS = {
-  forward: { name: "Vooraan", ballastEquivLb: 15 },
-  neutral: { name: "Midden", ballastEquivLb: 0 },
-  rearward: { name: "Achteraan", ballastEquivLb: -15 },
+  forward: { name: "Vooraan" },
+  neutral: { name: "Midden" },
+  rearward: { name: "Achteraan" },
 };
+const TANK_POSITION_SIGN = { forward: 1, neutral: 0, rearward: -1 };
+const TANK_POSITION_SHIFT_FRACTION = 0.3;
 
 export const CHASSIS_LENGTH_MIN_IN = 280;
 export const CHASSIS_LENGTH_MAX_IN = 320;
@@ -103,9 +116,24 @@ export const TANK_SIZE_MAX_GAL = 75;
 export const TANK_SIZE_BASELINE_GAL = 55;
 export const TANK_WEIGHT_PER_GAL_LB = 7;
 
+// Only a slice of the tank's rated size is usable race fuel once a pass
+// actually starts burning through it (lines, deadhead volume, a reserve
+// margin no crew chief runs right to the bottom of) - small enough that
+// skimping on tank size for weight is a real gamble, not just flavor text:
+// run out mid-pass and the engine goes instantly, violently lean (see
+// garageTankUsableGal in run-simulator.js).
+export const TANK_USABLE_FRACTION = 0.15;
+
 export const ENGINE_POSITION_MIN_IN = -3;
 export const ENGINE_POSITION_MAX_IN = 3;
 export const ENGINE_POSITION_BALLAST_EQUIV_PER_IN = 8;
+
+// A mudflap kit isn't just cosmetic - it's sheet material hung low behind
+// the rear tires, so it adds a little downforce back there (cleaner airflow
+// off the tires at speed) along with a little weight, at zero cost since
+// it's just a build toggle, not a purchasable part.
+export const MUDFLAPS_WEIGHT_LB = 11; // ~5 kg
+export const MUDFLAPS_DOWNFORCE_MULT = 1.05;
 
 // How you get the car AND the spares to the track at all. A fifth-wheel
 // (the cheapest way into the sport - one truck, no separate CDL-class
@@ -300,14 +328,16 @@ export function computeGarageEffects(config) {
   const clutch = findBrand(CLUTCH_BRANDS, config.clutchBrandId);
   const body = BODY_MATERIALS[config.bodyMaterial];
   const blowerType = BLOWER_TYPES[config.blowerType];
-  const tankPos = TANK_POSITIONS[config.tankPosition];
 
   const weightDeltaLb = body.weightDeltaLb
     + engine.weightDeltaLb + head.weightDeltaLb + blower.weightDeltaLb + clutch.weightDeltaLb
     + (config.chassisLengthIn - CHASSIS_LENGTH_BASELINE_IN) * CHASSIS_WEIGHT_PER_IN_LB
-    + (config.tankSizeGal - TANK_SIZE_BASELINE_GAL) * TANK_WEIGHT_PER_GAL_LB;
+    + (config.tankSizeGal - TANK_SIZE_BASELINE_GAL) * TANK_WEIGHT_PER_GAL_LB
+    + (config.mudflaps ? MUDFLAPS_WEIGHT_LB : 0);
 
-  const wheelieRiskBallastEquivLb = tankPos.ballastEquivLb
+  const tankWeightDeltaLb = (config.tankSizeGal - TANK_SIZE_BASELINE_GAL) * TANK_WEIGHT_PER_GAL_LB;
+  const tankPositionShiftLb = tankWeightDeltaLb * TANK_POSITION_SIGN[config.tankPosition] * TANK_POSITION_SHIFT_FRACTION;
+  const wheelieRiskBallastEquivLb = tankPositionShiftLb
     - config.enginePositionIn * ENGINE_POSITION_BALLAST_EQUIV_PER_IN;
 
   // Higher reliability means the engine (or clutch) should accumulate
@@ -319,9 +349,13 @@ export function computeGarageEffects(config) {
   return {
     garageWeightDeltaLb: weightDeltaLb,
     garageWheelieRiskBallastEquivLb: wheelieRiskBallastEquivLb,
+    garageTankPositionShiftLb: tankPositionShiftLb,
+    garageTankUsableGal: config.tankSizeGal * TANK_USABLE_FRACTION,
     garageDragCdaMult: config.mudflaps ? 1 : 0.99,
+    garageDownforceMult: config.mudflaps ? MUDFLAPS_DOWNFORCE_MULT : 1,
     garageClutchHeatRateMult: clutch.heatRateMult,
     garageClutchDamageMult: 1 / clutchReliabilityMult,
+    garageClutchCapacityMult: clutch.capacityMult,
     garageTractionMult: blowerType.tractionMult,
     garagePowerMult: computeEnginePowerMult(config),
     garageEngineDamageMult: 1 / reliabilityMult,
@@ -359,23 +393,26 @@ export function spareLabel(part) {
 // Static front/rear split for the per-axle weight readout. A rear-engine
 // dragster carries very little of its static weight up front (long
 // chassis, engine/blower/driver all sitting well aft of center) - this is
-// the bare-chassis baseline before ballast and engine-position choices
-// shift it. Ballast lands 100% on whichever axle it's mounted at,
-// straight from ballastFrontLb/ballastRearLb; the engine itself moving
-// fore/aft (enginePositionIn, same signed convention as the wheelie-risk
-// ballast-equivalent above - positive is rearward) shifts a slice of its
-// own mass across axles too, on top of the ballast the player dials in
-// directly. Purely a display breakdown for the garage UI - the actual
-// launch physics already account for ballast/engine position through
+// the bare-chassis baseline before ballast, engine-position and tank-
+// position choices shift it. Ballast lands 100% on whichever axle it's
+// mounted at, straight from ballastFrontLb/ballastRearLb; the engine
+// itself moving fore/aft (enginePositionIn, same signed convention as the
+// wheelie-risk ballast-equivalent above - positive is rearward) shifts a
+// slice of its own mass across axles too, and the tank's own weight-over-
+// baseline shifts the same way toward wherever it's mounted
+// (tankPositionShiftLb, positive = toward the front - see
+// computeGarageEffects). Purely a display breakdown for the garage UI -
+// the actual launch physics already account for all of this through
 // weightLb and the wheelie-risk ballast-equivalent; this doesn't feed
 // back into run-simulator.js.
 const BASE_FRONT_WEIGHT_FRACTION = 0.17;
 const ENGINE_POSITION_WEIGHT_SHIFT_PER_IN = 12;
 
-export function computeWeightDistribution(totalWeightLb, ballastFrontLb, ballastRearLb, enginePositionIn) {
+export function computeWeightDistribution(totalWeightLb, ballastFrontLb, ballastRearLb, enginePositionIn, tankPositionShiftLb = 0) {
   const bareWeightLb = totalWeightLb - ballastFrontLb - ballastRearLb;
   const frontLb = bareWeightLb * BASE_FRONT_WEIGHT_FRACTION
     - enginePositionIn * ENGINE_POSITION_WEIGHT_SHIFT_PER_IN
+    + tankPositionShiftLb
     + ballastFrontLb;
   const rearLb = totalWeightLb - frontLb;
   return {

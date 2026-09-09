@@ -229,7 +229,7 @@
     <div class="garage-section" id="garage-sec-clutch">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Koppeling</div>
     <p class="note" style="margin-top:0;" id="g-clutch-equipped">Geen koppeling gemonteerd.</p>
-    <p class="note" style="margin-top:0;">Plaatenaantal en warmteopbouw tijdens slippen zitten in het merk gebakken - een goedkope 5-plaats wordt heter tijdens slippen (minder tolerant), duurdere 6-plaats-modellen koeler en betrouwbaarder.</p>
+    <p class="note" style="margin-top:0;">Plaatenaantal en warmteopbouw tijdens slippen zitten in het merk gebakken - een goedkope 5-plaats wordt heter tijdens slippen (minder tolerant), duurdere 6-plaats-modellen koeler en betrouwbaarder. Elk merk heeft ook een eigen grens aan hoeveel vermogen het pakket kan vasthouden: maakt de motor meer dan die koppeling aankan, dan rijdt hij er letterlijk doorheen - hij blijft slippen, ook bij volledige lockup - en kookt zichzelf op tot hij vastloopt. Een goedkopere koppeling bij een fors vermogen is dus een reëel risico, niet alleen een betrouwbaarheidscijfer op papier.</p>
     <div id="g-clutch-inventory-list"></div>
     <div class="row"><label>Merk</label><select id="g-clutch-spare-brand"></select></div>
     <div class="row"><label><input type="checkbox" id="g-clutch-spare-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
@@ -256,6 +256,7 @@
     <div class="row"><label>Chassislengte <span class="val" id="v-g-chassis-length">300"</span></label>
       <input type="range" id="g-chassis-length" min="280" max="320" value="300" step="1"></div>
     <div class="row"><label><input type="checkbox" id="g-mudflaps"> Mudflaps gemonteerd</label></div>
+    <p class="note" style="margin-top:0;">Mudflaps zijn achter de achterbanden gemonteerd platen: geven ~5% extra downforce (schonere luchtstroom van de banden af) tegen ~5 kg extra gewicht en iets meer luchtweerstand.</p>
     <div class="row"><label>Motorpositie (setback) <span class="val" id="v-g-engine-position">0</span></label>
       <input type="range" id="g-engine-position" min="-3" max="3" value="0" step="1"></div>
     <p class="note" style="margin-top:0;">Motor naar voren (negatief) legt meer gewicht op de neus (minder wheelie-risico), naar achteren (positief) juist minder - net als bij ballast, maar dan zonder het gewicht zelf toe te voegen.</p>
@@ -265,6 +266,7 @@
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Brandstoftank</div>
     <div class="row"><label>Tankgrootte <span class="val" id="v-g-tank-size">55 gal</span></label>
       <input type="range" id="g-tank-size" min="45" max="75" value="55" step="1"></div>
+    <p class="note" id="g-tank-capacity-hint" style="margin-top:0;">--</p>
     <div class="row"><label>Tankpositie</label>
       <select id="g-tank-position">
         <option value="forward">Vooraan</option>
@@ -272,6 +274,7 @@
         <option value="rearward">Achteraan</option>
       </select>
     </div>
+    <p class="note" style="margin-top:0;">Grotere tank is zwaarder maar zit langer vol; positie schuift een deel van dat gewicht mee richting neus of achteras (zie Gewicht per band hieronder) - net als motorpositie, maar dan met de tank. Slechts een deel van de tankinhoud is bruikbare wedstrijdbrandstof - loopt de tank tijdens een run leeg, dan explodeert de motor direct (kurkdroog en compleet mager op het zwaarst belaste moment), met dezelfde gevolgen als elke andere ernstige motorschade (reserve, reparatie, of total loss - zie Motor hierboven).</p>
     </div>
 
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Overzicht</div>
@@ -477,6 +480,7 @@
           <div class="insp"><div class="lbl">Bandenslijtage</div><div class="status" id="i-tire">--</div></div>
           <div class="insp"><div class="lbl">Density altitude</div><div class="status" id="i-da">--</div></div>
           <div class="insp"><div class="lbl">Piek brandstofdebiet</div><div class="status" id="i-fuelpeak">--</div></div>
+          <div class="insp"><div class="lbl">Brandstofverbruik</div><div class="status" id="i-fuelused">--</div></div>
           <div class="insp"><div class="lbl">Rijdersactie</div><div class="status" id="i-driver">--</div></div>
           <div class="insp"><div class="lbl">Cilinders</div><div class="status" id="i-cyl">--</div></div>
           <div class="insp"><div class="lbl">Ontstekingsretarder</div><div class="status" id="i-retard">--</div></div>

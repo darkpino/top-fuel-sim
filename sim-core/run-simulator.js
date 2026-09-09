@@ -3,7 +3,7 @@
 
 import { calcDensityAltitude, calcPowerMult, calcGripCoeff, calcAirDensityRatio } from "./environment.js";
 import {
-  calcEngineFactors, calcMult, calcEngineRpm, calcFuelFlowGpm,
+  calcEngineFactors, calcMult, stepEngineRpm, calcFuelFlowGpm,
   calcIdealFuelPct, calcMixtureRichness, activeFuelPct,
   calcIgnEff, activeIgnition, calcIgnitionRetard,
   IGNITION_MAX_ADVANCE_RATE, calcIgnitionHeatDamageRate,
@@ -135,8 +135,13 @@ export function runSimulation(settings) {
     fuel4time, fuel4pct, fuel5time, fuel5pct, fuel6time, fuel6pct,
     fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt, driverShutoffFt,
     ballastFrontLb, ballastRearLb, frontWingPct, wheelieBarHeightIn,
-    garageWeightDeltaLb = 0, garageWheelieRiskBallastEquivLb = 0, garageDragCdaMult = 1,
-    garageClutchHeatRateMult = 1, garageClutchDamageMult = 1, garageTractionMult = 1, garagePowerMult = 1, garageEngineDamageMult = 1,
+    garageWeightDeltaLb = 0, garageWheelieRiskBallastEquivLb = 0, garageDragCdaMult = 1, garageDownforceMult = 1,
+    garageClutchHeatRateMult = 1, garageClutchDamageMult = 1, garageClutchCapacityMult = 1,
+    garageTractionMult = 1, garagePowerMult = 1, garageEngineDamageMult = 1,
+    // Infinity: without a configured tank (AI opponents, or any caller that
+    // doesn't pass this) there's no capacity ceiling to run afoul of - only
+    // the player's own garage-sized tank can actually run dry.
+    garageTankUsableGal = Infinity,
   } = settings;
 
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg, trackElevationFt);
@@ -175,7 +180,7 @@ export function runSimulation(settings) {
   // Both now depend on the fuel curve (fuelVolPct), which changes over the
   // run, so they're recomputed each timestep below instead of once here.
   const wingTrim = 1 + (wingAngle / 2.5) * 0.45;
-  const WING_K = WING_BASE_K * wingTrim;
+  const WING_K = WING_BASE_K * wingTrim * garageDownforceMult;
 
   const stages = {
     s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
@@ -209,6 +214,9 @@ export function runSimulation(settings) {
   let engineFailed = false;
   let engineFailTime = null;
   let engineFailCause = null;
+  let fuelStarved = false;
+  let fuelConsumedGal = 0;
+  let engineRpmState = 3000; // matches engine.js's STAGING_RPM
   let cylindersDropped = false;
   let cylinderDropTime = null;
   let cylinderDropCause = null;
@@ -219,6 +227,7 @@ export function runSimulation(settings) {
   const driverState = createDriverState();
   let lastSlipPct = 0;
   let peakWornGain = 0;
+  let peakClutchOverForce = 0;
   let earlyLoadSum = 0;
   let earlyLoadCount = 0;
   let peakIgnitionRetard = 0;
@@ -242,8 +251,14 @@ export function runSimulation(settings) {
     const wornFingerDesired = calcWornFingerDesired(fingerDesired, clutchDamage);
     peakWornGain = Math.max(peakWornGain, wornFingerDesired - fingerDesired);
     const lf = Math.min(wornFingerDesired, bearingPos) * heatBoost;
+    // Computed here (ahead of engine RPM) because stepEngineRpm now needs
+    // it too - whether the driver is still on the gas this instant is what
+    // decides whether the free-revving engine keeps climbing/holding or
+    // falls back toward idle (see engine.js).
+    const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, driverShutoffFt, DT);
 
-    const rpm = calcEngineRpm({ t, wheelSpeedFtS: wheelV, lf, priorSlipPct: lastSlipPct });
+    engineRpmState = stepEngineRpm(engineRpmState, { t, wheelSpeedFtS: wheelV, lf, priorSlipPct: lastSlipPct, throttle }, DT);
+    const rpm = engineRpmState;
     const fuelVolPctNow = activeFuelPct(t, fuelStages);
     // Ignition is a curve too now, and the retard system (real safety
     // equipment on cars like these, not a driver-tunable knob) can pull
@@ -295,9 +310,21 @@ export function runSimulation(settings) {
     const LAUNCH_CAP = 16500 * cappedMult * garagePowerMult;
     const POWER_HP = 5600 * cappedMult * garagePowerMult;
 
-    const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, driverShutoffFt, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
-    const engineForce = Math.min(powerForce, LAUNCH_CAP * lf) * throttle;
+    let engineForce = Math.min(powerForce, LAUNCH_CAP * lf) * throttle;
+    // If the motor is making more force than the clutch PACK ITSELF can
+    // hold (a weaker clutch's garageClutchCapacityMult < 1, or simply a
+    // power tune that's out-built whatever clutch is bolted in), the
+    // excess never reaches the wheel - it drives the pack through instead.
+    // At the baseline clutch (capacityMult 1.0) this ceiling is exactly
+    // LAUNCH_CAP, which engineForce can never exceed anyway (lf <= 1), so
+    // this is a complete no-op for the default build - it only bites once
+    // a tune genuinely out-powers the clutch that's mounted.
+    const clutchCapacityForce = LAUNCH_CAP * garageClutchCapacityMult;
+    if (engineForce > clutchCapacityForce) {
+      peakClutchOverForce = Math.max(peakClutchOverForce, engineForce - clutchCapacityForce);
+      engineForce = clutchCapacityForce;
+    }
     // What the motor could send through a FULLY locked clutch right now,
     // vs. what's actually getting through at the current lockup fraction -
     // the gap is torque the clutch is holding back, dissipated as heat in
@@ -412,6 +439,20 @@ export function runSimulation(settings) {
     }
 
     const fuelGpm = calcFuelFlowGpm(rpm, fuelVolFactor);
+    fuelConsumedGal += fuelGpm * (DT / 60); // gpm is gallons per MINUTE, DT is seconds
+    if (!engineFailed && !fuelStarved && fuelConsumedGal > garageTankUsableGal) {
+      // Running dry mid-pass isn't a gentle sputter - the pump goes instantly
+      // to air, the mixture goes catastrophically lean at the worst possible
+      // moment (full load), and the motor lets go. Reuses the exact same
+      // "lean" engine failure the fuel-curve-lean-under-load path already
+      // uses (rollEnginePartsFailed in finances.js still picks which
+      // physical part(s) it actually takes), just flagged separately so the
+      // UI can call out what actually happened.
+      engineFailed = true;
+      fuelStarved = true;
+      engineFailTime = t;
+      engineFailCause = "lean";
+    }
 
     // Interpolated crossing time within this DT=0.004s step, not the raw
     // simulation-grid time - without this, two cars whose true finish
@@ -474,11 +515,12 @@ export function runSimulation(settings) {
   return {
     finished, et, mph, et60, et330, et660, mph660, trace, densityAltitude,
     clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk, nitroIllegal, tireShakeRisk,
-    peakFuelGpm, engineFailed, engineFailTime, engineFailCause,
+    peakFuelGpm, fuelConsumedGal, engineFailed, engineFailTime, engineFailCause, fuelStarved,
     cylindersDropped, cylinderDropTime, cylinderDropCause,
     clutchFailed, clutchFailTime,
     driverLifted: driverState.lifted, driverLiftTime: driverState.liftTime, driverLiftReason: driverState.liftReason, pedalCount: driverState.pedalCount,
     clutchWearLockupGainPct: peakWornGain * 100,
+    clutchOverpowered: peakClutchOverForce > 0,
     peakIgnitionRetard,
     anySpin: trace.some(p => p.slip > 5),
     weightLb, weightIllegal, wheelieRisk, frontWingHuntRisk,

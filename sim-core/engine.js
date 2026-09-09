@@ -131,12 +131,36 @@ const GEAR_RPM_PER_FTS = 16.2; // rpm per ft/s of wheel speed once fully locked 
 // and the ramp toward it - only starts here.
 const LOCK_ENGAGE_START = 0.9;
 
-export function calcEngineRpm({ t, wheelSpeedFtS, lf, priorSlipPct }) {
+// Off-throttle RPM fall: once locked (lockFrac > 0.5) RPM already correctly
+// tracks wheel speed, which decelerates on its own once appliedForce cuts -
+// no extra handling needed there. But while still free-revving/unlocked,
+// the formula above has no throttle term at all, so a lift used to be
+// completely invisible on the RPM trace: the free-rev band just kept
+// climbing (or holding at redline) regardless of whether the driver had
+// already lifted. stepEngineRpm is stateful specifically to fix that - off
+// throttle and not yet locked, nothing is still driving the engine up, so
+// it falls back toward idle at a real (fast, but not instant) rate instead
+// of silently continuing to track the full-throttle target.
+const ENGINE_RPM_FALL_RATE_OFF_THROTTLE = 12000; // rpm/s
+const ENGINE_IDLE_RPM = 1200;
+const ENGINE_RPM_THROTTLE_TRACK_THRESHOLD = 0.5;
+
+export function stepEngineRpm(prevRpm, { t, wheelSpeedFtS, lf, priorSlipPct, throttle }, dt) {
   const riseFrac = Math.min(1, t / RISE_DURATION);
   const freeRpm = STAGING_RPM + (LAUNCH_RPM - STAGING_RPM) * riseFrac + FLARE_RPM_PER_SLIP_PCT * Math.max(0, priorSlipPct || 0);
   const lockedRpm = GEAR_RPM_PER_FTS * wheelSpeedFtS;
   const lockFrac = Math.max(0, Math.min(1, (lf - LOCK_ENGAGE_START) / (1 - LOCK_ENGAGE_START)));
-  return freeRpm * (1 - lockFrac) + lockedRpm * lockFrac;
+  const targetRpm = freeRpm * (1 - lockFrac) + lockedRpm * lockFrac;
+  if (throttle > ENGINE_RPM_THROTTLE_TRACK_THRESHOLD || lockFrac > ENGINE_RPM_THROTTLE_TRACK_THRESHOLD) {
+    // Under power, or mechanically tied to wheel speed via a mostly-locked
+    // clutch: track the target directly, same as the old formula (no rate
+    // limit - the engine responds instantly to the load it's actually
+    // seeing). This is the overwhelming majority of a normal run, so
+    // existing calibration is untouched.
+    return targetRpm;
+  }
+  const fallTarget = Math.max(ENGINE_IDLE_RPM, lockedRpm);
+  return Math.max(fallTarget, prevRpm - ENGINE_RPM_FALL_RATE_OFF_THROTTLE * dt);
 }
 
 // Fuel flow: a nitro fuel pump is a positive-displacement gear pump driven
@@ -160,7 +184,7 @@ export function calcFuelFlowGpm(rpm, fuelVolFactor) {
 // the pump's own RPM-driven swings.
 // Floored well above idle (unlike the old ~STAGING_RPM floor) because the
 // mechanical pulldown now genuinely tracks wheel speed once locked (see
-// calcEngineRpm above) and can swing much lower than the old authored dip
+// stepEngineRpm above) and can swing much lower than the old authored dip
 // ever did - a full-throttle car that hooks up hard right after a modest
 // speed can see engine rpm sag a long way below the free-revving band for
 // real. Below this floor there's no more fuel-curve slider room to chase

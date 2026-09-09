@@ -344,7 +344,9 @@ function renderRunResult(r) {
   const spinFlag = $("spinFlag");
   let flags = "";
   if (r.engineFailed) {
-    flags += r.engineFailCause === "lean"
+    flags += r.fuelStarved
+      ? `<div class="flag">Motor explodeert na ${r.engineFailTime.toFixed(2)}s — de tank liep leeg midden in de run, de motor viel in één klap kurkdroog en compleet mager. Zet een grotere tank, of stem de brandstofcurve zuiniger af.</div>`
+      : r.engineFailCause === "lean"
       ? `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Zet stage 2 (lockup) verder open.</div>`
       : `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% was te heet om vol te houden.</div>`;
   }
@@ -355,6 +357,7 @@ function renderRunResult(r) {
   else if (r.driverLifted && r.driverLiftReason === "shutoff") flags += `<div class="flag">Rijder is op het ingestelde afschakelpunt (${r.driverLiftTime.toFixed(2)}s) van het gas gegaan — geplande shutoff, de auto heeft de 1000 ft alsnog op momentum gehaald.</div>`;
   else if (r.driverLifted) flags += `<div class="flag">Rijder is na aanhoudende bandenrook op ${r.driverLiftTime.toFixed(2)}s van het gas gegaan, maar de auto heeft de 1000 ft alsnog op momentum gehaald.</div>`;
   if (r.clutchWearLockupGainPct > 3 && !r.clutchFailed) flags += `<div class="flag">Koppelingsslijtage heeft de lockup tijdens deze run zo'n ${r.clutchWearLockupGainPct.toFixed(0)} procentpunt verder laten locken dan ingesteld — de vingers konden door slijtage van het lager verder naar buiten. Bij nog meer slip op deze tune wordt de koppeling geleidelijk agressiever dan bedoeld.</div>`;
+  if (r.clutchOverpowered && !r.clutchFailed) flags += `<div class="flag">De motor maakt meer vermogen dan deze koppeling kan vasthouden — hij rijdt er letterlijk doorheen en blijft slippen, ook bij volledige lockup. Dat kost tijd én kookt de koppeling extra hard op. Kies een sterkere koppeling, of temper het vermogen.</div>`;
   if (r.cylindersDropped) {
     if (r.cylinderDropCause === "rich") flags += `<div class="flag">Cilinder(s) verzopen na ${r.cylinderDropTime.toFixed(2)}s — de brandstofcurve stond op dat moment te rijk voor het toerental. Kost vermogen, maar de motor overleeft het.</div>`;
     else if (r.cylinderDropCause === "lean") flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Bij aanhouden loopt dit uit op motorschade.</div>`;
@@ -409,6 +412,11 @@ function renderRunResult(r) {
 
   $("i-fuelpeak").textContent = r.peakFuelGpm.toFixed(1) + " gpm";
   $("i-fuelpeak").className = "status ok";
+
+  const usableGal = computeGarageEffects(garageConfig).garageTankUsableGal;
+  const fuelUsedCls = r.fuelStarved ? "bad" : statusClass(r.fuelConsumedGal, usableGal * 0.7, usableGal * 0.9);
+  $("i-fuelused").textContent = `${r.fuelConsumedGal.toFixed(1)} / ${usableGal.toFixed(1)} gal`;
+  $("i-fuelused").className = "status " + fuelUsedCls;
 
   let driverTxt, driverCls;
   if (r.driverLifted && r.driverLiftReason === "shutoff") { driverTxt = `shutoff @ ${r.driverLiftTime.toFixed(2)}s`; driverCls = "ok"; }
@@ -1202,6 +1210,7 @@ function renderGarageSummary() {
 
   $("g-build-value").textContent = "€" + totalBuildValue(garageConfig).toLocaleString("nl-NL");
   const effects = computeGarageEffects(garageConfig);
+  $("g-tank-capacity-hint").textContent = `Bruikbare wedstrijdbrandstof: ${effects.garageTankUsableGal.toFixed(1)} gal (van de ${garageConfig.tankSizeGal} gal totaal - de rest is lijnen/aanzuigreserve). Een gemiddelde pass verbruikt grofweg 6-9 gal, afhankelijk van blower, nitro% en de brandstofcurve - te weinig marge en de motor loopt tijdens de run droog.`;
   const wd = Math.round(effects.garageWeightDeltaLb);
   $("g-weight-delta").textContent = (wd > 0 ? "+" : "") + wd + " lb";
   $("g-power-mult").textContent = Math.round(effects.garagePowerMult * 100) + "%";
@@ -1211,7 +1220,7 @@ function renderGarageSummary() {
   const ballastFrontLb = +$("ballfront").value;
   const ballastRearLb = +$("ballrear").value;
   const totalWeightLb = WEIGHT_LB_MIN + effects.garageWeightDeltaLb + ballastFrontLb + ballastRearLb;
-  const dist = computeWeightDistribution(totalWeightLb, ballastFrontLb, ballastRearLb, garageConfig.enginePositionIn);
+  const dist = computeWeightDistribution(totalWeightLb, ballastFrontLb, ballastRearLb, garageConfig.enginePositionIn, effects.garageTankPositionShiftLb);
   $("g-total-weight").textContent = Math.round(totalWeightLb) + " lb";
   $("g-total-weight").style.color = totalWeightLb < WEIGHT_LB_MIN ? "var(--red)" : "var(--text)";
   $("g-front-weight").textContent = Math.round(dist.frontLb) + ` lb (${dist.frontPct.toFixed(0)}%)`;
