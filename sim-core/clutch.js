@@ -17,12 +17,16 @@ const STAGE_NUMBERS = [1, 2, 3, 4, 5, 6];
 // at launch - launch gives a moderate plateau, there's often a dip as drag
 // catches up before the next stage clamps harder, then a climb to the peak
 // right as the clutch fully locks, followed by a decay as speed/drag take
-// over. Stage 6's target IS the ceiling for the rest of the run - it does
-// NOT keep climbing to 100% on its own after s6time. Set it to 100% for a
-// normal full-lockup finish (the peak G in real telemetry happens right as
-// that's reached); leave it lower to deliberately keep the clutch slipping
-// for the whole run - protects the tires from a traction ceiling the tune
-// can't otherwise reach, at the cost of cooking the clutch itself.
+// over. That dip does NOT come from the bearing retracting, though - see
+// stepBearingPos, it mechanically can't. It comes from the power-based
+// force ceiling naturally falling as speed rises (run-simulator.js) while
+// lockup itself holds roughly flat for a stage or two. Stage 6's target IS
+// the ceiling for the rest of the run - it does NOT keep climbing to 100%
+// on its own after s6time. Set it to 100% for a normal full-lockup finish
+// (the peak G in real telemetry happens right as that's reached); leave it
+// lower to deliberately keep the clutch slipping for the whole run -
+// protects the tires from a traction ceiling the tune can't otherwise
+// reach, at the cost of cooking the clutch itself.
 export function activeSetpoint(t, stages) {
   for (const n of STAGE_NUMBERS) {
     if (t < stages[`s${n}time`]) return stages[`s${n}pct`];
@@ -53,9 +57,17 @@ export function calcWornFingerDesired(baseFingerDesired, clutchDamage) {
   return Math.min(1.0, baseFingerDesired + clutchDamage * WEAR_LOCKUP_GAIN);
 }
 
+// The bearing is a one-way ratchet: centrifugal force and the timer's
+// hydraulic/pneumatic pressure only ever push it toward MORE lockup, never
+// less, within a run. A stage whose target is below the bearing's current
+// position doesn't pull it back - it just can't add anything until a
+// later stage's target rises above where the bearing already sits (a
+// real "pedal back" on a genuine centrifugal clutch means the driver
+// backing off the throttle so less torque needs transmitting, not the
+// bearing itself retracting - that's a driver/tune interaction the sim
+// already covers elsewhere, not something this position tracker does).
 export function stepBearingPos(bearingPos, target, bearingSpeed, dt) {
   if (bearingPos < target) return Math.min(target, bearingPos + bearingSpeed * dt);
-  if (bearingPos > target) return Math.max(target, bearingPos - bearingSpeed * dt);
   return bearingPos;
 }
 
@@ -72,10 +84,14 @@ export function activeSpeed(t, stages) {
 }
 
 // Reachable lockup within a stage = however far the bearing can travel at
-// that stage's speed in the time available, capped by the setpoint itself.
-// If the reachable value is below the setpoint, that setpoint is currently
-// "dead" - raising it further won't do anything until you also give the
-// bearing more time or more speed. Returns { reach1..reach6 }.
+// that stage's speed in the time available, capped by the setpoint itself
+// - and, same as stepBearingPos, never LESS than what an earlier stage
+// already reached. If the reachable value is below the setpoint, that
+// setpoint is currently "dead" - raising it further won't do anything
+// until you also give the bearing more time or more speed. If a stage's
+// setpoint is below what's already been reached, it's "dead" the other
+// way: nothing to catch up to, the bearing just holds. Returns
+// { reach1..reach6 }.
 export function calcClutchReach(stages) {
   let pos = 0.05;
   let prevTime = 0;
@@ -85,7 +101,7 @@ export function calcClutchReach(stages) {
     const pct = stages[`s${n}pct`];
     const speed = stages[`s${n}speed`];
     const dt = time - prevTime;
-    pos = pct >= pos ? Math.min(pct, pos + speed * dt) : Math.max(pct, pos - speed * dt);
+    if (pct > pos) pos = Math.min(pct, pos + speed * dt);
     reach[`reach${n}`] = pos;
     prevTime = time;
   }
