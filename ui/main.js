@@ -10,9 +10,10 @@ import {
   generateLaneVariants, pickBetterLane,
 } from "../sim-core/ladder.js";
 import {
-  PARTS, findBrand, defaultGarageConfig, computeGarageEffects,
+  PARTS, TRAILER_TYPES, findBrand, defaultGarageConfig, computeGarageEffects,
   totalBuildValue, spareLabel, computeWeightDistribution,
   equippedUnit, installUnit, unitPrice, computeClutchReliabilityMult,
+  isPartOwned, isCarRaceReady, totalSpareCount, trailerSpareCapacity, buyUnit,
 } from "../sim-core/garage.js";
 import {
   ENTRY_FEE, defaultFinancesState, addTransaction, chargeEntryFee, chargeRunCost,
@@ -406,6 +407,13 @@ function renderRunResult(r) {
 }
 
 $("runBtn").addEventListener("click", () => {
+  if (!isCarRaceReady(garageConfig)) {
+    $("placeholder").style.display = "block";
+    $("placeholder").textContent = "Auto niet compleet - koop eerst motor, koppen, blower, koppeling en trailer in Auto bouwen.";
+    $("resultsContent").style.display = "none";
+    $("inspPanel").style.display = "none";
+    return;
+  }
   renderRunResult(runSimulation(readSettings()));
 });
 
@@ -498,6 +506,10 @@ function roundResultText(result) {
 function entrantLabel(e) { return escapeHtml(e.name) + (e.isPlayer ? " (jij)" : ""); }
 
 $("startEventBtn").addEventListener("click", () => {
+  if (!isCarRaceReady(garageConfig)) {
+    $("event-status").textContent = `Auto niet compleet - koop eerst motor, koppen, blower, koppeling en trailer in Auto bouwen voor je kunt inschrijven.`;
+    return;
+  }
   if (financesState.budget < ENTRY_FEE) {
     $("event-status").textContent = `Onvoldoende budget voor het inschrijfgeld (€${ENTRY_FEE.toLocaleString("nl-NL")}) - huidig budget €${financesState.budget.toLocaleString("nl-NL")}. Check Financiën voor sponsorvoorstellen.`;
     return;
@@ -846,7 +858,7 @@ function runPlayerQualifying(skip) {
   if (!skip) {
     const r = runSimulation(readSettings());
     player.quals[sessionIndex] = r;
-    if (r.finished && !r.weightIllegal && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
+    if (r.finished && !r.weightIllegal && !r.engineFailed && !r.clutchFailed && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
     ladderState.playerHistory[ladderState.roundIndex] = { result: r };
     fatalPart = chargePlayerRun(r);
     renderRunResult(r);
@@ -1033,9 +1045,11 @@ const PART_LIST = Object.keys(PARTS);
 function populateGarageSelects() {
   PART_LIST.forEach(part => {
     const optionsHtml = PARTS[part].brands.map(b => `<option value="${b.id}">${escapeHtml(b.name)} — €${b.priceNew.toLocaleString("nl-NL")}</option>`).join("");
-    $(`g-${part}-brand`).innerHTML = optionsHtml;
     $(`g-${part}-spare-brand`).innerHTML = optionsHtml;
   });
+  $("g-trailer-select").innerHTML = TRAILER_TYPES.map(t =>
+    `<option value="${t.id}">${escapeHtml(t.name)} — €${t.priceNew.toLocaleString("nl-NL")}, ${t.spareCapacity} reserve-onderdelen</option>`
+  ).join("");
 }
 populateGarageSelects();
 
@@ -1054,11 +1068,6 @@ document.querySelectorAll("#dragster-diagram .diagram-part").forEach(el => {
 });
 
 function applyGarageConfigToForm() {
-  PART_LIST.forEach(part => {
-    const unit = equippedUnit(garageConfig, part);
-    $(`g-${part}-brand`).value = unit.brandId;
-    $(`g-${part}-secondhand`).checked = unit.secondhand;
-  });
   $("g-blower-type").value = garageConfig.blowerType;
   $("g-body-material").value = garageConfig.bodyMaterial;
   $("g-chassis-length").value = garageConfig.chassisLengthIn;
@@ -1069,10 +1078,6 @@ function applyGarageConfigToForm() {
 }
 
 function readGarageConfigFromForm() {
-  PART_LIST.forEach(part => {
-    garageConfig[part + "BrandId"] = $(`g-${part}-brand`).value;
-    garageConfig[part + "Secondhand"] = $(`g-${part}-secondhand`).checked;
-  });
   garageConfig.blowerType = $("g-blower-type").value;
   garageConfig.bodyMaterial = $("g-body-material").value;
   garageConfig.chassisLengthIn = +$("g-chassis-length").value;
@@ -1103,11 +1108,47 @@ function renderPartInventoryList(part) {
   container.innerHTML = `<table class="event-table"><thead><tr><th>Merk (reserve)</th><th>Staat</th><th>Waarde</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+// Per-part readonly "what's mounted" line, plus the buy button's label -
+// "X kopen" for a first purchase (becomes equipped directly), "Reserve X
+// kopen" once something's already mounted (goes to inventory instead,
+// capacity permitting - see buyUnit in garage.js).
+function renderPartEquippedStatus(part) {
+  const owned = isPartOwned(garageConfig, part);
+  const label = spareLabel(part);
+  const capLabel = label[0].toUpperCase() + label.slice(1);
+  if (owned) {
+    const unit = equippedUnit(garageConfig, part);
+    const brand = findBrand(PARTS[part].brands, unit.brandId);
+    $(`g-${part}-equipped`).textContent = `Gemonteerd: ${brand.name}${unit.secondhand ? " (tweedehands)" : ""}.`;
+  } else {
+    $(`g-${part}-equipped`).textContent = `Geen ${label} gemonteerd.`;
+  }
+  $(`g-buy-${part}-spare`).textContent = owned ? `Reserve ${label} kopen` : `${capLabel} kopen`;
+}
+
 function renderGarageSummary() {
   $("v-g-chassis-length").textContent = garageConfig.chassisLengthIn + '"';
   $("v-g-tank-size").textContent = garageConfig.tankSizeGal + " gal";
   $("v-g-engine-position").textContent = garageConfig.enginePositionIn;
-  PART_LIST.forEach(renderPartInventoryList);
+  PART_LIST.forEach(part => { renderPartEquippedStatus(part); renderPartInventoryList(part); });
+
+  if (garageConfig.trailerId) {
+    const trailer = findBrand(TRAILER_TYPES, garageConfig.trailerId);
+    $("g-trailer-equipped").textContent = `Trailer: ${trailer.name} — ${trailer.spareCapacity} reserve-onderdelen.`;
+    $("g-buy-trailer").textContent = "Andere trailer kopen";
+  } else {
+    $("g-trailer-equipped").textContent = "Geen trailer — geen evenement mogelijk, en geen ruimte voor reserve-onderdelen.";
+    $("g-buy-trailer").textContent = "Trailer kopen";
+  }
+  const spareCount = totalSpareCount(garageConfig);
+  const spareCap = trailerSpareCapacity(garageConfig);
+  $("g-spare-capacity").textContent = `${spareCount}/${spareCap}`;
+  $("g-spare-capacity").style.color = spareCount >= spareCap ? "var(--red)" : "var(--text)";
+
+  $("garage-readiness-note").innerHTML = isCarRaceReady(garageConfig)
+    ? `<span style="color:var(--green)">Klaar om te racen: motor, koppen, blower, koppeling en trailer zijn allemaal aanwezig.</span>`
+    : `<span style="color:var(--red)">Nog niet klaar om te racen — koop hieronder wat ontbreekt (motor, koppen, blower, koppeling, trailer) voor je een run of evenement kunt starten.</span>`;
+
   $("g-build-value").textContent = "€" + totalBuildValue(garageConfig).toLocaleString("nl-NL");
   const effects = computeGarageEffects(garageConfig);
   const wd = Math.round(effects.garageWeightDeltaLb);
@@ -1135,7 +1176,6 @@ function renderGaragePanel() {
 }
 
 const GARAGE_FORM_IDS = [
-  ...PART_LIST.flatMap(part => [`g-${part}-brand`, `g-${part}-secondhand`]),
   "g-blower-type",
   "g-body-material", "g-chassis-length", "g-tank-size", "g-tank-position",
   "g-mudflaps", "g-engine-position",
@@ -1169,27 +1209,54 @@ $("garagePanel").addEventListener("click", (e) => {
   $("garage-status").textContent = `${label[0].toUpperCase()}${label.slice(1)} gewisseld.`;
 });
 
-// Buys a spare of whatever brand/condition is picked in that part's own
-// "nieuwe reserve" mini-form - can be (and often should be) a different,
-// cheaper brand than what's actually mounted, since a spare only has to
-// get you through the rest of an event, not perform like your main part.
-function buySpare(part) {
+// Buys whatever brand/condition is picked in that part's mini-form. A
+// team that doesn't own this part yet gets it mounted directly (a first
+// engine isn't a "spare" of nothing); otherwise it's a spare, capped by
+// the trailer's capacity - see buyUnit in garage.js for which case
+// applies and why.
+function buyPart(part) {
   const unit = { brandId: $(`g-${part}-spare-brand`).value, secondhand: $(`g-${part}-spare-secondhand`).checked };
   const price = unitPrice(part, unit);
+  const wasOwned = isPartOwned(garageConfig, part);
+  if (wasOwned && totalSpareCount(garageConfig) >= trailerSpareCapacity(garageConfig)) {
+    $("garage-status").textContent = trailerSpareCapacity(garageConfig) === 0
+      ? `Geen trailer — koop er eerst een voor je reserve-onderdelen kunt meenemen.`
+      : `Trailer vol (${totalSpareCount(garageConfig)}/${trailerSpareCapacity(garageConfig)} reserve-onderdelen) — koop een grotere trailer voor meer ruimte.`;
+    return;
+  }
   if (financesState.budget < price) {
     $("garage-status").textContent = `Onvoldoende budget (€${price.toLocaleString("nl-NL")} nodig, €${financesState.budget.toLocaleString("nl-NL")} beschikbaar).`;
     return;
   }
   const brandName = findBrand(PARTS[part].brands, unit.brandId).name;
-  addTransaction(financesState, `Reserve ${spareLabel(part)} gekocht (${brandName})`, -price);
-  garageConfig[part + "Inventory"].push(unit);
+  const outcome = buyUnit(garageConfig, part, unit);
+  const label = spareLabel(part);
+  addTransaction(financesState, `${wasOwned ? "Reserve " : ""}${label} gekocht (${brandName})`, -price);
   saveFinancesState();
   saveGarageConfig();
   renderGarageSummary();
   renderFinancePanel();
-  $("garage-status").textContent = `Reserve ${spareLabel(part)} (${brandName}) gekocht voor €${price.toLocaleString("nl-NL")}.`;
+  $("garage-status").textContent = outcome === "equipped"
+    ? `${label[0].toUpperCase()}${label.slice(1)} (${brandName}) gekocht en gemonteerd voor €${price.toLocaleString("nl-NL")}.`
+    : `Reserve ${label} (${brandName}) gekocht voor €${price.toLocaleString("nl-NL")}.`;
 }
-PART_LIST.forEach(part => $(`g-buy-${part}-spare`).addEventListener("click", () => buySpare(part)));
+PART_LIST.forEach(part => $(`g-buy-${part}-spare`).addEventListener("click", () => buyPart(part)));
+
+$("g-buy-trailer").addEventListener("click", () => {
+  const trailerId = $("g-trailer-select").value;
+  const trailer = findBrand(TRAILER_TYPES, trailerId);
+  if (financesState.budget < trailer.priceNew) {
+    $("garage-status").textContent = `Onvoldoende budget (€${trailer.priceNew.toLocaleString("nl-NL")} nodig, €${financesState.budget.toLocaleString("nl-NL")} beschikbaar).`;
+    return;
+  }
+  addTransaction(financesState, `Trailer gekocht (${trailer.name})`, -trailer.priceNew);
+  garageConfig.trailerId = trailerId;
+  saveFinancesState();
+  saveGarageConfig();
+  renderGarageSummary();
+  renderFinancePanel();
+  $("garage-status").textContent = `Trailer (${trailer.name}) gekocht voor €${trailer.priceNew.toLocaleString("nl-NL")}.`;
+});
 
 setMode("test");
 

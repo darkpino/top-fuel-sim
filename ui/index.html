@@ -113,6 +113,8 @@
   <div class="panel" id="garagePanel" style="display:none;">
     <div class="sec-title">Auto bouwen</div>
     <p class="note" style="margin-top:0;">Onderdelen en chassiskeuzes die worden opgeslagen en meegenomen naar elke run (test en evenement). Duurdere merken maken meer vermogen én zijn betrouwbaarder (de motor gaat minder snel kapot); tweedehands is goedkoper maar minder betrouwbaar zonder aan vermogen in te leveren. Zie "Vermogen" en "Betrouwbaarheid" hieronder voor het effect van je huidige bouw.</p>
+    <p class="note" style="margin-top:0;">Een nieuw team begint met een lege garage - niets is gemonteerd, er is geen trailer. Koop bij elk onderdeel hieronder je eerste exemplaar (dat wordt meteen gemonteerd); een volgende aankoop van hetzelfde onderdeel is een reserve, tot de capaciteit van je trailer vol zit.</p>
+    <p class="note" id="garage-readiness-note" style="margin-top:0;"></p>
 
     <p class="note" style="margin-top:0;">Klik op een onderdeel in de tekening om direct naar de bijbehorende instellingen te springen.</p>
     <svg class="dragster-diagram" id="dragster-diagram" viewBox="0 0 960 240" role="img" aria-label="Zijaanzicht van de dragster - klik op een onderdeel om naar de instellingen te springen">
@@ -184,30 +186,26 @@
 
     <div class="garage-section" id="garage-sec-engine">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Motor</div>
-    <div class="row"><label>Merk (gemonteerd)</label><select id="g-engine-brand"></select></div>
-    <div class="row"><label><input type="checkbox" id="g-engine-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
-    <p class="note" style="margin-top:0;">Reserve-motorblokken hieronder mogen een ander merk of staat zijn dan wat nu gemonteerd zit.</p>
+    <p class="note" style="margin-top:0;" id="g-engine-equipped">Geen motorblok gemonteerd.</p>
     <div id="g-engine-inventory-list"></div>
-    <div class="row"><label>Merk (nieuwe reserve)</label><select id="g-engine-spare-brand"></select></div>
-    <div class="row"><label><input type="checkbox" id="g-engine-spare-secondhand"> Tweedehands</label></div>
-    <button class="secondary" id="g-buy-engine-spare" type="button">Reserve motorblok kopen</button>
+    <div class="row"><label>Merk</label><select id="g-engine-spare-brand"></select></div>
+    <div class="row"><label><input type="checkbox" id="g-engine-spare-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <button class="secondary" id="g-buy-engine-spare" type="button">Motorblok kopen</button>
     <p class="note">Een reservemotorblok wordt gratis gemonteerd als je motor het tijdens een evenement begeeft - en wordt dan meteen je nieuwe hoofdmotor, andere merk en al. Zonder reserve is je evenement voorbij zodra de motor het begeeft - zonder motor kun je niet verder racen (de reparatiekosten worden dan wel nog in rekening gebracht, voor het volgende evenement).</p>
     </div>
 
     <div class="garage-section" id="garage-sec-heads">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Cilinderkoppen</div>
-    <div class="row"><label>Merk (gemonteerd)</label><select id="g-head-brand"></select></div>
-    <div class="row"><label><input type="checkbox" id="g-head-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <p class="note" style="margin-top:0;" id="g-head-equipped">Geen cilinderkoppen gemonteerd.</p>
     <div id="g-head-inventory-list"></div>
-    <div class="row"><label>Merk (nieuwe reserve)</label><select id="g-head-spare-brand"></select></div>
-    <div class="row"><label><input type="checkbox" id="g-head-spare-secondhand"> Tweedehands</label></div>
-    <button class="secondary" id="g-buy-head-spare" type="button">Reserve set koppen kopen</button>
+    <div class="row"><label>Merk</label><select id="g-head-spare-brand"></select></div>
+    <div class="row"><label><input type="checkbox" id="g-head-spare-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <button class="secondary" id="g-buy-head-spare" type="button">Cilinderkoppen kopen</button>
     </div>
 
     <div class="garage-section" id="garage-sec-blower">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Blower</div>
-    <div class="row"><label>Merk (gemonteerd)</label><select id="g-blower-brand"></select></div>
-    <div class="row"><label><input type="checkbox" id="g-blower-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <p class="note" style="margin-top:0;" id="g-blower-equipped">Geen blower gemonteerd.</p>
     <div class="row"><label>Type</label>
       <select id="g-blower-type">
         <option value="conventional">Gewone blower (goedkoper)</option>
@@ -215,21 +213,28 @@
       </select>
     </div>
     <div id="g-blower-inventory-list"></div>
-    <div class="row"><label>Merk (nieuwe reserve)</label><select id="g-blower-spare-brand"></select></div>
-    <div class="row"><label><input type="checkbox" id="g-blower-spare-secondhand"> Tweedehands</label></div>
-    <button class="secondary" id="g-buy-blower-spare" type="button">Reserve blower kopen</button>
+    <div class="row"><label>Merk</label><select id="g-blower-spare-brand"></select></div>
+    <div class="row"><label><input type="checkbox" id="g-blower-spare-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <button class="secondary" id="g-buy-blower-spare" type="button">Blower kopen</button>
     </div>
 
     <div class="garage-section" id="garage-sec-clutch">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Koppeling</div>
-    <div class="row"><label>Merk (gemonteerd)</label><select id="g-clutch-brand"></select></div>
-    <div class="row"><label><input type="checkbox" id="g-clutch-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <p class="note" style="margin-top:0;" id="g-clutch-equipped">Geen koppeling gemonteerd.</p>
     <p class="note" style="margin-top:0;">Plaatenaantal en warmteopbouw tijdens slippen zitten in het merk gebakken - een goedkope 5-plaats wordt heter tijdens slippen (minder tolerant), duurdere 6-plaats-modellen koeler en betrouwbaarder.</p>
     <div id="g-clutch-inventory-list"></div>
-    <div class="row"><label>Merk (nieuwe reserve)</label><select id="g-clutch-spare-brand"></select></div>
-    <div class="row"><label><input type="checkbox" id="g-clutch-spare-secondhand"> Tweedehands</label></div>
-    <button class="secondary" id="g-buy-clutch-spare" type="button">Reservekoppeling kopen</button>
+    <div class="row"><label>Merk</label><select id="g-clutch-spare-brand"></select></div>
+    <div class="row"><label><input type="checkbox" id="g-clutch-spare-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <button class="secondary" id="g-buy-clutch-spare" type="button">Koppeling kopen</button>
     <p class="note">Een reservekoppeling wordt gratis gemonteerd als de koppeling het tijdens een evenement begeeft. Zonder reserve is je evenement voorbij zodra de koppeling het begeeft (de reparatiekosten worden dan wel nog in rekening gebracht, voor het volgende evenement).</p>
+    </div>
+
+    <div class="garage-section" id="garage-sec-trailer">
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Trailer</div>
+    <p class="note" style="margin-top:0;" id="g-trailer-equipped">Geen trailer.</p>
+    <div class="row"><label>Type</label><select id="g-trailer-select"></select></div>
+    <button class="secondary" id="g-buy-trailer" type="button">Trailer kopen</button>
+    <p class="note">Zonder trailer kun je niet naar een evenement - en zonder trailer past er ook geen enkel reserve-onderdeel mee. Een fifth-wheel (achter een pickup) is het goedkoopst maar heeft weinig laadruimte over voor reserves; een boxtrailer of volledige semi-oplegger kost meer maar neemt veel meer reserve-onderdelen mee.</p>
     </div>
 
     <div class="garage-section" id="garage-sec-chassis">
@@ -262,9 +267,10 @@
     </div>
 
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Overzicht</div>
-    <div class="results-grid" style="grid-template-columns:repeat(2,1fr);">
-      <div class="stat"><div class="lbl">Totale bouwwaarde</div><div class="num" id="g-build-value">--</div></div>
+    <div class="results-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="stat"><div class="lbl">Totale investering</div><div class="num" id="g-build-value">--</div></div>
       <div class="stat"><div class="lbl">Gewichtsverschil</div><div class="num" id="g-weight-delta">--</div></div>
+      <div class="stat"><div class="lbl">Reservecapaciteit</div><div class="num" id="g-spare-capacity">--</div></div>
     </div>
     <div class="results-grid second" style="grid-template-columns:repeat(3,1fr);">
       <div class="stat"><div class="lbl">Vermogen</div><div class="num" id="g-power-mult">--</div></div>

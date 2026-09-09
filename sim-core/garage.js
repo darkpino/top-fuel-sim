@@ -107,6 +107,19 @@ export const ENGINE_POSITION_MIN_IN = -3;
 export const ENGINE_POSITION_MAX_IN = 3;
 export const ENGINE_POSITION_BALLAST_EQUIV_PER_IN = 8;
 
+// How you get the car AND the spares to the track at all. A fifth-wheel
+// (the cheapest way into the sport - one truck, no separate CDL-class
+// tow rig) only has so much deck/box space once the car itself is
+// loaded, so it caps how many total spare units (summed across all four
+// parts) the team can bring to an event - the direct ask: not much room
+// for reserve parts back there. Bigger trailers cost more but scale that
+// capacity up.
+export const TRAILER_TYPES = [
+  { id: "fifthwheel", name: "Fifth-wheel trailer (pickup)", priceNew: 9000, spareCapacity: 2 },
+  { id: "boxtrailer", name: "Gesloten boxtrailer", priceNew: 22000, spareCapacity: 5 },
+  { id: "semi", name: "Semi-oplegger (volledige pitopstelling)", priceNew: 55000, spareCapacity: 12 },
+];
+
 export function partPrice(brand, secondhand) {
   return Math.round(brand.priceNew * (secondhand ? SECONDHAND_PRICE_MULT : 1));
 }
@@ -128,27 +141,55 @@ export const PARTS = {
   clutch: { brands: CLUTCH_BRANDS, label: "koppeling" },
 };
 
+// A new team starts with an empty shop, not a free mid-tier car - every
+// part (including the trailer that gets the car and its spares to the
+// track at all) has to be bought before a single pass down the strip.
+// null brandId/trailerId means "not owned yet"; findBrand's own fallback
+// (list[0], the cheapest tier) keeps every price/weight/power/reliability
+// calculation safe to call even before anything is purchased - see
+// isCarRaceReady for the actual gate on running/racing.
 export function defaultGarageConfig() {
   return {
-    engineBrandId: ENGINE_BRANDS[1].id, engineSecondhand: false,
-    headBrandId: HEAD_BRANDS[1].id, headSecondhand: false,
-    blowerBrandId: BLOWER_BRANDS[1].id, blowerSecondhand: false,
+    engineBrandId: null, engineSecondhand: false,
+    headBrandId: null, headSecondhand: false,
+    blowerBrandId: null, blowerSecondhand: false,
     blowerType: "conventional",
-    clutchBrandId: CLUTCH_BRANDS[1].id, clutchSecondhand: false,
+    clutchBrandId: null, clutchSecondhand: false,
     bodyMaterial: "aluminium",
     chassisLengthIn: CHASSIS_LENGTH_BASELINE_IN,
     tankSizeGal: TANK_SIZE_BASELINE_GAL,
     tankPosition: "neutral",
     mudflaps: true,
     enginePositionIn: 0,
-    // One starting spare per part, matching the default-equipped brand -
-    // keeps a fresh team's starting position identical to the old flat
-    // "1 spare" counts this replaces.
-    engineInventory: [{ brandId: ENGINE_BRANDS[1].id, secondhand: false }],
-    headInventory: [{ brandId: HEAD_BRANDS[1].id, secondhand: false }],
-    blowerInventory: [{ brandId: BLOWER_BRANDS[1].id, secondhand: false }],
-    clutchInventory: [{ brandId: CLUTCH_BRANDS[1].id, secondhand: false }],
+    trailerId: null,
+    engineInventory: [],
+    headInventory: [],
+    blowerInventory: [],
+    clutchInventory: [],
   };
+}
+
+export function isPartOwned(config, part) {
+  return !!config[part + "BrandId"];
+}
+
+// Total spares across all four parts, checked against the trailer's
+// capacity - no trailer at all means no room for spares (or the car
+// itself), so capacity is 0 until one's bought.
+export function totalSpareCount(config) {
+  return Object.keys(PARTS).reduce((sum, part) => sum + config[part + "Inventory"].length, 0);
+}
+
+export function trailerSpareCapacity(config) {
+  if (!config.trailerId) return 0;
+  return findBrand(TRAILER_TYPES, config.trailerId).spareCapacity;
+}
+
+// The minimum to actually show up and make a pass: all four driveline
+// parts mounted, plus a trailer to get the car there. Body/chassis/tank
+// are build SPECS, not ownable parts - free to dial in either way.
+export function isCarRaceReady(config) {
+  return Object.keys(PARTS).every((part) => isPartOwned(config, part)) && !!config.trailerId;
 }
 
 export function equippedUnit(config, part) {
@@ -184,6 +225,23 @@ export function consumeSpareOnFailure(config, part) {
   if (!inv.length) return false;
   setEquippedUnit(config, part, inv.shift());
   return true;
+}
+
+// A purchase of a part the team doesn't have yet becomes the equipped
+// unit directly - a first engine isn't a "spare" of nothing. Once
+// something's already mounted, a further purchase is a spare, gated by
+// the trailer's capacity (buyOutcome: "equipped", "spare", or
+// "no-capacity" if the trailer can't fit another one - the caller is
+// expected to check trailerSpareCapacity itself before charging money,
+// this is the data-side enforcement backing that check).
+export function buyUnit(config, part, unit) {
+  if (!isPartOwned(config, part)) {
+    setEquippedUnit(config, part, unit);
+    return "equipped";
+  }
+  if (totalSpareCount(config) >= trailerSpareCapacity(config)) return "no-capacity";
+  config[part + "Inventory"].push(unit);
+  return "spare";
 }
 
 // A part's own reliability tier, knocked down further if it's secondhand
@@ -261,17 +319,20 @@ export function computeGarageEffects(config) {
   };
 }
 
+// Unlike equippedPartPrice (which needs a real price even for an unowned
+// part, to quote a repair/replacement cost), an unowned part contributes
+// nothing here - this is what the team has actually put money into, not
+// what a hypothetical fallback part would cost.
 export function totalBuildValue(config) {
-  const engine = findBrand(ENGINE_BRANDS, config.engineBrandId);
-  const head = findBrand(HEAD_BRANDS, config.headBrandId);
-  const blower = findBrand(BLOWER_BRANDS, config.blowerBrandId);
-  const clutch = findBrand(CLUTCH_BRANDS, config.clutchBrandId);
-  return partPrice(engine, config.engineSecondhand)
-    + partPrice(head, config.headSecondhand)
-    + partPrice(blower, config.blowerSecondhand)
-    + BLOWER_TYPES[config.blowerType].priceDelta
+  const partsTotal = Object.keys(PARTS).reduce((sum, part) => {
+    if (!isPartOwned(config, part)) return sum;
+    return sum + partPrice(findBrand(PARTS[part].brands, config[part + "BrandId"]), config[part + "Secondhand"]);
+  }, 0);
+  const trailerTotal = config.trailerId ? findBrand(TRAILER_TYPES, config.trailerId).priceNew : 0;
+  return partsTotal
+    + (config.blowerBrandId ? BLOWER_TYPES[config.blowerType].priceDelta : 0)
     + BODY_MATERIALS[config.bodyMaterial].priceNew
-    + partPrice(clutch, config.clutchSecondhand);
+    + trailerTotal;
 }
 
 export function equippedPartPrice(config, part) {
