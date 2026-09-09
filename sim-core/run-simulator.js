@@ -135,7 +135,7 @@ export function runSimulation(settings) {
     fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt, driverShutoffFt,
     ballastFrontLb, ballastRearLb, frontWingPct, wheelieBarHeightIn,
     garageWeightDeltaLb = 0, garageWheelieRiskBallastEquivLb = 0, garageDragCdaMult = 1,
-    garageClutchHeatRateMult = 1, garageTractionMult = 1, garagePowerMult = 1, garageEngineDamageMult = 1,
+    garageClutchHeatRateMult = 1, garageClutchDamageMult = 1, garageTractionMult = 1, garagePowerMult = 1, garageEngineDamageMult = 1,
   } = settings;
 
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
@@ -267,15 +267,24 @@ export function runSimulation(settings) {
     const richness = calcMixtureRichness(fuelVolPctNow, idealFuelPct);
     richnessIntegral += richness * DT;
 
-    // LAUNCH_CAP raised from the original 6500/13000 baseline (already
-    // adjusted once for the 90%-nitro fuelFactor re-anchor) again here,
-    // against real time slips this time (see docs/nhra-reference-times.md)
-    // rather than a single ET number - a strong enough torque ceiling to
-    // get 60ft into the real 0.80-0.86s range needs pairing with the wider
-    // stage-2 hold below, or it just drags 330-660ft faster right along
-    // with it instead of reproducing the real segment shape.
-    const LAUNCH_CAP = 20000 * mult * garagePowerMult;
-    const POWER_HP = 7300 * mult * garagePowerMult;
+    // Re-anchored again for the 6-stage ratchet-only clutch model (the
+    // stage curve that hits the real 60ft window can no longer also hold
+    // the mid-run pace back the way the old retraction-capable curve did -
+    // see clutch.js). Below the crossover speed where powerForce and
+    // LAUNCH_CAP*lf cross (v = POWER_HP*550/LAUNCH_CAP, independent of lf),
+    // the car is purely clutch-torque-limited - constant force regardless
+    // of speed - which is what sets the 60ft time and peak launch g.
+    // Above it, force falls off with speed (POWER_HP/v) and that's what
+    // paces 330-1000ft. The old 20000/7300 pair put that crossover near
+    // 137mph, well past where a real car's acceleration already starts
+    // tapering, so the mid-late run came in far too quick even though 60ft
+    // itself was right on the tape. Pulling both down (LAUNCH_CAP less
+    // than POWER_HP, proportionally) moves the crossover down to ~112mph
+    // without touching 60ft's math at all (that phase never reaches
+    // crossover speed either way) - re-checked against real time slips
+    // (see docs/nhra-reference-times.md) rather than a single ET number.
+    const LAUNCH_CAP = 18000 * mult * garagePowerMult;
+    const POWER_HP = 6100 * mult * garagePowerMult;
 
     const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, driverShutoffFt, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
@@ -313,21 +322,33 @@ export function runSimulation(settings) {
     // Only counts once the pack is already deep in the "oververhit" zone -
     // a brief spike during a stage transition isn't fatal, cooking it there
     // for a while is.
-    clutchDamage += Math.max(0, clutchTemp - 70) * CLUTCH_DAMAGE_RATE * DT;
+    clutchDamage += Math.max(0, clutchTemp - 70) * CLUTCH_DAMAGE_RATE * garageClutchDamageMult * DT;
     if (!clutchFailed && clutchDamage > CLUTCH_FAILURE_THRESHOLD) {
       clutchFailed = true;
       clutchFailTime = t;
     }
 
-    heatDamage += Math.max(0, heatRisk - 0.62) * garageEngineDamageMult * DT;
+    // All three damage clocks below are combustion-event stress - heat
+    // from the blower/nitro/compression combo, and lean/rich from how well
+    // the fuel curve matches what's actually burning. None of that happens
+    // without fuel/air actually flowing, which the driver's foot gates
+    // (throttle) same as any barrel-valve nitro car - a full lift (shutoff
+    // or a pedal dip) cuts off the combustion event these clocks are
+    // tracking, not just the propulsive force. Without this, a run that
+    // goes fully clean to a planned shutoff point could still blow up
+    // afterward purely from the engine coasting through the rest of the
+    // simulated time at the SAME damage rate as full throttle - the tune
+    // did nothing wrong, the model just kept counting a stress that had
+    // already stopped happening.
+    heatDamage += Math.max(0, heatRisk - 0.62) * garageEngineDamageMult * throttle * DT;
     // The retarder exists specifically to keep this at bay - it only bites
     // if the curve is dialed aggressively enough that even -30deg of
     // retard can't pull effective timing back under a safe line.
-    heatDamage += calcIgnitionHeatDamageRate(ignitionEffective) * garageEngineDamageMult * DT;
+    heatDamage += calcIgnitionHeatDamageRate(ignitionEffective) * garageEngineDamageMult * throttle * DT;
     // Lean under load hurts the most right where lf is high - the clutch
     // is loaded, so the motor can least afford to be starved right then.
-    leanDamage += Math.max(0, -richness) * lf * LEAN_DAMAGE_RATE * garageEngineDamageMult * DT;
-    foulDamage += Math.max(0, richness) * FOUL_DAMAGE_RATE * DT;
+    leanDamage += Math.max(0, -richness) * lf * LEAN_DAMAGE_RATE * garageEngineDamageMult * throttle * DT;
+    foulDamage += Math.max(0, richness) * FOUL_DAMAGE_RATE * throttle * DT;
     const engineDamage = heatDamage + leanDamage;
 
     if (!cylindersDropped && (engineDamage > CYLINDER_DROP_THRESHOLD || foulDamage > CYLINDER_DROP_THRESHOLD)) {
