@@ -49,12 +49,24 @@ const TEAM_NAMES = [
 // each is a complete, independently-tunable settings object (everything
 // runSimulation() needs except environment). Per-driver jitter (see
 // jitterTune) keeps two cars sharing an archetype from running identically.
+//
+// Every tune below is deliberately close to the player's own default -
+// each field (power tune AND clutch curve) sits at only 30% of its
+// original distance from default. That's not timidity: the model is
+// sensitive enough near the calibration point that the OLD, full-strength
+// spread compounded (blower+nitro+lockup all a bit hotter at once) into
+// archetypes that could post sub-3.4s under nothing more than ordinary
+// luck - well past the real ~3.6s wall no NHRA run has ever crossed.
+// Personality still reads clearly in the achievable ET spread (see
+// docs/nhra-reference-times.md) - Wildcard Rookie and Aggressive Gambler
+// still qualify quicker than Budget Team - it just no longer requires
+// breaking the sport's own physics to do it.
 const AI_ARCHETYPES = [
   {
     name: "Balanced Pro",
     tune: {
-      blowerOD: 50, fuelPct: 90, fuel1Pct: 72, fuel2Pct: 90, fuel3Pct: 85, gasketThou: 38,
-      ignitionCurve: [62, 58, 53, 47, 43, 39],
+      blowerOD: 48.6, fuelPct: 90, fuel1Pct: 70.6, fuel2Pct: 90, fuel3Pct: 85, gasketThou: 39,
+      ignitionCurve: [62, 58, 52.3, 46.3, 42.3, 38.3],
       s1time: 0.8, s1pct: 0.65, s1speed: 5.0, s2time: 1.25, s2pct: 0.67, s2speed: 0.2, s3time: 1.75, s3pct: 0.69, s3speed: 0.1,
       s4time: 2.2, s4pct: 0.73, s4speed: 0.2, s5time: 2.6, s5pct: 0.85, s5speed: 0.8, s6time: 2.95, s6pct: 1.0, s6speed: 1.6,
       fingerWeight: 100, tirePsi: 7.5, wingAngle: 0, frontWingPct: 55, wheelieBarHeightIn: 2.5, ballastFrontLb: 20, ballastRearLb: 0,
@@ -64,71 +76,76 @@ const AI_ARCHETYPES = [
   {
     name: "Aggressive Gambler",
     tune: {
-      blowerOD: 60, fuelPct: 90, fuel1Pct: 78, fuel2Pct: 95, fuel3Pct: 90, gasketThou: 30,
-      ignitionCurve: [65, 62, 58, 52, 46, 42],
-      s1time: 0.706, s1pct: 0.675, s1speed: 5.357, s2time: 1.103, s2pct: 0.695, s2speed: 0.214, s3time: 1.544, s3pct: 0.715, s3speed: 0.107,
-      s4time: 1.941, s4pct: 0.755, s4speed: 0.214, s5time: 2.294, s5pct: 0.875, s5speed: 0.857, s6time: 2.603, s6pct: 1.0, s6speed: 1.714,
+      blowerOD: 51.6, fuelPct: 90, fuel1Pct: 72.4, fuel2Pct: 91.5, fuel3Pct: 86.5, gasketThou: 37,
+      ignitionCurve: [62.9, 59.2, 53.8, 47.8, 43.2, 39.2],
+      s1time: 0.772, s1pct: 0.658, s1speed: 5.107, s2time: 1.206, s2pct: 0.678, s2speed: 0.204, s3time: 1.688, s3pct: 0.698, s3speed: 0.102,
+      s4time: 2.122, s4pct: 0.738, s4speed: 0.204, s5time: 2.508, s5pct: 0.857, s5speed: 0.817, s6time: 2.846, s6pct: 1.0, s6speed: 1.634,
       fingerWeight: 100, tirePsi: 7.2, wingAngle: 0.5, frontWingPct: 45, wheelieBarHeightIn: 2.8, ballastFrontLb: 0, ballastRearLb: 0,
-      driverAggressiveness: 90, driverWatchUntilFt: 1000, driverShutoffFt: 1000,
+      driverAggressiveness: 76, driverWatchUntilFt: 1000, driverShutoffFt: 1000,
     },
   },
   {
     name: "Conservative Veteran",
     tune: {
-      blowerOD: 44, fuelPct: 88, fuel1Pct: 68, fuel2Pct: 85, fuel3Pct: 80, gasketThou: 42,
-      ignitionCurve: [58, 55, 50, 45, 41, 37],
-      s1time: 0.847, s1pct: 0.625, s1speed: 4.643, s2time: 1.324, s2pct: 0.645, s2speed: 0.186, s3time: 1.853, s3pct: 0.665, s3speed: 0.093,
-      s4time: 2.329, s4pct: 0.705, s4speed: 0.186, s5time: 2.753, s5pct: 0.825, s5speed: 0.743, s6time: 3.124, s6pct: 0.98, s6speed: 1.486,
+      blowerOD: 46.8, fuelPct: 88, fuel1Pct: 69.4, fuel2Pct: 88.5, fuel3Pct: 83.5, gasketThou: 41,
+      ignitionCurve: [60.8, 57.1, 51.4, 45.7, 41.7, 37.7],
+      s1time: 0.814, s1pct: 0.643, s1speed: 4.893, s2time: 1.272, s2pct: 0.663, s2speed: 0.196, s3time: 1.781, s3pct: 0.683, s3speed: 0.098,
+      s4time: 2.239, s4pct: 0.722, s4speed: 0.196, s5time: 2.646, s5pct: 0.843, s5speed: 0.783, s6time: 3.002, s6pct: 0.994, s6speed: 1.566,
       fingerWeight: 95, tirePsi: 7.6, wingAngle: -0.5, frontWingPct: 60, wheelieBarHeightIn: 2.2, ballastFrontLb: 40, ballastRearLb: 20,
-      driverAggressiveness: 50, driverWatchUntilFt: 660, driverShutoffFt: 1000,
+      driverAggressiveness: 64, driverWatchUntilFt: 660, driverShutoffFt: 1000,
     },
   },
   {
     name: "Budget Team",
     tune: {
-      blowerOD: 34, fuelPct: 85, fuel1Pct: 65, fuel2Pct: 80, fuel3Pct: 76, gasketThou: 48,
-      ignitionCurve: [55, 52, 48, 44, 40, 36],
-      s1time: 0.828, s1pct: 0.61, s1speed: 4.286, s2time: 1.294, s2pct: 0.63, s2speed: 0.171, s3time: 1.812, s3pct: 0.65, s3speed: 0.086,
-      s4time: 2.278, s4pct: 0.69, s4speed: 0.171, s5time: 2.692, s5pct: 0.81, s5speed: 0.686, s6time: 3.054, s6pct: 0.95, s6speed: 1.371,
+      blowerOD: 43.8, fuelPct: 85, fuel1Pct: 68.5, fuel2Pct: 87, fuel3Pct: 82.3, gasketThou: 42,
+      ignitionCurve: [59.9, 56.2, 50.8, 45.4, 41.4, 37.4],
+      s1time: 0.808, s1pct: 0.638, s1speed: 4.786, s2time: 1.263, s2pct: 0.658, s2speed: 0.191, s3time: 1.769, s3pct: 0.678, s3speed: 0.096,
+      s4time: 2.223, s4pct: 0.718, s4speed: 0.191, s5time: 2.628, s5pct: 0.838, s5speed: 0.766, s6time: 2.981, s6pct: 0.985, s6speed: 1.531,
       fingerWeight: 90, tirePsi: 7.5, wingAngle: 0, frontWingPct: 50, wheelieBarHeightIn: 2.5, ballastFrontLb: 0, ballastRearLb: 0,
-      driverAggressiveness: 65, driverWatchUntilFt: 660, driverShutoffFt: 1000,
+      driverAggressiveness: 69, driverWatchUntilFt: 660, driverShutoffFt: 1000,
     },
   },
   {
     name: "Clutch Specialist",
     tune: {
-      blowerOD: 52, fuelPct: 90, fuel1Pct: 74, fuel2Pct: 92, fuel3Pct: 87, gasketThou: 36,
-      ignitionCurve: [61, 57, 52, 46, 42, 38],
-      s1time: 0.753, s1pct: 0.66, s1speed: 5.714, s2time: 1.176, s2pct: 0.68, s2speed: 0.229, s3time: 1.647, s3pct: 0.7, s3speed: 0.114,
-      s4time: 2.071, s4pct: 0.74, s4speed: 0.229, s5time: 2.447, s5pct: 0.86, s5speed: 0.914, s6time: 2.776, s6pct: 1.0, s6speed: 1.829,
+      blowerOD: 49.2, fuelPct: 90, fuel1Pct: 71.2, fuel2Pct: 90.6, fuel3Pct: 85.6, gasketThou: 39,
+      ignitionCurve: [61.7, 57.7, 52, 46, 42, 38],
+      s1time: 0.786, s1pct: 0.653, s1speed: 5.214, s2time: 1.228, s2pct: 0.673, s2speed: 0.209, s3time: 1.719, s3pct: 0.693, s3speed: 0.104,
+      s4time: 2.161, s4pct: 0.733, s4speed: 0.209, s5time: 2.554, s5pct: 0.853, s5speed: 0.834, s6time: 2.898, s6pct: 1.0, s6speed: 1.669,
       fingerWeight: 100, tirePsi: 7.4, wingAngle: 0, frontWingPct: 55, wheelieBarHeightIn: 2.4, ballastFrontLb: 10, ballastRearLb: 0,
-      driverAggressiveness: 75, driverWatchUntilFt: 1000, driverShutoffFt: 1000,
+      driverAggressiveness: 72, driverWatchUntilFt: 1000, driverShutoffFt: 1000,
     },
   },
   {
     name: "Wildcard Rookie",
     tune: {
-      blowerOD: 58, fuelPct: 91, fuel1Pct: 76, fuel2Pct: 88, fuel3Pct: 82, gasketThou: 33,
-      ignitionCurve: [64, 60, 55, 49, 44, 40],
-      s1time: 0.659, s1pct: 0.69, s1speed: 6.071, s2time: 1.029, s2pct: 0.71, s2speed: 0.243, s3time: 1.441, s3pct: 0.73, s3speed: 0.121,
-      s4time: 1.812, s4pct: 0.77, s4speed: 0.243, s5time: 2.141, s5pct: 0.89, s5speed: 0.971, s6time: 2.429, s6pct: 1.0, s6speed: 1.943,
+      blowerOD: 51, fuelPct: 91, fuel1Pct: 71.8, fuel2Pct: 89.4, fuel3Pct: 84.1, gasketThou: 38,
+      ignitionCurve: [62.6, 58.6, 52.9, 46.9, 42.6, 38.6],
+      s1time: 0.758, s1pct: 0.662, s1speed: 5.321, s2time: 1.184, s2pct: 0.682, s2speed: 0.213, s3time: 1.657, s3pct: 0.702, s3speed: 0.106,
+      s4time: 2.084, s4pct: 0.742, s4speed: 0.213, s5time: 2.462, s5pct: 0.862, s5speed: 0.851, s6time: 2.794, s6pct: 1.0, s6speed: 1.703,
       fingerWeight: 100, tirePsi: 7.0, wingAngle: 0.5, frontWingPct: 40, wheelieBarHeightIn: 3.0, ballastFrontLb: 0, ballastRearLb: 0,
-      driverAggressiveness: 85, driverWatchUntilFt: 1000, driverShutoffFt: 1000,
+      driverAggressiveness: 75, driverWatchUntilFt: 1000, driverShutoffFt: 1000,
     },
   },
 ];
 
+// Race-day variance, not tuning skill - kept small (was up to 6-8%, now
+// 1.5-2.5%) for the same reason the archetype spread above got pulled
+// in: this model is sensitive enough near the calibration point that
+// even "random luck" at the old magnitude could push an already-decent
+// tune past the sport's real-world ET floor.
 function jitterTune(base, rng) {
   const jit = (v, pct) => v * (1 + (rng() * 2 - 1) * pct);
   return {
     ...base,
-    blowerOD: clamp(jit(base.blowerOD, 0.06), 20, 70),
-    fuel1Pct: clamp(jit(base.fuel1Pct, 0.05), 40, 100),
-    fuel2Pct: clamp(jit(base.fuel2Pct, 0.05), 40, 100),
-    fuel3Pct: clamp(jit(base.fuel3Pct, 0.05), 40, 100),
-    gasketThou: clamp(Math.round(jit(base.gasketThou, 0.06)), 25, 60),
-    ignitionCurve: base.ignitionCurve.map((v) => clamp(jit(v, 0.04), 20, 75)),
-    driverAggressiveness: clamp(Math.round(jit(base.driverAggressiveness, 0.08)), 0, 100),
+    blowerOD: clamp(jit(base.blowerOD, 0.02), 20, 70),
+    fuel1Pct: clamp(jit(base.fuel1Pct, 0.015), 40, 100),
+    fuel2Pct: clamp(jit(base.fuel2Pct, 0.015), 40, 100),
+    fuel3Pct: clamp(jit(base.fuel3Pct, 0.015), 40, 100),
+    gasketThou: clamp(Math.round(jit(base.gasketThou, 0.02)), 25, 60),
+    ignitionCurve: base.ignitionCurve.map((v) => clamp(jit(v, 0.015), 20, 75)),
+    driverAggressiveness: clamp(Math.round(jit(base.driverAggressiveness, 0.025)), 0, 100),
   };
 }
 
@@ -192,7 +209,7 @@ export function runQualifyingAttempt(entrant, sessionIndex, conditions, skip) {
   const settings = { ...entrant.tune, ...conditions };
   const result = runSimulation(settings);
   entrant.quals[sessionIndex] = result;
-  if (result.finished && !result.weightIllegal && (entrant.bestEt === null || result.et < entrant.bestEt)) {
+  if (result.finished && !result.weightIllegal && !result.engineFailed && !result.clutchFailed && (entrant.bestEt === null || result.et < entrant.bestEt)) {
     entrant.bestEt = result.et;
     entrant.bestMph = result.mph;
   }

@@ -267,24 +267,30 @@ export function runSimulation(settings) {
     const richness = calcMixtureRichness(fuelVolPctNow, idealFuelPct);
     richnessIntegral += richness * DT;
 
-    // Re-anchored again for the 6-stage ratchet-only clutch model (the
-    // stage curve that hits the real 60ft window can no longer also hold
-    // the mid-run pace back the way the old retraction-capable curve did -
-    // see clutch.js). Below the crossover speed where powerForce and
-    // LAUNCH_CAP*lf cross (v = POWER_HP*550/LAUNCH_CAP, independent of lf),
-    // the car is purely clutch-torque-limited - constant force regardless
-    // of speed - which is what sets the 60ft time and peak launch g.
-    // Above it, force falls off with speed (POWER_HP/v) and that's what
-    // paces 330-1000ft. The old 20000/7300 pair put that crossover near
-    // 137mph, well past where a real car's acceleration already starts
-    // tapering, so the mid-late run came in far too quick even though 60ft
-    // itself was right on the tape. Pulling both down (LAUNCH_CAP less
-    // than POWER_HP, proportionally) moves the crossover down to ~112mph
-    // without touching 60ft's math at all (that phase never reaches
-    // crossover speed either way) - re-checked against real time slips
-    // (see docs/nhra-reference-times.md) rather than a single ET number.
-    const LAUNCH_CAP = 18000 * mult * garagePowerMult;
-    const POWER_HP = 6100 * mult * garagePowerMult;
+    // Re-anchored again: the previous 18000/6100 pair had 60ft and the
+    // "typical" pace right, but left too little headroom underneath it -
+    // stack a merely-decent AI tune's higher blower/nitro/lockup with a
+    // good-track-conditions round and the achievable ET could dip into
+    // the low 3.3s, well past the real-world ~3.6s wall no NHRA run has
+    // ever crossed. Pulling both down further (16500/5600) moves the
+    // whole band down while keeping the same ratio (so the LAUNCH_CAP/
+    // POWER_HP crossover speed, and therefore the 60ft-vs-330ft+ SHAPE,
+    // is unchanged - see the physics note this replaces, still accurate
+    // on the mechanism, just re-anchored on the numbers).
+    // mult itself is also capped: a tune that pushes blower/nitro/
+    // compression/ignition all at once compounds multiplicatively (see
+    // calcMult) into a raw multiplier that can exceed 1.7-1.9 at the
+    // legal max - the failure-risk system is meant to be the check on
+    // that, but a short/lucky run can still beat it. MULT_CEILING treats
+    // that stacked-tune ceiling as a drivetrain/clutch-pack torque
+    // capacity limit instead: legitimate extra chemical energy beyond it
+    // still costs full reliability risk (heatRisk et al never read mult),
+    // it just stops buying more speed - discourages tuning past it
+    // without needing the failure model to catch every case on its own.
+    const MULT_CEILING = 1.35;
+    const cappedMult = Math.min(mult, MULT_CEILING);
+    const LAUNCH_CAP = 16500 * cappedMult * garagePowerMult;
+    const POWER_HP = 5600 * cappedMult * garagePowerMult;
 
     const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, driverShutoffFt, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
