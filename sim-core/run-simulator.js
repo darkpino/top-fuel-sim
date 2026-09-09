@@ -1,7 +1,7 @@
 // RunSimulator: integrates Environment + Engine + Clutch + Tires over time
 // into a full 1000ft run trace. Pure function, no DOM access.
 
-import { calcDensityAltitude, calcPowerMult, calcGripCoeff } from "./environment.js";
+import { calcDensityAltitude, calcPowerMult, calcGripCoeff, calcAirDensityRatio } from "./environment.js";
 import {
   calcEngineFactors, calcMult, calcEngineRpm, calcFuelFlowGpm,
   calcIdealFuelPct, calcMixtureRichness, activeFuelPct,
@@ -127,7 +127,7 @@ const CYLINDER_DROP_FORCE_PENALTY = 0.85; // one or more cylinders misfiring
 
 export function runSimulation(settings) {
   const {
-    airtempC, humidity, baroInHg, trackTempC, gripSliderPct,
+    airtempC, humidity, baroInHg, trackTempC, gripSliderPct, trackElevationFt = 0,
     blowerOD, fuelPct, gasketThou, ignitionCurve,
     s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
     s4time, s4pct, s4speed, s5time, s5pct, s5speed, s6time, s6pct, s6speed,
@@ -138,8 +138,9 @@ export function runSimulation(settings) {
     garageClutchHeatRateMult = 1, garageClutchDamageMult = 1, garageTractionMult = 1, garagePowerMult = 1, garageEngineDamageMult = 1,
   } = settings;
 
-  const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
+  const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg, trackElevationFt);
   const powerMult = calcPowerMult(densityAltitude);
+  const airDensityRatio = calcAirDensityRatio(densityAltitude);
   const weightLb = WEIGHT_LB + ballastFrontLb + ballastRearLb + garageWeightDeltaLb;
   // Under minimum weight is illegal outright, not just a disadvantage that
   // balances itself out - real NHRA cars are weighed after every run, so
@@ -370,7 +371,7 @@ export function runSimulation(settings) {
     if (engineFailed || clutchFailed) appliedForce = 0;
     else if (cylindersDropped) appliedForce *= CYLINDER_DROP_FORCE_PENALTY;
 
-    const drag = 0.5 * RHO_REF * CDA * garageDragCdaMult * v * v;
+    const drag = 0.5 * RHO_REF * airDensityRatio * CDA * garageDragCdaMult * v * v;
     // Mechanical engine braking through the locked (or partly locked)
     // clutch - scales with how far off throttle the driver is and how
     // much of the driveline is actually coupled (lf), not just aero.

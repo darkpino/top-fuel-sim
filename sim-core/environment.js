@@ -1,16 +1,36 @@
 // Environment module: air and track conditions -> density altitude, power
 // multiplier, and effective grip coefficient. Pure functions, no DOM access.
 
-export function calcDensityAltitude(airtempC, humidity, baroInHg) {
+// fieldElevationFt is the track's actual physical elevation (Denver's
+// ~5850ft vs Gainesville's ~50ft, see tracks.js) - separate from
+// baroInHg, which is the day's WEATHER-driven altimeter setting
+// (already sea-level-corrected, so it swings only a fraction of an inHg
+// around 29.92 regardless of where the track sits). Both add distance
+// from the surface: a high, hot, low-pressure day at Denver stacks all
+// three into a much bigger density altitude than any one of them alone.
+export function calcDensityAltitude(airtempC, humidity, baroInHg, fieldElevationFt = 0) {
   const airtempF = airtempC * 9 / 5 + 32;
-  const pressureAltitude = (29.92 - baroInHg) * 1000;
+  const pressureAltitude = (29.92 - baroInHg) * 1000 + fieldElevationFt;
   const da = pressureAltitude + 120 * (airtempF - 59) + humidity * 3;
-  return Math.max(-3000, Math.min(10000, da));
+  return Math.max(-3000, Math.min(15000, da));
 }
 
 export function calcPowerMult(densityAltitude) {
-  const daClamped = Math.max(-3000, Math.min(8000, densityAltitude));
+  const daClamped = Math.max(-3000, Math.min(13000, densityAltitude));
   return 1 - daClamped / 60000;
+}
+
+// Thinner air is also less air to shove out of the way - the same
+// density altitude that costs the supercharged engine power (above)
+// costs the car aerodynamic drag too, via the standard-atmosphere
+// density-ratio approximation (troposphere). Multiplies the reference
+// air density used for the drag term in run-simulator.js - 1.0 at
+// standard sea-level conditions (densityAltitude = 0), falling below 1
+// as density altitude rises (thinner air, less drag) and rising above 1
+// as it falls (denser air, more drag).
+export function calcAirDensityRatio(densityAltitude) {
+  const daClamped = Math.max(-3000, Math.min(15000, densityAltitude));
+  return Math.pow(1 - 6.8755e-6 * daClamped, 4.2561);
 }
 
 const OPTIMAL_TRACK_TEMP_C = 24;

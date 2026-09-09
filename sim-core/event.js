@@ -59,16 +59,26 @@ function clamp(v, min, max) {
 // and eliminations each get their own day (see generateEventConditions),
 // so a real event's two-day shape - quals one day, eliminations the next -
 // comes through as two separate arcs rather than one long one.
-function conditionsForDayFrac(rng, dayFrac) {
+//
+// The day's actual RANGE - how hot/humid it gets, how much the asphalt
+// runs above air temp - comes from the chosen track's climate profile
+// (see tracks.js) instead of one fixed generic range: Denver's dry
+// mountain air and Gainesville's humid heat are meant to feel like
+// different events, not the same weather with a different backdrop.
+// elevationFt is constant for the whole event (it's where the track
+// physically sits, not something that changes round to round) - carried
+// through on every round's conditions so run-simulator.js's density-
+// altitude math (power AND drag, see environment.js) sees it.
+function conditionsForDayFrac(rng, dayFrac, track) {
   const heatCurve = Math.sin(Math.PI * clamp(dayFrac, 0, 1)); // 0 at each end, 1 at midday
-  const baseAirtemp = randRange(rng, 18, 26);
-  const peakAirtemp = baseAirtemp + randRange(rng, 8, 16);
-  const airtempC = Math.round(clamp(baseAirtemp + heatCurve * (peakAirtemp - baseAirtemp), 12, 42));
-  const trackTempC = Math.round(clamp(airtempC + randRange(rng, 8, 22), 18, 60));
-  const humidity = Math.round(clamp(randRange(rng, 45, 75) - heatCurve * randRange(rng, 15, 30), 10, 90));
+  const baseAirtemp = randRange(rng, track.airtempBaseMin, track.airtempBaseMax);
+  const peakAirtemp = baseAirtemp + randRange(rng, track.airtempPeakDeltaMin, track.airtempPeakDeltaMax);
+  const airtempC = Math.round(clamp(baseAirtemp + heatCurve * (peakAirtemp - baseAirtemp), 5, 45));
+  const trackTempC = Math.round(clamp(airtempC + randRange(rng, track.trackTempDeltaMin, track.trackTempDeltaMax), 10, 65));
+  const humidity = Math.round(clamp(randRange(rng, track.humidityMin, track.humidityMax) - heatCurve * randRange(rng, 5, 15), 5, 95));
   const baroInHg = +clamp(randRange(rng, 29.7, 30.1), 28.85, 30.15).toFixed(2);
   const gripSliderPct = Math.round(clamp(randRange(rng, 50, 85), 20, 95));
-  return { airtempC, humidity, trackTempC, baroInHg, gripSliderPct };
+  return { airtempC, humidity, trackTempC, baroInHg, gripSliderPct, elevationFt: track.elevationFt };
 }
 
 // Generates the condition set for one event's rounds. Pass a seed to
@@ -77,7 +87,7 @@ function conditionsForDayFrac(rng, dayFrac) {
 // each walk their OWN day arc, using their own round count as the divisor -
 // they're independent days, not one long one, and elimination's arc
 // shouldn't assume 4 rounds just because qualifying always does.
-export function generateEventConditions(roundDefs, seed = Math.floor(Math.random() * 1e9)) {
+export function generateEventConditions(roundDefs, seed = Math.floor(Math.random() * 1e9), track) {
   const rng = mulberry32(seed);
   const maxRoundByPhase = {
     qualifying: 4,
@@ -86,6 +96,6 @@ export function generateEventConditions(roundDefs, seed = Math.floor(Math.random
   return roundDefs.map((round) => {
     const maxRound = maxRoundByPhase[round.phase];
     const dayFrac = maxRound > 1 ? (round.roundNumber - 1) / (maxRound - 1) : 0;
-    return { ...round, conditions: conditionsForDayFrac(rng, dayFrac) };
+    return { ...round, conditions: conditionsForDayFrac(rng, dayFrac, track) };
   });
 }

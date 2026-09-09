@@ -4,6 +4,7 @@ import { calcClutchReach } from "../sim-core/clutch.js";
 import { calcOptimalPsi, calcPsiPenalty } from "../sim-core/tires.js";
 import { runSimulation, WEIGHT_LB as WEIGHT_LB_MIN } from "../sim-core/run-simulator.js";
 import { buildRoundDefs, generateEventConditions } from "../sim-core/event.js";
+import { TRACKS, findTrack } from "../sim-core/tracks.js";
 import {
   generateAiField, deriveRunningOrder, runQualifyingAttempt, computeQualifyingLadder,
   deriveBracketSize, pairBracketRound, calcReactionTime, resolveHeadToHead, mulberry32,
@@ -21,6 +22,15 @@ import {
 } from "../sim-core/finances.js";
 
 function $(id) { return document.getElementById(id); }
+
+// The track's physical elevation isn't a slider (it's fixed for the
+// whole event, not a per-round weather condition) - applyConditions
+// stashes it here whenever a round's conditions get applied, and
+// readSettings() reads it straight from this module state. Stays 0 for
+// Testrun-tab runs outside an event, matching sea-level pre-tracks
+// behavior exactly. Declared this early so the live density-altitude
+// hint (updateEngineHints, called at module load below) can read it.
+let currentTrackElevationFt = 0;
 
 const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "fuel2", "fuel3", "gasket", "ign1", "ign2", "ign3", "ign4", "ign5", "ign6", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "s4t", "s4p", "s4speed", "s5t", "s5p", "s5speed", "s6t", "s6p", "s6speed", "fw", "tpsi", "wing", "fwing", "wbar", "ballfront", "ballrear", "aggro", "shutoff"];
 
@@ -111,8 +121,8 @@ function updateEngineHints() {
   const ignition = +$("ign1").value; // launch-point ignition, for this one-off "at launch" estimate
   const tirePsi = +$("tpsi").value / 10;
 
-  const da = calcDensityAltitude(airtempC, humidity, baroInHg);
-  $("da-hint").textContent = `Density altitude: ${Math.round(da).toLocaleString("nl-NL")} ft`;
+  const da = calcDensityAltitude(airtempC, humidity, baroInHg, currentTrackElevationFt);
+  $("da-hint").textContent = `Density altitude: ${Math.round(da).toLocaleString("nl-NL")} ft${currentTrackElevationFt ? ` (incl. ${currentTrackElevationFt.toLocaleString("nl-NL")} ft baanhoogte)` : ""}`;
   const powerMultNow = calcPowerMult(da);
   const { fuelFactor, blowerFactor, compressionFactor } = calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition });
   const { mult } = calcMult({ fuelFactor, fuelVolPct: fuel1Pct, blowerFactor, ignEff: calcIgnEff(ignition), compressionFactor, powerMult: powerMultNow });
@@ -270,6 +280,7 @@ function readSettings() {
     baroInHg: +$("baro").value / 100,
     trackTempC: +$("track").value,
     gripSliderPct: +$("grip").value,
+    trackElevationFt: currentTrackElevationFt,
     blowerOD: +$("blower").value,
     fuelPct: +$("fuel").value,
     fuel1Pct: +$("fuel1").value,
@@ -493,6 +504,7 @@ function applyConditions(cond) {
   $("baro").value = Math.round(cond.baroInHg * 100);
   $("track").value = cond.trackTempC;
   $("grip").value = cond.gripSliderPct;
+  currentTrackElevationFt = cond.elevationFt ?? 0;
   envSliderIds.forEach(id => $(id).dispatchEvent(new Event("input")));
 }
 
@@ -504,6 +516,8 @@ function roundResultText(result) {
   return "DNF";
 }
 function entrantLabel(e) { return escapeHtml(e.name) + (e.isPlayer ? " (jij)" : ""); }
+
+$("trackSelect").innerHTML = TRACKS.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
 
 $("startEventBtn").addEventListener("click", () => {
   if (!isCarRaceReady(garageConfig)) {
@@ -521,14 +535,15 @@ $("startEventBtn").addEventListener("click", () => {
   const bracketSize = deriveBracketSize(totalEntries, 32);
   const seed = Math.floor(Math.random() * 1e9);
   const roundDefs = buildRoundDefs(bracketSize);
+  const track = findTrack($("trackSelect").value);
   const player = {
     id: "player", name: "Jij", team: "Jouw team", isPlayer: true,
     quals: [null, null, null, null], bestEt: null, bestMph: null,
     qualPosition: null, qualified: false, eliminated: false, eliminatedRound: null,
   };
-  const rounds = generateEventConditions(roundDefs, seed);
+  const rounds = generateEventConditions(roundDefs, seed, track);
   ladderState = {
-    bracketSize, totalEntries, seed, rounds,
+    bracketSize, totalEntries, seed, rounds, trackId: track.id,
     roundIndex: 0,
     field: [player, ...generateAiField(totalEntries - 1, seed + 1)],
     rng: mulberry32(seed + 777),
@@ -536,6 +551,7 @@ $("startEventBtn").addEventListener("click", () => {
     qOrder: null, bracketPool: null, elimRounds: {}, playerOutcome: null,
   };
   viewingRoundIndex = null;
+  $("event-track-label").textContent = `Circuit: ${track.name} (${track.elevationFt.toLocaleString("nl-NL")} ft hoogte).`;
   $("event-setup").style.display = "none";
   $("event-active").style.display = "block";
   $("event-result").style.display = "none";

@@ -30,6 +30,11 @@
 
     <div id="event-setup">
       <div class="row">
+        <label>Circuit</label>
+        <select id="trackSelect"></select>
+      </div>
+      <p class="note" style="margin-top:0;">Elk circuit heeft zijn eigen hoogte en klimaat - dat verandert de density altitude (zie Omgeving) voor het hele evenement: hoger en heter kost vermogen (dunnere lucht, minder zuurstof) maar scheelt ook iets in luchtweerstand. Denver ligt bv. hoog en droog, Las Vegas en Phoenix zijn hete woestijnbanen, Gainesville en Houston juist heet en vochtig.</p>
+      <div class="row">
         <label>Aantal auto's (incl. jij)</label>
         <select id="fieldSizeSelect">
           <option value="8">8</option>
@@ -43,6 +48,7 @@
     </div>
 
     <div id="event-active" style="display:none;">
+      <p class="note" style="margin-top:0;" id="event-track-label">--</p>
       <p class="note" style="margin-top:0; display:none;" id="event-round-label">--</p>
       <button class="secondary" id="backToCurrentRoundBtn" style="display:none;">← Terug naar huidige ronde</button>
 
