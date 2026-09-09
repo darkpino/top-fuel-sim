@@ -300,6 +300,7 @@ $("runBtn").addEventListener("click", () => {
     else if (r.cylinderDropCause === "lean") flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Bij aanhouden loopt dit uit op motorschade.</div>`;
     else flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% liep te heet. Bij aanhouden loopt dit uit op motorschade.</div>`;
   }
+  if (r.tireShakeRisk) flags += `<div class="flag">Tire shake-risico: de bandenspanning past niet goed bij deze baan terwijl de launch wel zwaar belast wordt — de band groeit niet goed in, wat in het echt een harde trilling geeft in plaats van een schone hook-up. Stel de bandenspanning bij richting de richtwaarde.</div>`;
   if (r.nitroIllegal) flags += `<div class="flag">Deze run gebruikt meer dan 90% nitro — buiten het reglement, alleen geldig als testrun.</div>`;
   if (r.anySpin && !r.engineFailed) flags += `<div class="flag">Wielenspin gedetecteerd tijdens de run — motorvermogen overschreed de beschikbare grip.</div>`;
   if (r.detonationRisk && !r.engineFailed) flags += `<div class="flag">Detonatierisico: hoge compressie + hoog nitropercentage + veel voorontsteking is een gevaarlijke combinatie.</div>`;

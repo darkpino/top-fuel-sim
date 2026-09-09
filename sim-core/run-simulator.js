@@ -42,19 +42,32 @@ const HEAT_GLAZE_LOSS = 0.35;
 // aero drag, is why an early lift costs real time and trap speed instead
 // of just gently coasting out the rest of the pass.
 const ENGINE_BRAKE_COEFF = 12;
-// The launch itself gets a mechanical advantage that steady-state grip/
-// torque numbers don't capture: hard weight transfer onto the rear
-// slicks plus tire growth swells the contact patch right at the hit
-// (grip side), and a clutch pack's static friction bites harder than its
-// settled sliding friction the instant it takes load (torque side). Both
-// fade out as the car gets rolling - by ~100mph the weight transfer has
-// normalized and the pack has settled into steady engagement - which is
-// exactly why a strong 60ft (low .8s) pairs with a mid-3s ET instead of
-// the whole run just being uniformly quicker: the bonus only touches the
-// first couple hundred feet.
-const LAUNCH_GRIP_BONUS = 1.5;
-const LAUNCH_TORQUE_BONUS = 0.5;
-const LAUNCH_BONUS_DECAY_FTS = 150; // ~102 mph
+// A drag slick doesn't peak its grip at zero slip - it has to GROW into
+// its optimal rolling diameter and contact patch first, which only
+// happens under load, so the true traction ceiling sits a bit above the
+// naive static-friction estimate. This is a constant physical property of
+// the tire (not a launch-only effect - it just only matters while the car
+// is still traction-limited, which in practice is the first ~50-60ft;
+// past that the clutch/motor ceiling is already the binding constraint
+// regardless of how much grip is on offer, so this bonus has zero further
+// effect there - see TIRE_GROWTH_RATE below for the wheelspeed/shake side
+// of the same phenomenon).
+const TIRE_PEAK_GRIP_BONUS = 0.15;
+// How much wheelspeed-over-groundspeed a healthy, well-matched tire builds
+// as it grows under load (loadRatio = engineForce/maxTraction) - this is
+// the margin real data-logger traces show even on a clean, non-smoking
+// run (see calcGrowthEfficiency below for why a mismatched tire pressure
+// can suppress it instead of just cost ET).
+const TIRE_GROWTH_RATE = 8;
+// Tire pressure sets how readily the carcass can actually grow into that
+// margin - matched to track temp (psiPenalty ~ 0), it grows freely;
+// badly mismatched, the growth is suppressed even while the tune is still
+// asking a lot of the tire (high loadRatio) - exactly the combination
+// that produces tire shake in real cars: not enough margin to slip
+// smoothly, not enough grip to hook up clean either.
+const GROWTH_EFFICIENCY_PSI_REF = 1.5;
+const TIRE_SHAKE_LOAD_THRESHOLD = 0.55;
+const TIRE_SHAKE_EFFICIENCY_THRESHOLD = 0.6;
 const DT = 0.004;
 const MAX_T = 10.0;
 // Holding lockup back to stay under the traction ceiling isn't free: the
@@ -96,6 +109,7 @@ export function runSimulation(settings) {
   const optimalPsi = calcOptimalPsi(trackTempC);
   const psiPenalty = calcPsiPenalty(tirePsi, optimalPsi);
   const baseGripCoeff = calcGripCoeff({ gripSliderPct, trackTempC, psiPenalty });
+  const growthEfficiency = Math.max(0.3, Math.min(1, 1 - psiPenalty / GROWTH_EFFICIENCY_PSI_REF));
 
   // Two engine-side ceilings, calibrated against real published Top Fuel
   // reference points (60ft ~0.8s @ ~100mph, 1000ft ~3.65s @ ~330-338mph,
@@ -146,6 +160,8 @@ export function runSimulation(settings) {
   const driverState = createDriverState();
   let lastSlipPct = 0;
   let peakWornGain = 0;
+  let earlyLoadSum = 0;
+  let earlyLoadCount = 0;
 
   while (x < 1000 && t < MAX_T) {
     const target = activeSetpoint(t, stages);
@@ -174,9 +190,8 @@ export function runSimulation(settings) {
     // re-anchoring fuelFactor to hit 1.0 at the 90% legal nitro max (was
     // ~1.12 at 90% under the old formula) reproduces the exact same power
     // at 90% as before - the reference point moved, not the calibration.
-    const launchBonusFrac = Math.max(0, 1 - v / LAUNCH_BONUS_DECAY_FTS);
-    const LAUNCH_CAP = 14583 * mult * (1 + LAUNCH_TORQUE_BONUS * launchBonusFrac);
-    const POWER_HP = 7291 * mult * (1 + LAUNCH_TORQUE_BONUS * launchBonusFrac);
+    const LAUNCH_CAP = 14583 * mult;
+    const POWER_HP = 7291 * mult;
 
     const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, driverShutoffFt, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
@@ -190,7 +205,8 @@ export function runSimulation(settings) {
     const availableForce = Math.min(powerForce, LAUNCH_CAP) * throttle;
     const clutchSlipLoss = Math.max(0, availableForce - engineForce);
     const wingDownforce = WING_K * v * v;
-    const maxTraction = (WEIGHT_LB + wingDownforce) * baseGripCoeff * (1 + LAUNCH_GRIP_BONUS * launchBonusFrac);
+    const maxTraction = (WEIGHT_LB + wingDownforce) * baseGripCoeff * (1 + TIRE_PEAK_GRIP_BONUS);
+    const loadRatio = engineForce / maxTraction;
     let appliedForce, slipPct, slipping;
     if (engineForce > maxTraction) {
       slipPct = Math.min(100, ((engineForce - maxTraction) / engineForce) * 100);
@@ -254,7 +270,19 @@ export function runSimulation(settings) {
       wheelV = Math.min(v + MAX_SLIP_EXCESS_FTS, wheelV + wheelAccel * DT);
       if (wheelV < v) wheelV = v;
     } else {
-      wheelV = v;
+      // Below the smoke ceiling the tire is still visibly running ahead of
+      // ground speed on a real data logger - it's growing into its patch,
+      // not slipping in the "losing time" sense. How much depends on how
+      // hard it's being loaded (loadRatio) and how well pressure matches
+      // the track (growthEfficiency) - a badly matched pressure suppresses
+      // this margin even under heavy load, which is the tire-shake
+      // combination tracked below.
+      const growthSlipPct = Math.min(TIRE_GROWTH_RATE, loadRatio * TIRE_GROWTH_RATE) * growthEfficiency;
+      wheelV = v * (1 + growthSlipPct / 100);
+    }
+    if (x < 150) {
+      earlyLoadSum += loadRatio;
+      earlyLoadCount++;
     }
 
     const fuelGpm = calcFuelFlowGpm(rpm, fuelVolFactor);
@@ -288,10 +316,17 @@ export function runSimulation(settings) {
   const bearingWear = Math.min(100, (clutchDamage / CLUTCH_FAILURE_THRESHOLD) * 100);
   const tireWear = calcTireWear(tirePsi, optimalPsi, slipEnergy);
   const peakFuelGpm = trace.reduce((acc, p) => Math.max(acc, p.fuel_gpm), 0);
+  // Tire shake: the tune is asking a lot of the tire in the launch phase
+  // (avgEarlyLoad high - it's not being babied) but pressure is matched
+  // badly enough to the track that it can't grow into that load smoothly
+  // (growthEfficiency low) - the real-world combination that produces a
+  // harsh, ET-costing vibration instead of either a clean hookup or smoke.
+  const avgEarlyLoad = earlyLoadCount ? earlyLoadSum / earlyLoadCount : 0;
+  const tireShakeRisk = avgEarlyLoad > TIRE_SHAKE_LOAD_THRESHOLD && growthEfficiency < TIRE_SHAKE_EFFICIENCY_THRESHOLD;
 
   return {
     finished, et, mph, et60, et330, et660, mph660, trace, densityAltitude,
-    clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk, nitroIllegal,
+    clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk, nitroIllegal, tireShakeRisk,
     peakFuelGpm, engineFailed, engineFailTime, engineFailCause,
     cylindersDropped, cylinderDropTime, cylinderDropCause,
     clutchFailed, clutchFailTime,
