@@ -55,7 +55,8 @@ const AI_ARCHETYPES = [
     tune: {
       blowerOD: 50, fuelPct: 90, fuel1Pct: 72, fuel2Pct: 90, fuel3Pct: 85, gasketThou: 38,
       ignitionCurve: [62, 58, 53, 47, 43, 39],
-      s1time: 0.85, s1pct: 0.80, s1speed: 7.0, s2time: 2.2, s2pct: 0.42, s2speed: 2.0, s3time: 2.5, s3pct: 1.0, s3speed: 8.0,
+      s1time: 0.85, s1pct: 0.80, s1speed: 4.9, s2time: 1.323, s2pct: 0.61, s2speed: 1.5, s3time: 1.863, s3pct: 0.42, s3speed: 1.0,
+      s4time: 2.2, s4pct: 0.42, s4speed: 1.0, s5time: 2.35, s5pct: 0.71, s5speed: 4.8, s6time: 2.5, s6pct: 1.0, s6speed: 8.0,
       fingerWeight: 100, tirePsi: 7.5, wingAngle: 0, frontWingPct: 55, wheelieBarHeightIn: 2.5, ballastFrontLb: 20, ballastRearLb: 0,
       driverAggressiveness: 70, driverWatchUntilFt: 660, driverShutoffFt: 1000,
     },
@@ -65,7 +66,8 @@ const AI_ARCHETYPES = [
     tune: {
       blowerOD: 60, fuelPct: 90, fuel1Pct: 78, fuel2Pct: 95, fuel3Pct: 90, gasketThou: 30,
       ignitionCurve: [65, 62, 58, 52, 46, 42],
-      s1time: 0.75, s1pct: 0.85, s1speed: 7.5, s2time: 2.1, s2pct: 0.45, s2speed: 2.2, s3time: 2.4, s3pct: 1.0, s3speed: 8.5,
+      s1time: 0.75, s1pct: 0.85, s1speed: 5.25, s2time: 1.223, s2pct: 0.65, s2speed: 1.65, s3time: 1.763, s3pct: 0.45, s3speed: 1.1,
+      s4time: 2.1, s4pct: 0.45, s4speed: 1.1, s5time: 2.25, s5pct: 0.725, s5speed: 5.1, s6time: 2.4, s6pct: 1.0, s6speed: 8.5,
       fingerWeight: 100, tirePsi: 7.2, wingAngle: 0.5, frontWingPct: 45, wheelieBarHeightIn: 2.8, ballastFrontLb: 0, ballastRearLb: 0,
       driverAggressiveness: 90, driverWatchUntilFt: 1000, driverShutoffFt: 1000,
     },
@@ -75,7 +77,8 @@ const AI_ARCHETYPES = [
     tune: {
       blowerOD: 44, fuelPct: 88, fuel1Pct: 68, fuel2Pct: 85, fuel3Pct: 80, gasketThou: 42,
       ignitionCurve: [58, 55, 50, 45, 41, 37],
-      s1time: 0.90, s1pct: 0.75, s1speed: 6.5, s2time: 2.3, s2pct: 0.38, s2speed: 1.8, s3time: 2.6, s3pct: 0.98, s3speed: 7.5,
+      s1time: 0.90, s1pct: 0.75, s1speed: 4.55, s2time: 1.39, s2pct: 0.565, s2speed: 1.35, s3time: 1.95, s3pct: 0.38, s3speed: 0.9,
+      s4time: 2.3, s4pct: 0.38, s4speed: 0.9, s5time: 2.45, s5pct: 0.68, s5speed: 4.5, s6time: 2.6, s6pct: 0.98, s6speed: 7.5,
       fingerWeight: 95, tirePsi: 7.6, wingAngle: -0.5, frontWingPct: 60, wheelieBarHeightIn: 2.2, ballastFrontLb: 40, ballastRearLb: 20,
       driverAggressiveness: 50, driverWatchUntilFt: 660, driverShutoffFt: 1000,
     },
@@ -85,7 +88,8 @@ const AI_ARCHETYPES = [
     tune: {
       blowerOD: 34, fuelPct: 85, fuel1Pct: 65, fuel2Pct: 80, fuel3Pct: 76, gasketThou: 48,
       ignitionCurve: [55, 52, 48, 44, 40, 36],
-      s1time: 0.88, s1pct: 0.72, s1speed: 6.0, s2time: 2.25, s2pct: 0.40, s2speed: 1.8, s3time: 2.55, s3pct: 0.95, s3speed: 7.0,
+      s1time: 0.88, s1pct: 0.72, s1speed: 4.2, s2time: 1.36, s2pct: 0.56, s2speed: 1.35, s3time: 1.908, s3pct: 0.4, s3speed: 0.9,
+      s4time: 2.25, s4pct: 0.4, s4speed: 0.9, s5time: 2.4, s5pct: 0.675, s5speed: 4.2, s6time: 2.55, s6pct: 0.95, s6speed: 7.0,
       fingerWeight: 90, tirePsi: 7.5, wingAngle: 0, frontWingPct: 50, wheelieBarHeightIn: 2.5, ballastFrontLb: 0, ballastRearLb: 0,
       driverAggressiveness: 65, driverWatchUntilFt: 660, driverShutoffFt: 1000,
     },
@@ -95,7 +99,8 @@ const AI_ARCHETYPES = [
     tune: {
       blowerOD: 52, fuelPct: 90, fuel1Pct: 74, fuel2Pct: 92, fuel3Pct: 87, gasketThou: 36,
       ignitionCurve: [61, 57, 52, 46, 42, 38],
-      s1time: 0.80, s1pct: 0.82, s1speed: 8.0, s2time: 2.15, s2pct: 0.44, s2speed: 2.5, s3time: 2.45, s3pct: 1.0, s3speed: 9.0,
+      s1time: 0.80, s1pct: 0.82, s1speed: 5.6, s2time: 1.273, s2pct: 0.63, s2speed: 1.875, s3time: 1.813, s3pct: 0.44, s3speed: 1.25,
+      s4time: 2.15, s4pct: 0.44, s4speed: 1.25, s5time: 2.3, s5pct: 0.72, s5speed: 5.4, s6time: 2.45, s6pct: 1.0, s6speed: 9.0,
       fingerWeight: 100, tirePsi: 7.4, wingAngle: 0, frontWingPct: 55, wheelieBarHeightIn: 2.4, ballastFrontLb: 10, ballastRearLb: 0,
       driverAggressiveness: 75, driverWatchUntilFt: 1000, driverShutoffFt: 1000,
     },
@@ -105,7 +110,8 @@ const AI_ARCHETYPES = [
     tune: {
       blowerOD: 58, fuelPct: 91, fuel1Pct: 76, fuel2Pct: 88, fuel3Pct: 82, gasketThou: 33,
       ignitionCurve: [64, 60, 55, 49, 44, 40],
-      s1time: 0.70, s1pct: 0.88, s1speed: 8.5, s2time: 2.05, s2pct: 0.50, s2speed: 2.8, s3time: 2.35, s3pct: 1.0, s3speed: 9.5,
+      s1time: 0.70, s1pct: 0.88, s1speed: 5.95, s2time: 1.172, s2pct: 0.69, s2speed: 2.1, s3time: 1.713, s3pct: 0.5, s3speed: 1.4,
+      s4time: 2.05, s4pct: 0.5, s4speed: 1.4, s5time: 2.2, s5pct: 0.75, s5speed: 5.7, s6time: 2.35, s6pct: 1.0, s6speed: 9.5,
       fingerWeight: 100, tirePsi: 7.0, wingAngle: 0.5, frontWingPct: 40, wheelieBarHeightIn: 3.0, ballastFrontLb: 0, ballastRearLb: 0,
       driverAggressiveness: 85, driverWatchUntilFt: 1000, driverShutoffFt: 1000,
     },

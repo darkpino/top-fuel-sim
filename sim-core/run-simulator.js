@@ -127,6 +127,7 @@ export function runSimulation(settings) {
     airtempC, humidity, baroInHg, trackTempC, gripSliderPct,
     blowerOD, fuelPct, gasketThou, ignitionCurve,
     s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
+    s4time, s4pct, s4speed, s5time, s5pct, s5speed, s6time, s6pct, s6speed,
     fuel1Pct, fuel2Pct, fuel3Pct,
     fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt, driverShutoffFt,
     ballastFrontLb, ballastRearLb, frontWingPct, wheelieBarHeightIn,
@@ -164,8 +165,17 @@ export function runSimulation(settings) {
   const wingTrim = 1 + (wingAngle / 2.5) * 0.45;
   const WING_K = WING_BASE_K * wingTrim;
 
-  const stages = { s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed };
-  const fuelStages = { s2time, fuel1Pct, s3time, fuel2Pct, fuel3Pct };
+  const stages = {
+    s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
+    s4time, s4pct, s4speed, s5time, s5pct, s5speed, s6time, s6pct, s6speed,
+  };
+  // Fuel curve still only has 3 phases (launch/lockup-pulldown/eindfase),
+  // sharing the clutch's own timing rather than a separate timer: fuel2
+  // (pulldown) starts when the clutch begins its pullback (s2time, same
+  // as before), fuel3 (eindfase) starts once the clutch reaches its final
+  // stage-6 target - full lockup, now the last of six stages instead of
+  // the third of three.
+  const fuelStages = { s2time, fuel1Pct, s3time: s6time, fuel2Pct, fuel3Pct };
   const fingerDesired = calcFingerDesired(fingerWeight);
 
   let t = 0, v = 0, x = 0, wheelV = 0;

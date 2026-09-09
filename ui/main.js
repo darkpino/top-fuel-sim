@@ -20,7 +20,7 @@ import {
 
 function $(id) { return document.getElementById(id); }
 
-const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "fuel2", "fuel3", "gasket", "ign1", "ign2", "ign3", "ign4", "ign5", "ign6", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "fw", "tpsi", "wing", "fwing", "wbar", "ballfront", "ballrear", "aggro", "shutoff"];
+const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "fuel2", "fuel3", "gasket", "ign1", "ign2", "ign3", "ign4", "ign5", "ign6", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "s4t", "s4p", "s4speed", "s5t", "s5p", "s5speed", "s6t", "s6p", "s6speed", "fw", "tpsi", "wing", "fwing", "wbar", "ballfront", "ballrear", "aggro", "shutoff"];
 
 function fmt(id, val) {
   switch (id) {
@@ -34,13 +34,9 @@ function fmt(id, val) {
     case "fuel1": case "fuel2": case "fuel3": return val + "%";
     case "gasket": return (val / 1000).toFixed(3) + '"';
     case "ign1": case "ign2": case "ign3": case "ign4": case "ign5": case "ign6": return val + "°";
-    case "s1t": return (val / 100).toFixed(2) + "s";
-    case "s1p": return val + "%";
-    case "s2t": return (val / 100).toFixed(2) + "s";
-    case "s2p": return val + "%";
-    case "s3t": return (val / 100).toFixed(2) + "s";
-    case "s3p": return val + "%";
-    case "s1speed": case "s2speed": case "s3speed": return val + "%/s";
+    case "s1t": case "s2t": case "s3t": case "s4t": case "s5t": case "s6t": return (val / 100).toFixed(2) + "s";
+    case "s1p": case "s2p": case "s3p": case "s4p": case "s5p": case "s6p": return val + "%";
+    case "s1speed": case "s2speed": case "s3speed": case "s4speed": case "s5speed": case "s6speed": return val + "%/s";
     case "fw": return val;
     case "tpsi": return (val / 10).toFixed(1) + " psi";
     case "wing": return (val / 10).toFixed(1) + "°";
@@ -69,21 +65,33 @@ function readClutchStages() {
     s3time: +$("s3t").value / 100,
     s3pct: +$("s3p").value / 100,
     s3speed: +$("s3speed").value / 100,
+    s4time: +$("s4t").value / 100,
+    s4pct: +$("s4p").value / 100,
+    s4speed: +$("s4speed").value / 100,
+    s5time: +$("s5t").value / 100,
+    s5pct: +$("s5p").value / 100,
+    s5speed: +$("s5speed").value / 100,
+    s6time: +$("s6t").value / 100,
+    s6pct: +$("s6p").value / 100,
+    s6speed: +$("s6speed").value / 100,
   };
 }
 
+const CLUTCH_STAGE_NUMBERS = [1, 2, 3, 4, 5, 6];
+
 function updateClutchReachHint() {
   const stages = readClutchStages();
-  const { reach1, reach2, reach3 } = calcClutchReach(stages);
+  const reach = calcClutchReach(stages);
 
   function fmtReach(setpoint, reached) {
     const dead = Math.abs(reached - setpoint) > 0.02;
     const pct = Math.round(reached * 100);
     return dead ? `${pct}% <span style="color:var(--red)">(setpoint ${Math.round(setpoint * 100)}% niet gehaald - te weinig tijd/snelheid)</span>` : `${pct}%`;
   }
-  $("clutch-reach-hint").innerHTML = `Haalbare lockup per stage: S1 ${fmtReach(stages.s1pct, reach1)} · S2 ${fmtReach(stages.s2pct, reach2)} · S3 ${fmtReach(stages.s3pct, reach3)}`;
+  const parts = CLUTCH_STAGE_NUMBERS.map(n => `S${n} ${fmtReach(stages[`s${n}pct`], reach[`reach${n}`])}`);
+  $("clutch-reach-hint").innerHTML = `Haalbare lockup per stage: ${parts.join(" · ")}`;
 }
-["s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed"].forEach(id => {
+CLUTCH_STAGE_NUMBERS.flatMap(n => [`s${n}t`, `s${n}p`, `s${n}speed`]).forEach(id => {
   $(id).addEventListener("input", updateClutchReachHint);
 });
 updateClutchReachHint();

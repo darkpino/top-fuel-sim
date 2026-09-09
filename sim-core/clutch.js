@@ -2,23 +2,32 @@
 // bearing can actually reach given hydraulic travel speed. Pure functions,
 // no DOM access.
 
+// Six stages (not the original three) so a tune can shape a genuinely
+// gradual curve instead of two sharp corners - real clutch timers step
+// through many more than 3 points, and the old 3-stage model's jump from
+// one setpoint straight to a much lower or higher one (with only that
+// stage's own speed to get there) read as a near-vertical line on the
+// trace. More, smaller steps let each transition be gentler while still
+// reaching the same overall shape.
+const STAGE_NUMBERS = [1, 2, 3, 4, 5, 6];
+
 // Each stage timer commands a new target for the bearing; it does not jump
 // there, it travels toward it hydraulically (see stepBearingPos). Real
 // telemetry (G-meter trace) shows the G-peak happening at FULL lockup, not
 // at launch - launch gives a moderate plateau, there's often a dip as drag
 // catches up before the next stage clamps harder, then a climb to the peak
 // right as the clutch fully locks, followed by a decay as speed/drag take
-// over. Stage 3's target IS the ceiling for the rest of the run - it does
-// NOT keep climbing to 100% on its own after s3time. Set it to 100% for a
+// over. Stage 6's target IS the ceiling for the rest of the run - it does
+// NOT keep climbing to 100% on its own after s6time. Set it to 100% for a
 // normal full-lockup finish (the peak G in real telemetry happens right as
 // that's reached); leave it lower to deliberately keep the clutch slipping
 // for the whole run - protects the tires from a traction ceiling the tune
 // can't otherwise reach, at the cost of cooking the clutch itself.
 export function activeSetpoint(t, stages) {
-  const { s1time, s1pct, s2time, s2pct, s3time, s3pct } = stages;
-  if (t < s1time) return s1pct;
-  if (t < s2time) return s2pct;
-  return s3pct;
+  for (const n of STAGE_NUMBERS) {
+    if (t < stages[`s${n}time`]) return stages[`s${n}pct`];
+  }
+  return stages.s6pct;
 }
 
 // Finger-desired lockup: how far centrifugal force wants to push the
@@ -53,31 +62,32 @@ export function stepBearingPos(bearingPos, target, bearingSpeed, dt) {
 // Each timer stage has its own hydraulic bleed rate on a real clutch
 // timer, not just its own target/timing - so the bearing travels calmly at
 // a different speed per stage rather than snapping to each new setpoint.
-// The stage-3 rate continues to govern the final approach to full lockup
-// (t >= s3time), since no separate "stage 4" target/timing exists.
+// The stage-6 rate continues to govern the final approach to full lockup
+// (t >= s6time), since no separate "stage 7" target/timing exists.
 export function activeSpeed(t, stages) {
-  const { s1time, s2time, s3time, s1speed, s2speed, s3speed } = stages;
-  if (t < s1time) return s1speed;
-  if (t < s2time) return s2speed;
-  return s3speed;
+  for (const n of STAGE_NUMBERS) {
+    if (t < stages[`s${n}time`]) return stages[`s${n}speed`];
+  }
+  return stages.s6speed;
 }
 
 // Reachable lockup within a stage = however far the bearing can travel at
 // that stage's speed in the time available, capped by the setpoint itself.
 // If the reachable value is below the setpoint, that setpoint is currently
 // "dead" - raising it further won't do anything until you also give the
-// bearing more time or more speed.
+// bearing more time or more speed. Returns { reach1..reach6 }.
 export function calcClutchReach(stages) {
-  const { s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed } = stages;
   let pos = 0.05;
-  const reach1 = Math.min(s1pct, pos + s1speed * s1time);
-  pos = reach1;
-  const reach2 = s2pct >= pos
-    ? Math.min(s2pct, pos + s2speed * (s2time - s1time))
-    : Math.max(s2pct, pos - s2speed * (s2time - s1time));
-  pos = reach2;
-  const reach3 = s3pct >= pos
-    ? Math.min(s3pct, pos + s3speed * (s3time - s2time))
-    : Math.max(s3pct, pos - s3speed * (s3time - s2time));
-  return { reach1, reach2, reach3 };
+  let prevTime = 0;
+  const reach = {};
+  for (const n of STAGE_NUMBERS) {
+    const time = stages[`s${n}time`];
+    const pct = stages[`s${n}pct`];
+    const speed = stages[`s${n}speed`];
+    const dt = time - prevTime;
+    pos = pct >= pos ? Math.min(pct, pos + speed * dt) : Math.max(pct, pos - speed * dt);
+    reach[`reach${n}`] = pos;
+    prevTime = time;
+  }
+  return reach;
 }
