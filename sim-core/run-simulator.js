@@ -130,11 +130,13 @@ export function runSimulation(settings) {
     fuel1Pct, fuel2Pct, fuel3Pct,
     fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt, driverShutoffFt,
     ballastFrontLb, ballastRearLb, frontWingPct, wheelieBarHeightIn,
+    garageWeightDeltaLb = 0, garageWheelieRiskBallastEquivLb = 0, garageDragCdaMult = 1,
+    garageClutchHeatRateMult = 1, garageTractionMult = 1,
   } = settings;
 
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
   const powerMult = calcPowerMult(densityAltitude);
-  const weightLb = WEIGHT_LB + ballastFrontLb + ballastRearLb;
+  const weightLb = WEIGHT_LB + ballastFrontLb + ballastRearLb + garageWeightDeltaLb;
 
   // ignition: 40 is a throwaway - ignEff is no longer static, it's sampled
   // from ignitionCurve (and the retard system) fresh every timestep below.
@@ -267,7 +269,7 @@ export function runSimulation(settings) {
     const availableForce = Math.min(powerForce, LAUNCH_CAP) * throttle;
     const clutchSlipLoss = Math.max(0, availableForce - engineForce);
     const wingDownforce = WING_K * v * v;
-    const maxTraction = (weightLb + wingDownforce) * baseGripCoeff * (1 + TIRE_PEAK_GRIP_BONUS);
+    const maxTraction = (weightLb + wingDownforce) * baseGripCoeff * (1 + TIRE_PEAK_GRIP_BONUS) * garageTractionMult;
     const loadRatio = engineForce / maxTraction;
     let appliedForce, slipPct, slipping;
     if (engineForce > maxTraction) {
@@ -285,7 +287,7 @@ export function runSimulation(settings) {
     }
     lastSlipPct = slipPct;
     clutchTemp += (slipPct / 100) * HEAT_RATE * DT * 10;
-    clutchTemp += clutchSlipLoss * CLUTCH_SLIP_HEAT_RATE * DT;
+    clutchTemp += clutchSlipLoss * CLUTCH_SLIP_HEAT_RATE * garageClutchHeatRateMult * DT;
     slipIntegral += slipPct * DT;
 
     // Only counts once the pack is already deep in the "oververhit" zone -
@@ -321,7 +323,7 @@ export function runSimulation(settings) {
     if (engineFailed || clutchFailed) appliedForce = 0;
     else if (cylindersDropped) appliedForce *= CYLINDER_DROP_FORCE_PENALTY;
 
-    const drag = 0.5 * RHO_REF * CDA * v * v;
+    const drag = 0.5 * RHO_REF * CDA * garageDragCdaMult * v * v;
     // Mechanical engine braking through the locked (or partly locked)
     // clutch - scales with how far off throttle the driver is and how
     // much of the driveline is actually coupled (lf), not just aero.
@@ -405,6 +407,7 @@ export function runSimulation(settings) {
   // wheelie bar riding lower than the 4" legal max.
   const wheelieRisk = avgEarlyLoad * WHEELIE_RISK_LOAD_COEFF
     - ballastFrontLb * WHEELIE_RISK_BALLAST_RELIEF
+    - garageWheelieRiskBallastEquivLb * WHEELIE_RISK_BALLAST_RELIEF
     - frontWingPct * WHEELIE_RISK_WING_RELIEF
     - (WHEELIE_BAR_MAX_IN - wheelieBarHeightIn) * WHEELIE_RISK_BAR_RELIEF
     > WHEELIE_RISK_THRESHOLD;

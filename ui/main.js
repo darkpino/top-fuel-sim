@@ -9,6 +9,14 @@ import {
   deriveBracketSize, pairBracketRound, calcReactionTime, resolveHeadToHead, mulberry32,
   generateLaneVariants, pickBetterLane,
 } from "../sim-core/ladder.js";
+import {
+  ENGINE_BRANDS, HEAD_BRANDS, BLOWER_BRANDS, defaultGarageConfig, computeGarageEffects,
+  totalBuildValue, equippedPartPrice, spareLabel,
+} from "../sim-core/garage.js";
+import {
+  ENTRY_FEE, defaultFinancesState, addTransaction, chargeEntryFee, chargeRunCost,
+  chargeEngineFailure, chargeClutchFailure, awardEventPrize, generateSponsorOffers,
+} from "../sim-core/finances.js";
 
 function $(id) { return document.getElementById(id); }
 
@@ -270,6 +278,7 @@ function readSettings() {
     driverAggressiveness: +$("aggro").value,
     driverWatchUntilFt: +$("watchft").value,
     driverShutoffFt: +$("shutoff").value,
+    ...computeGarageEffects(garageConfig),
   };
 }
 
@@ -401,6 +410,37 @@ let currentMode = "test";
 let ladderState = null; // null when no event is active
 const EVENT_IDLE_STATUS = "Nog geen evenement gestart. Kies het aantal auto's en start: 4 kwalificatierondes bepalen de ladder, het bovenste deel (macht van 2) gaat door naar de eliminatie. Elke ronde heeft eigen gesimuleerde omstandigheden - het hele veld rijdt onder dezelfde condities als jij.";
 
+// ---- Financiën & garage: teambudget, transacties, sponsors en de
+// auto-build (motor/kop/blower merken, chassis- en tankkeuzes). Beide
+// bewaard lokaal in de browser, net als de opgeslagen setups. Garage-
+// effecten (gewicht, sleeprisico, koppelingswarmte, tractie) worden in
+// readSettings() meegenomen in elke run, test of evenement. ----
+
+const FINANCES_KEY = "topfuel-finances";
+const GARAGE_KEY = "topfuel-garage";
+
+function loadFinancesState() {
+  try {
+    const raw = localStorage.getItem(FINANCES_KEY);
+    return raw ? { ...defaultFinancesState(), ...JSON.parse(raw) } : defaultFinancesState();
+  } catch { return defaultFinancesState(); }
+}
+function saveFinancesState() {
+  try { localStorage.setItem(FINANCES_KEY, JSON.stringify(financesState)); } catch { /* private mode, storage full, etc - silently no-ops */ }
+}
+function loadGarageConfig() {
+  try {
+    const raw = localStorage.getItem(GARAGE_KEY);
+    return raw ? { ...defaultGarageConfig(), ...JSON.parse(raw) } : defaultGarageConfig();
+  } catch { return defaultGarageConfig(); }
+}
+function saveGarageConfig() {
+  try { localStorage.setItem(GARAGE_KEY, JSON.stringify(garageConfig)); } catch { /* private mode, storage full, etc - silently no-ops */ }
+}
+
+let financesState = loadFinancesState();
+let garageConfig = loadGarageConfig();
+
 function eventInProgress() {
   return ladderState !== null && ladderState.playerOutcome === null;
 }
@@ -411,17 +451,22 @@ function updateEnvLock() {
   $("event-env-note").style.display = locked ? "block" : "none";
 }
 
+const MODE_TAB_IDS = { test: "tabTest", event: "tabEvent", finance: "tabFinance", garage: "tabGarage" };
+
 function setMode(mode) {
   currentMode = mode;
-  $("tabTest").classList.toggle("active", mode === "test");
-  $("tabEvent").classList.toggle("active", mode === "event");
+  Object.entries(MODE_TAB_IDS).forEach(([m, id]) => $(id).classList.toggle("active", m === mode));
   $("eventPanel").style.display = mode === "event" ? "block" : "none";
-  $("runBtn").style.display = mode === "event" ? "none" : "block";
+  $("financePanel").style.display = mode === "finance" ? "block" : "none";
+  $("garagePanel").style.display = mode === "garage" ? "block" : "none";
+  $("settingsGrid").style.display = (mode === "test" || mode === "event") ? "grid" : "none";
+  $("runBtn").style.display = mode === "test" ? "block" : "none";
   updateEnvLock();
   if (mode === "event" && eventInProgress()) refreshLadderView();
+  if (mode === "finance") renderFinancePanel();
+  if (mode === "garage") renderGaragePanel();
 }
-$("tabTest").addEventListener("click", () => setMode("test"));
-$("tabEvent").addEventListener("click", () => setMode("event"));
+Object.entries(MODE_TAB_IDS).forEach(([m, id]) => $(id).addEventListener("click", () => setMode(m)));
 
 function applyConditions(cond) {
   $("airtemp").value = cond.airtempC;
@@ -442,6 +487,13 @@ function roundResultText(result) {
 function entrantLabel(e) { return escapeHtml(e.name) + (e.isPlayer ? " (jij)" : ""); }
 
 $("startEventBtn").addEventListener("click", () => {
+  if (financesState.budget < ENTRY_FEE) {
+    $("event-status").textContent = `Onvoldoende budget voor het inschrijfgeld (€${ENTRY_FEE.toLocaleString("nl-NL")}) - huidig budget €${financesState.budget.toLocaleString("nl-NL")}. Check Financiën voor sponsorvoorstellen.`;
+    return;
+  }
+  chargeEntryFee(financesState);
+  saveFinancesState();
+  renderFinancePanel();
   const totalEntries = +$("fieldSizeSelect").value;
   const bracketSize = deriveBracketSize(totalEntries, 32);
   const seed = Math.floor(Math.random() * 1e9);
@@ -684,7 +736,7 @@ function advanceLadderRound() {
     const player = ranked.find(e => e.isPlayer);
     if (!player.qualified) {
       ladderState.playerOutcome = "dnq";
-      renderFinalResult(`Niet gekwalificeerd — je eindigde als P${player.qualPosition} van de ${ladderState.field.length}, de eliminatie ging tot en met P${ladderState.bracketSize}.`);
+      finishEvent({ qualified: false }, `Niet gekwalificeerd — je eindigde als P${player.qualPosition} van de ${ladderState.field.length}, de eliminatie ging tot en met P${ladderState.bracketSize}.`);
       return;
     }
     ladderState.bracketPool = ranked.filter(e => e.qualified).slice(0, ladderState.bracketSize);
@@ -702,6 +754,32 @@ function renderFinalResult(text) {
   updateEnvLock();
 }
 
+// Every actual player run during an event (qualifying pass, elimination
+// pass, bye pass - not a skipped qualifying round, not a Testrun-tab
+// run) costs run money, plus a repair cost on top if the motor or
+// koppeling let go - waived for the motor if a spare block is on hand.
+function chargePlayerRun(r) {
+  chargeRunCost(financesState);
+  if (r.engineFailed) chargeEngineFailure(financesState, garageConfig);
+  if (r.clutchFailed) chargeClutchFailure(financesState, garageConfig);
+  saveFinancesState();
+  saveGarageConfig();
+  renderFinancePanel();
+}
+
+// Awards prize money for how the event ended, offers 1-2 sponsor deals
+// (reusing the event's own seeded rng so a given event/seed is
+// reproducible), then shows the final result text.
+function finishEvent(outcome, text) {
+  awardEventPrize(financesState, outcome);
+  if (!financesState.sponsorOffers.length) {
+    financesState.sponsorOffers = generateSponsorOffers(ladderState.rng, 2);
+  }
+  saveFinancesState();
+  renderFinancePanel();
+  renderFinalResult(text);
+}
+
 function runPlayerQualifying(skip) {
   const roundDef = ladderState.rounds[ladderState.roundIndex];
   const sessionIndex = roundDef.roundNumber - 1;
@@ -712,6 +790,7 @@ function runPlayerQualifying(skip) {
     player.quals[sessionIndex] = r;
     if (r.finished && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
     ladderState.playerHistory[ladderState.roundIndex] = { result: r };
+    chargePlayerRun(r);
     renderRunResult(r);
   } else {
     player.quals[sessionIndex] = null;
@@ -733,12 +812,16 @@ function runPlayerBye() {
   const r = runSimulation(readSettings());
   ladderState.byeResult = r;
   ladderState.playerHistory[ladderState.roundIndex] = { result: r, bye: true };
+  chargePlayerRun(r);
   renderRunResult(r);
   renderBracketTable(roundDef);
   renderHistoryTable();
   if (roundDef.roundNumber === totalElimRoundsFor(ladderState.bracketSize)) {
     ladderState.playerOutcome = "champion";
-    renderFinalResult(`Kampioen! Je won de finale van dit evenement (bye in de laatste ronde) (${ladderState.totalEntries} auto's).`);
+    finishEvent(
+      { qualified: true, champion: true, totalElimRounds: totalElimRoundsFor(ladderState.bracketSize) },
+      `Kampioen! Je won de finale van dit evenement (bye in de laatste ronde) (${ladderState.totalEntries} auto's).`
+    );
   } else {
     advanceLadderRound();
   }
@@ -773,6 +856,7 @@ function runPlayerElimination() {
   ladderState.bracketResults[ladderState.playerPairIndex] = { a, b, resultA, resultB, reactA, reactB, winner };
   ladderState.playerHistory[ladderState.roundIndex] = { result: rPlayer, opponent, opponentResult: rOpponent, won: winner.isPlayer };
 
+  chargePlayerRun(rPlayer);
   renderRunResult(rPlayer);
   renderBracketTable(roundDef);
   renderHistoryTable();
@@ -780,13 +864,19 @@ function runPlayerElimination() {
   if (winner.isPlayer) {
     if (roundDef.roundNumber === totalElimRoundsFor(ladderState.bracketSize)) {
       ladderState.playerOutcome = "champion";
-      renderFinalResult(`Kampioen! Je won de finale van dit evenement (${ladderState.totalEntries} auto's).`);
+      finishEvent(
+        { qualified: true, champion: true, totalElimRounds: totalElimRoundsFor(ladderState.bracketSize) },
+        `Kampioen! Je won de finale van dit evenement (${ladderState.totalEntries} auto's).`
+      );
     } else {
       advanceLadderRound();
     }
   } else {
     ladderState.playerOutcome = "eliminated";
-    renderFinalResult(`Uitgeschakeld in ${roundDef.label.toLowerCase()} door ${opponent.name} (${opponent.team}).`);
+    finishEvent(
+      { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber },
+      `Uitgeschakeld in ${roundDef.label.toLowerCase()} door ${opponent.name} (${opponent.team}).`
+    );
   }
 }
 
@@ -797,6 +887,146 @@ $("runRoundBtn").addEventListener("click", () => {
   else runPlayerElimination();
 });
 $("skipQualBtn").addEventListener("click", () => runPlayerQualifying(true));
+
+// ---- Financiën: budget, transacties en sponsorvoorstellen. ----
+
+function renderSponsorOffers() {
+  const el = $("sponsor-offers");
+  if (!financesState.sponsorOffers.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:16px;">Sponsorvoorstellen</div>` +
+    financesState.sponsorOffers.map(o => `
+      <div class="row" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <span>${escapeHtml(o.name)} biedt €${o.amount.toLocaleString("nl-NL")}</span>
+        <span style="display:flex; gap:6px;">
+          <button class="secondary" style="margin:0; width:auto;" data-accept="${escapeHtml(o.id)}">Accepteren</button>
+          <button class="secondary" style="margin:0; width:auto;" data-decline="${escapeHtml(o.id)}">Afwijzen</button>
+        </span>
+      </div>`).join("");
+}
+
+function renderFinanceTable() {
+  $("finance-table-body").innerHTML = financesState.transactions.map(t => {
+    const color = t.amount > 0 ? "var(--green)" : (t.amount < 0 ? "var(--red)" : "var(--muted)");
+    const amtTxt = (t.amount > 0 ? "+" : "") + "€" + t.amount.toLocaleString("nl-NL");
+    return `<tr><td>${escapeHtml(t.label)}</td><td style="color:${color};">${amtTxt}</td><td>€${t.balance.toLocaleString("nl-NL")}</td></tr>`;
+  }).join("");
+}
+
+function renderFinancePanel() {
+  $("fin-budget").textContent = "€" + financesState.budget.toLocaleString("nl-NL");
+  $("fin-budget").style.color = financesState.budget < 0 ? "var(--red)" : "var(--text)";
+  renderSponsorOffers();
+  renderFinanceTable();
+}
+
+$("sponsor-offers").addEventListener("click", (e) => {
+  const acceptId = e.target.dataset.accept;
+  const declineId = e.target.dataset.decline;
+  if (acceptId) {
+    const offer = financesState.sponsorOffers.find(o => o.id === acceptId);
+    if (offer) addTransaction(financesState, `Sponsorbijdrage — ${offer.name}`, offer.amount);
+    financesState.sponsorOffers = financesState.sponsorOffers.filter(o => o.id !== acceptId);
+    saveFinancesState();
+    renderFinancePanel();
+  } else if (declineId) {
+    financesState.sponsorOffers = financesState.sponsorOffers.filter(o => o.id !== declineId);
+    saveFinancesState();
+    renderFinancePanel();
+  }
+});
+
+// ---- Auto bouwen: motor/kop/blower merken, chassis- en tankkeuzes. ----
+
+function populateGarageSelects() {
+  $("g-engine-brand").innerHTML = ENGINE_BRANDS.map(b => `<option value="${b.id}">${escapeHtml(b.name)} — €${b.priceNew.toLocaleString("nl-NL")}</option>`).join("");
+  $("g-head-brand").innerHTML = HEAD_BRANDS.map(b => `<option value="${b.id}">${escapeHtml(b.name)} — €${b.priceNew.toLocaleString("nl-NL")}</option>`).join("");
+  $("g-blower-brand").innerHTML = BLOWER_BRANDS.map(b => `<option value="${b.id}">${escapeHtml(b.name)} — €${b.priceNew.toLocaleString("nl-NL")}</option>`).join("");
+}
+populateGarageSelects();
+
+function applyGarageConfigToForm() {
+  $("g-engine-brand").value = garageConfig.engineBrandId;
+  $("g-engine-secondhand").checked = garageConfig.engineSecondhand;
+  $("g-head-brand").value = garageConfig.headBrandId;
+  $("g-head-secondhand").checked = garageConfig.headSecondhand;
+  $("g-blower-brand").value = garageConfig.blowerBrandId;
+  $("g-blower-secondhand").checked = garageConfig.blowerSecondhand;
+  $("g-blower-type").value = garageConfig.blowerType;
+  $("g-clutch-plates").value = String(garageConfig.clutchPlates);
+  $("g-body-material").value = garageConfig.bodyMaterial;
+  $("g-chassis-length").value = garageConfig.chassisLengthIn;
+  $("g-tank-size").value = garageConfig.tankSizeGal;
+  $("g-tank-position").value = garageConfig.tankPosition;
+  $("g-mudflaps").checked = garageConfig.mudflaps;
+  $("g-engine-position").value = garageConfig.enginePositionIn;
+}
+
+function readGarageConfigFromForm() {
+  garageConfig.engineBrandId = $("g-engine-brand").value;
+  garageConfig.engineSecondhand = $("g-engine-secondhand").checked;
+  garageConfig.headBrandId = $("g-head-brand").value;
+  garageConfig.headSecondhand = $("g-head-secondhand").checked;
+  garageConfig.blowerBrandId = $("g-blower-brand").value;
+  garageConfig.blowerSecondhand = $("g-blower-secondhand").checked;
+  garageConfig.blowerType = $("g-blower-type").value;
+  garageConfig.clutchPlates = +$("g-clutch-plates").value;
+  garageConfig.bodyMaterial = $("g-body-material").value;
+  garageConfig.chassisLengthIn = +$("g-chassis-length").value;
+  garageConfig.tankSizeGal = +$("g-tank-size").value;
+  garageConfig.tankPosition = $("g-tank-position").value;
+  garageConfig.mudflaps = $("g-mudflaps").checked;
+  garageConfig.enginePositionIn = +$("g-engine-position").value;
+}
+
+function renderGarageSummary() {
+  $("v-g-chassis-length").textContent = garageConfig.chassisLengthIn + '"';
+  $("v-g-tank-size").textContent = garageConfig.tankSizeGal + " gal";
+  $("v-g-engine-position").textContent = garageConfig.enginePositionIn;
+  $("v-g-engine-spares").textContent = garageConfig.engineSpares;
+  $("v-g-head-spares").textContent = garageConfig.headSpares;
+  $("v-g-blower-spares").textContent = garageConfig.blowerSpares;
+  $("g-build-value").textContent = "€" + totalBuildValue(garageConfig).toLocaleString("nl-NL");
+  const effects = computeGarageEffects(garageConfig);
+  const wd = Math.round(effects.garageWeightDeltaLb);
+  $("g-weight-delta").textContent = (wd > 0 ? "+" : "") + wd + " lb";
+}
+
+function renderGaragePanel() {
+  applyGarageConfigToForm();
+  renderGarageSummary();
+}
+
+const GARAGE_FORM_IDS = [
+  "g-engine-brand", "g-engine-secondhand", "g-head-brand", "g-head-secondhand",
+  "g-blower-brand", "g-blower-secondhand", "g-blower-type", "g-clutch-plates",
+  "g-body-material", "g-chassis-length", "g-tank-size", "g-tank-position",
+  "g-mudflaps", "g-engine-position",
+];
+GARAGE_FORM_IDS.forEach(id => {
+  $(id).addEventListener("input", () => {
+    readGarageConfigFromForm();
+    saveGarageConfig();
+    renderGarageSummary();
+  });
+});
+
+function buySpare(part) {
+  const price = equippedPartPrice(garageConfig, part);
+  if (financesState.budget < price) {
+    $("garage-status").textContent = `Onvoldoende budget (€${price.toLocaleString("nl-NL")} nodig, €${financesState.budget.toLocaleString("nl-NL")} beschikbaar).`;
+    return;
+  }
+  addTransaction(financesState, `Reserve ${spareLabel(part)} gekocht`, -price);
+  garageConfig[part + "Spares"] += 1;
+  saveFinancesState();
+  saveGarageConfig();
+  renderGarageSummary();
+  renderFinancePanel();
+  $("garage-status").textContent = `Reserve ${spareLabel(part)} gekocht voor €${price.toLocaleString("nl-NL")}.`;
+}
+$("g-buy-engine-spare").addEventListener("click", () => buySpare("engine"));
+$("g-buy-head-spare").addEventListener("click", () => buySpare("head"));
+$("g-buy-blower-spare").addEventListener("click", () => buySpare("blower"));
 
 setMode("test");
 

@@ -16,8 +16,8 @@
       <nav class="side-nav">
         <button class="nav-btn active" id="tabTest">Testrun</button>
         <button class="nav-btn" id="tabEvent">Evenement</button>
-        <button class="nav-btn disabled" type="button" disabled title="Binnenkort beschikbaar">Financiën</button>
-        <button class="nav-btn disabled" type="button" disabled title="Binnenkort beschikbaar">Auto bouwen</button>
+        <button class="nav-btn" id="tabFinance">Financiën</button>
+        <button class="nav-btn" id="tabGarage">Auto bouwen</button>
         <button class="nav-btn disabled" type="button" disabled title="Binnenkort beschikbaar">Team bouwen</button>
       </nav>
     </aside>
@@ -93,7 +93,91 @@
     <button class="secondary" id="newEventBtn" style="display:none;">Nieuw evenement</button>
   </div>
 
-  <div class="grid">
+  <div class="panel" id="financePanel" style="display:none;">
+    <div class="sec-title">Financiën</div>
+    <div class="results-grid" style="grid-template-columns:1fr;">
+      <div class="stat"><div class="lbl">Budget</div><div class="num" id="fin-budget">--</div></div>
+    </div>
+    <div id="sponsor-offers"></div>
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:16px;">Transacties</div>
+    <p class="note" style="margin-top:0;">Inschrijfgeld en runkosten (brandstof, crew) gaan er per evenement af, prijzengeld en sponsorbijdragen komen erbij. Testruns op het Testrun-tabblad kosten niets - alleen echte kwalificatie- en eliminatierondes tellen mee.</p>
+    <div style="overflow-x:auto;">
+      <table class="event-table" id="finance-table">
+        <thead><tr><th>Omschrijving</th><th>Bedrag</th><th>Saldo</th></tr></thead>
+        <tbody id="finance-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel" id="garagePanel" style="display:none;">
+    <div class="sec-title">Auto bouwen</div>
+    <p class="note" style="margin-top:0;">Onderdelen en chassiskeuzes die worden opgeslagen en meegenomen naar elke run (test en evenement). Merkverschillen in vermogen en betrouwbaarheid tussen motor-, kop- en blowermerken - en de invloed van tweedehands onderdelen daarop - worden in een latere stap verder in de simulatie doorgevoerd; voor nu tellen ze mee in aanschafprijs en (bij de motor) in reserveonderdelen.</p>
+
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Motor</div>
+    <div class="row"><label>Merk</label><select id="g-engine-brand"></select></div>
+    <div class="row"><label><input type="checkbox" id="g-engine-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <div class="row"><label>Reserve motorblokken <span class="val" id="v-g-engine-spares">1</span></label>
+      <button class="secondary" id="g-buy-engine-spare" type="button">Extra motorblok kopen</button></div>
+    <p class="note">Een reservemotorblok wordt gratis gemonteerd als je motor het tijdens een evenement begeeft - zonder reserve moet je 'm ter plekke repareren, wat geld kost.</p>
+
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Cilinderkoppen</div>
+    <div class="row"><label>Merk</label><select id="g-head-brand"></select></div>
+    <div class="row"><label><input type="checkbox" id="g-head-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <div class="row"><label>Reserve cilinderkoppen <span class="val" id="v-g-head-spares">1</span></label>
+      <button class="secondary" id="g-buy-head-spare" type="button">Extra set koppen kopen</button></div>
+
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Blower</div>
+    <div class="row"><label>Merk</label><select id="g-blower-brand"></select></div>
+    <div class="row"><label><input type="checkbox" id="g-blower-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <div class="row"><label>Type</label>
+      <select id="g-blower-type">
+        <option value="conventional">Gewone blower</option>
+        <option value="setback">Setback blower (iets meer tractie)</option>
+      </select>
+    </div>
+    <div class="row"><label>Reserve blowers <span class="val" id="v-g-blower-spares">1</span></label>
+      <button class="secondary" id="g-buy-blower-spare" type="button">Extra blower kopen</button></div>
+
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Koppeling &amp; chassis</div>
+    <div class="row"><label>Aantal koppelingsplaten</label>
+      <select id="g-clutch-plates">
+        <option value="5">5-plaats (wordt heter tijdens slippen, minder tolerant)</option>
+        <option value="6">6-plaats (koeler, meer tolerant voor slip)</option>
+      </select>
+    </div>
+    <div class="row"><label>Bodytype</label>
+      <select id="g-body-material">
+        <option value="aluminium">Aluminium</option>
+        <option value="carbon">Carbon (duurder, lichter)</option>
+      </select>
+    </div>
+    <div class="row"><label>Chassislengte <span class="val" id="v-g-chassis-length">300"</span></label>
+      <input type="range" id="g-chassis-length" min="280" max="320" value="300" step="1"></div>
+    <div class="row"><label><input type="checkbox" id="g-mudflaps"> Mudflaps gemonteerd</label></div>
+    <div class="row"><label>Motorpositie (setback) <span class="val" id="v-g-engine-position">0</span></label>
+      <input type="range" id="g-engine-position" min="-3" max="3" value="0" step="1"></div>
+    <p class="note" style="margin-top:0;">Motor naar voren (negatief) legt meer gewicht op de neus (minder wheelie-risico), naar achteren (positief) juist minder - net als bij ballast, maar dan zonder het gewicht zelf toe te voegen.</p>
+
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Brandstoftank</div>
+    <div class="row"><label>Tankgrootte <span class="val" id="v-g-tank-size">55 gal</span></label>
+      <input type="range" id="g-tank-size" min="45" max="75" value="55" step="1"></div>
+    <div class="row"><label>Tankpositie</label>
+      <select id="g-tank-position">
+        <option value="forward">Vooraan</option>
+        <option value="neutral" selected>Midden</option>
+        <option value="rearward">Achteraan</option>
+      </select>
+    </div>
+
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Overzicht</div>
+    <div class="results-grid">
+      <div class="stat"><div class="lbl">Totale bouwwaarde</div><div class="num" id="g-build-value">--</div></div>
+      <div class="stat"><div class="lbl">Gewichtsverschil</div><div class="num" id="g-weight-delta">--</div></div>
+    </div>
+    <p class="note" id="garage-status"></p>
+  </div>
+
+  <div class="grid" id="settingsGrid">
     <div>
       <div class="panel collapsible" id="setupPanel" data-collapse-key="setup">
         <div class="sec-title">Setup</div>
