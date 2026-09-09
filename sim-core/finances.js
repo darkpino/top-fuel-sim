@@ -6,7 +6,7 @@
 // from consuming a spare) when the player is carrying a spare for that
 // part - the direct payoff for having bought inventory ahead of time.
 
-import { equippedPartPrice, CLUTCH_PLATE_OPTIONS } from "./garage.js";
+import { equippedPartPrice, consumeSpareOnFailure } from "./garage.js";
 
 export const STARTING_BUDGET = 75000;
 export const ENTRY_FEE = 2500;
@@ -41,8 +41,7 @@ export function chargeRunCost(state, label = "Run kosten (brandstof, crew)") {
 }
 
 export function chargeEngineFailure(state, garageConfig) {
-  if (garageConfig.engineSpares > 0) {
-    garageConfig.engineSpares -= 1;
+  if (consumeSpareOnFailure(garageConfig, "engine")) {
     return addTransaction(state, "Motorschade — reservemotorblok gemonteerd", 0);
   }
   const cost = Math.round(equippedPartPrice(garageConfig, "engine") * ENGINE_REPAIR_FRACTION);
@@ -50,8 +49,10 @@ export function chargeEngineFailure(state, garageConfig) {
 }
 
 export function chargeClutchFailure(state, garageConfig) {
-  const plateInfo = CLUTCH_PLATE_OPTIONS[garageConfig.clutchPlates];
-  const cost = Math.round(plateInfo.priceNew * CLUTCH_REPAIR_FRACTION);
+  if (consumeSpareOnFailure(garageConfig, "clutch")) {
+    return addTransaction(state, "Koppelingschade — reservekoppeling gemonteerd", 0);
+  }
+  const cost = Math.round(equippedPartPrice(garageConfig, "clutch") * CLUTCH_REPAIR_FRACTION);
   return addTransaction(state, "Koppelingschade — reparatie", -cost);
 }
 

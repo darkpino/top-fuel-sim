@@ -10,8 +10,9 @@ import {
   generateLaneVariants, pickBetterLane,
 } from "../sim-core/ladder.js";
 import {
-  ENGINE_BRANDS, HEAD_BRANDS, BLOWER_BRANDS, defaultGarageConfig, computeGarageEffects,
-  totalBuildValue, equippedPartPrice, spareLabel, computeWeightDistribution,
+  PARTS, findBrand, defaultGarageConfig, computeGarageEffects,
+  totalBuildValue, spareLabel, computeWeightDistribution,
+  equippedUnit, installUnit, unitPrice, computeClutchReliabilityMult,
 } from "../sim-core/garage.js";
 import {
   ENTRY_FEE, defaultFinancesState, addTransaction, chargeEntryFee, chargeRunCost,
@@ -793,25 +794,34 @@ function renderFinalResult(text) {
   updateEnvLock();
 }
 
+const FATAL_FAILURE_NOUN = { engine: "Motor", clutch: "Koppeling" };
+const FATAL_FAILURE_SPARE_NOUN = { engine: "reservemotorblok", clutch: "reservekoppeling" };
+
 // Every actual player run during an event (qualifying pass, elimination
 // pass, bye pass - not a skipped qualifying round, not a Testrun-tab
 // run) costs run money, plus a repair cost on top if the motor or
-// koppeling let go - waived for the motor if a spare block is on hand.
-// Returns whether this was a FATAL engine failure - no spare left to
-// swap in, meaning the team has no working motor and the event is over,
-// not just an expensive rebuild.
+// koppeling let go - waived (and a spare swapped in - possibly a
+// different brand, see installUnit/consumeSpareOnFailure in garage.js) if
+// one is on hand. Returns which part had a FATAL failure - "engine",
+// "clutch", or null - meaning no spare left to swap in for that part, so
+// the team has no working car and the event is over, not just an
+// expensive rebuild. Engine is checked first: on the rare run where both
+// fail, that's the one reported.
 function chargePlayerRun(r) {
   chargeRunCost(financesState);
-  let fatalEngineFailure = false;
+  let fatalPart = null;
   if (r.engineFailed) {
-    fatalEngineFailure = garageConfig.engineSpares <= 0;
+    if (garageConfig.engineInventory.length === 0) fatalPart = "engine";
     chargeEngineFailure(financesState, garageConfig);
   }
-  if (r.clutchFailed) chargeClutchFailure(financesState, garageConfig);
+  if (r.clutchFailed) {
+    if (!fatalPart && garageConfig.clutchInventory.length === 0) fatalPart = "clutch";
+    chargeClutchFailure(financesState, garageConfig);
+  }
   saveFinancesState();
   saveGarageConfig();
   renderFinancePanel();
-  return fatalEngineFailure;
+  return fatalPart;
 }
 
 // Awards prize money for how the event ended, offers 1-2 sponsor deals
@@ -832,13 +842,13 @@ function runPlayerQualifying(skip) {
   const sessionIndex = roundDef.roundNumber - 1;
   const player = ladderState.field.find(e => e.isPlayer);
   applyConditions(roundDef.conditions);
-  let fatalEngineFailure = false;
+  let fatalPart = null;
   if (!skip) {
     const r = runSimulation(readSettings());
     player.quals[sessionIndex] = r;
     if (r.finished && !r.weightIllegal && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
     ladderState.playerHistory[ladderState.roundIndex] = { result: r };
-    fatalEngineFailure = chargePlayerRun(r);
+    fatalPart = chargePlayerRun(r);
     renderRunResult(r);
   } else {
     player.quals[sessionIndex] = null;
@@ -849,11 +859,11 @@ function runPlayerQualifying(skip) {
   for (let i = playerIdx + 1; i < order.length; i++) runQualifyingAttempt(order[i], sessionIndex, roundDef.conditions, false);
   renderQualiTable(roundDef);
   renderHistoryTable();
-  if (fatalEngineFailure) {
+  if (fatalPart) {
     ladderState.playerOutcome = "dnq";
     finishEvent(
       { qualified: false },
-      `Motor kapot zonder reservemotorblok tijdens de kwalificatie — zonder motor kun je niet verder racen. Het evenement is voorbij voor je team.`
+      `${FATAL_FAILURE_NOUN[fatalPart]} kapot zonder ${FATAL_FAILURE_SPARE_NOUN[fatalPart]} tijdens de kwalificatie — zonder ${fatalPart === "clutch" ? "koppeling" : "motor"} kun je niet verder racen. Het evenement is voorbij voor je team.`
     );
     return;
   }
@@ -868,7 +878,7 @@ function runPlayerBye() {
   const r = runSimulation(readSettings());
   ladderState.elimRounds[ladderState.roundIndex].byeResult = r;
   ladderState.playerHistory[ladderState.roundIndex] = { result: r, bye: true };
-  const fatalEngineFailure = chargePlayerRun(r);
+  const fatalPart = chargePlayerRun(r);
   renderRunResult(r);
   renderBracketTable(roundDef);
   renderHistoryTable();
@@ -879,11 +889,11 @@ function runPlayerBye() {
       { qualified: true, champion: true, totalElimRounds: totalElimRoundsFor(ladderState.bracketSize) },
       `Kampioen! Je won de finale van dit evenement (bye in de laatste ronde) (${ladderState.totalEntries} auto's).`
     );
-  } else if (fatalEngineFailure) {
+  } else if (fatalPart) {
     ladderState.playerOutcome = "eliminated";
     finishEvent(
       { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber + 1 },
-      `Motor kapot zonder reservemotorblok — je kreeg deze ronde een bye, maar zonder motor kun je niet verder racen. Het evenement is voorbij voor je team.`
+      `${FATAL_FAILURE_NOUN[fatalPart]} kapot zonder ${FATAL_FAILURE_SPARE_NOUN[fatalPart]} — je kreeg deze ronde een bye, maar zonder ${fatalPart === "clutch" ? "koppeling" : "motor"} kun je niet verder racen. Het evenement is voorbij voor je team.`
     );
   } else {
     advanceLadderRound();
@@ -920,7 +930,7 @@ function runPlayerElimination() {
   ed.results[ed.playerPairIndex] = { a, b, resultA, resultB, reactA, reactB, winner };
   ladderState.playerHistory[ladderState.roundIndex] = { result: rPlayer, opponent, opponentResult: rOpponent, won: winner.isPlayer };
 
-  const fatalEngineFailure = chargePlayerRun(rPlayer);
+  const fatalPart = chargePlayerRun(rPlayer);
   renderRunResult(rPlayer);
   renderBracketTable(roundDef);
   renderHistoryTable();
@@ -933,26 +943,26 @@ function runPlayerElimination() {
         { qualified: true, champion: true, totalElimRounds: totalElimRoundsFor(ladderState.bracketSize) },
         `Kampioen! Je won de finale van dit evenement (${ladderState.totalEntries} auto's).`
       );
-    } else if (fatalEngineFailure) {
+    } else if (fatalPart) {
       ladderState.playerOutcome = "eliminated";
       finishEvent(
         { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber + 1 },
-        `Motor kapot zonder reservemotorblok — je won deze ronde nog wel, maar zonder motor kun je niet verder racen. Het evenement is voorbij voor je team.`
+        `${FATAL_FAILURE_NOUN[fatalPart]} kapot zonder ${FATAL_FAILURE_SPARE_NOUN[fatalPart]} — je won deze ronde nog wel, maar zonder ${fatalPart === "clutch" ? "koppeling" : "motor"} kun je niet verder racen. Het evenement is voorbij voor je team.`
       );
     } else {
       advanceLadderRound();
     }
   } else {
     ladderState.playerOutcome = "eliminated";
-    const engineNote = fatalEngineFailure
-      ? ` Je motor ging bovendien kapot zonder reservemotorblok — die moet voor het volgende evenement vervangen worden.`
+    const failureNote = fatalPart
+      ? ` Je ${fatalPart === "clutch" ? "koppeling" : "motor"} ging bovendien kapot zonder ${FATAL_FAILURE_SPARE_NOUN[fatalPart]} — die moet voor het volgende evenement vervangen worden.`
       : "";
     const dqNote = rPlayer.weightIllegal
       ? ` Je auto woog ${Math.round(rPlayer.weightLb)} lbs, onder het minimum van ${WEIGHT_LB_MIN} lbs — automatisch verlies ongeacht de tijd.`
       : "";
     finishEvent(
       { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber },
-      `Uitgeschakeld in ${roundDef.label.toLowerCase()} door ${opponent.name} (${opponent.team}).${dqNote}${engineNote}`
+      `Uitgeschakeld in ${roundDef.label.toLowerCase()} door ${opponent.name} (${opponent.team}).${dqNote}${failureNote}`
     );
   }
 }
@@ -1012,12 +1022,20 @@ $("sponsor-offers").addEventListener("click", (e) => {
   }
 });
 
-// ---- Auto bouwen: motor/kop/blower merken, chassis- en tankkeuzes. ----
+// ---- Auto bouwen: motor/kop/blower/koppeling merken, chassis- en
+// tankkeuzes. Elk van de vier onderdelen (PARTS in garage.js) heeft een
+// gemonteerde eenheid (brand + secondhand) en een eigen voorraad reserve-
+// eenheden die best een ANDER merk of staat mogen zijn - dat is de hele
+// clou van de voorraad-UI hieronder. ----
+
+const PART_LIST = Object.keys(PARTS);
 
 function populateGarageSelects() {
-  $("g-engine-brand").innerHTML = ENGINE_BRANDS.map(b => `<option value="${b.id}">${escapeHtml(b.name)} — €${b.priceNew.toLocaleString("nl-NL")}</option>`).join("");
-  $("g-head-brand").innerHTML = HEAD_BRANDS.map(b => `<option value="${b.id}">${escapeHtml(b.name)} — €${b.priceNew.toLocaleString("nl-NL")}</option>`).join("");
-  $("g-blower-brand").innerHTML = BLOWER_BRANDS.map(b => `<option value="${b.id}">${escapeHtml(b.name)} — €${b.priceNew.toLocaleString("nl-NL")}</option>`).join("");
+  PART_LIST.forEach(part => {
+    const optionsHtml = PARTS[part].brands.map(b => `<option value="${b.id}">${escapeHtml(b.name)} — €${b.priceNew.toLocaleString("nl-NL")}</option>`).join("");
+    $(`g-${part}-brand`).innerHTML = optionsHtml;
+    $(`g-${part}-spare-brand`).innerHTML = optionsHtml;
+  });
 }
 populateGarageSelects();
 
@@ -1036,14 +1054,12 @@ document.querySelectorAll("#dragster-diagram .diagram-part").forEach(el => {
 });
 
 function applyGarageConfigToForm() {
-  $("g-engine-brand").value = garageConfig.engineBrandId;
-  $("g-engine-secondhand").checked = garageConfig.engineSecondhand;
-  $("g-head-brand").value = garageConfig.headBrandId;
-  $("g-head-secondhand").checked = garageConfig.headSecondhand;
-  $("g-blower-brand").value = garageConfig.blowerBrandId;
-  $("g-blower-secondhand").checked = garageConfig.blowerSecondhand;
+  PART_LIST.forEach(part => {
+    const unit = equippedUnit(garageConfig, part);
+    $(`g-${part}-brand`).value = unit.brandId;
+    $(`g-${part}-secondhand`).checked = unit.secondhand;
+  });
   $("g-blower-type").value = garageConfig.blowerType;
-  $("g-clutch-plates").value = String(garageConfig.clutchPlates);
   $("g-body-material").value = garageConfig.bodyMaterial;
   $("g-chassis-length").value = garageConfig.chassisLengthIn;
   $("g-tank-size").value = garageConfig.tankSizeGal;
@@ -1053,14 +1069,11 @@ function applyGarageConfigToForm() {
 }
 
 function readGarageConfigFromForm() {
-  garageConfig.engineBrandId = $("g-engine-brand").value;
-  garageConfig.engineSecondhand = $("g-engine-secondhand").checked;
-  garageConfig.headBrandId = $("g-head-brand").value;
-  garageConfig.headSecondhand = $("g-head-secondhand").checked;
-  garageConfig.blowerBrandId = $("g-blower-brand").value;
-  garageConfig.blowerSecondhand = $("g-blower-secondhand").checked;
+  PART_LIST.forEach(part => {
+    garageConfig[part + "BrandId"] = $(`g-${part}-brand`).value;
+    garageConfig[part + "Secondhand"] = $(`g-${part}-secondhand`).checked;
+  });
   garageConfig.blowerType = $("g-blower-type").value;
-  garageConfig.clutchPlates = +$("g-clutch-plates").value;
   garageConfig.bodyMaterial = $("g-body-material").value;
   garageConfig.chassisLengthIn = +$("g-chassis-length").value;
   garageConfig.tankSizeGal = +$("g-tank-size").value;
@@ -1069,19 +1082,39 @@ function readGarageConfigFromForm() {
   garageConfig.enginePositionIn = +$("g-engine-position").value;
 }
 
+// Renders one part's spare inventory as a small table: brand, condition,
+// and a "Monteer" button to swap it in for whatever's currently equipped
+// (which goes back into the inventory slot it came from, not discarded -
+// see installUnit in garage.js). Visibility into "what do I actually own"
+// is the direct ask: the equipped select above only ever shows ONE unit,
+// this shows the rest, brand and all.
+function renderPartInventoryList(part) {
+  const inv = garageConfig[part + "Inventory"];
+  const container = $(`g-${part}-inventory-list`);
+  if (!inv.length) {
+    container.innerHTML = `<p class="note" style="margin-top:0;">Geen reserve op voorraad.</p>`;
+    return;
+  }
+  const rows = inv.map((unit, i) => {
+    const brand = findBrand(PARTS[part].brands, unit.brandId);
+    return `<tr><td>${escapeHtml(brand.name)}</td><td>${unit.secondhand ? "Tweedehands" : "Nieuw"}</td><td>€${unitPrice(part, unit).toLocaleString("nl-NL")}</td>` +
+      `<td><button class="secondary mini-btn" type="button" data-install-part="${part}" data-install-idx="${i}">Monteer</button></td></tr>`;
+  }).join("");
+  container.innerHTML = `<table class="event-table"><thead><tr><th>Merk (reserve)</th><th>Staat</th><th>Waarde</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 function renderGarageSummary() {
   $("v-g-chassis-length").textContent = garageConfig.chassisLengthIn + '"';
   $("v-g-tank-size").textContent = garageConfig.tankSizeGal + " gal";
   $("v-g-engine-position").textContent = garageConfig.enginePositionIn;
-  $("v-g-engine-spares").textContent = garageConfig.engineSpares;
-  $("v-g-head-spares").textContent = garageConfig.headSpares;
-  $("v-g-blower-spares").textContent = garageConfig.blowerSpares;
+  PART_LIST.forEach(renderPartInventoryList);
   $("g-build-value").textContent = "€" + totalBuildValue(garageConfig).toLocaleString("nl-NL");
   const effects = computeGarageEffects(garageConfig);
   const wd = Math.round(effects.garageWeightDeltaLb);
   $("g-weight-delta").textContent = (wd > 0 ? "+" : "") + wd + " lb";
   $("g-power-mult").textContent = Math.round(effects.garagePowerMult * 100) + "%";
   $("g-reliability-mult").textContent = Math.round((1 / effects.garageEngineDamageMult) * 100) + "%";
+  $("g-clutch-reliability-mult").textContent = Math.round(computeClutchReliabilityMult(garageConfig) * 100) + "%";
 
   const ballastFrontLb = +$("ballfront").value;
   const ballastRearLb = +$("ballrear").value;
@@ -1102,8 +1135,8 @@ function renderGaragePanel() {
 }
 
 const GARAGE_FORM_IDS = [
-  "g-engine-brand", "g-engine-secondhand", "g-head-brand", "g-head-secondhand",
-  "g-blower-brand", "g-blower-secondhand", "g-blower-type", "g-clutch-plates",
+  ...PART_LIST.flatMap(part => [`g-${part}-brand`, `g-${part}-secondhand`]),
+  "g-blower-type",
   "g-body-material", "g-chassis-length", "g-tank-size", "g-tank-position",
   "g-mudflaps", "g-engine-position",
 ];
@@ -1120,23 +1153,43 @@ GARAGE_FORM_IDS.forEach(id => {
   $(id).addEventListener("input", renderGarageSummary);
 });
 
+// "Monteer" buttons in a part's inventory table are re-rendered on every
+// summary refresh, so delegate the click from a stable ancestor instead of
+// binding per-button.
+$("garagePanel").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-install-part]");
+  if (!btn) return;
+  const part = btn.dataset.installPart;
+  const idx = +btn.dataset.installIdx;
+  installUnit(garageConfig, part, idx);
+  saveGarageConfig();
+  applyGarageConfigToForm();
+  renderGarageSummary();
+  const label = spareLabel(part);
+  $("garage-status").textContent = `${label[0].toUpperCase()}${label.slice(1)} gewisseld.`;
+});
+
+// Buys a spare of whatever brand/condition is picked in that part's own
+// "nieuwe reserve" mini-form - can be (and often should be) a different,
+// cheaper brand than what's actually mounted, since a spare only has to
+// get you through the rest of an event, not perform like your main part.
 function buySpare(part) {
-  const price = equippedPartPrice(garageConfig, part);
+  const unit = { brandId: $(`g-${part}-spare-brand`).value, secondhand: $(`g-${part}-spare-secondhand`).checked };
+  const price = unitPrice(part, unit);
   if (financesState.budget < price) {
     $("garage-status").textContent = `Onvoldoende budget (€${price.toLocaleString("nl-NL")} nodig, €${financesState.budget.toLocaleString("nl-NL")} beschikbaar).`;
     return;
   }
-  addTransaction(financesState, `Reserve ${spareLabel(part)} gekocht`, -price);
-  garageConfig[part + "Spares"] += 1;
+  const brandName = findBrand(PARTS[part].brands, unit.brandId).name;
+  addTransaction(financesState, `Reserve ${spareLabel(part)} gekocht (${brandName})`, -price);
+  garageConfig[part + "Inventory"].push(unit);
   saveFinancesState();
   saveGarageConfig();
   renderGarageSummary();
   renderFinancePanel();
-  $("garage-status").textContent = `Reserve ${spareLabel(part)} gekocht voor €${price.toLocaleString("nl-NL")}.`;
+  $("garage-status").textContent = `Reserve ${spareLabel(part)} (${brandName}) gekocht voor €${price.toLocaleString("nl-NL")}.`;
 }
-$("g-buy-engine-spare").addEventListener("click", () => buySpare("engine"));
-$("g-buy-head-spare").addEventListener("click", () => buySpare("head"));
-$("g-buy-blower-spare").addEventListener("click", () => buySpare("blower"));
+PART_LIST.forEach(part => $(`g-buy-${part}-spare`).addEventListener("click", () => buySpare(part)));
 
 setMode("test");
 

@@ -121,7 +121,7 @@
 
       <!-- Chassis / body (vangt klikken op wat niet specifieker is: bodywork, wielen, vleugels, wheeliebar) -->
       <g class="diagram-part" data-target="garage-sec-chassis">
-        <title>Koppeling &amp; chassis</title>
+        <title>Chassis</title>
         <path d="M70,150 C110,120 190,108 300,108 L560,108 C610,108 650,118 680,140 L680,160 L120,160 C95,160 78,156 70,150 Z" fill="var(--panel-alt)" stroke="var(--amber)"></path>
         <!-- Cockpit bubble -->
         <path d="M175,108 C185,84 240,78 290,80 C320,82 335,96 335,108 Z" fill="var(--panel-alt)" stroke="var(--amber)"></path>
@@ -170,7 +170,7 @@
       </g>
 
       <!-- Koppeling / bellhousing -->
-      <g class="diagram-part" data-target="garage-sec-chassis">
+      <g class="diagram-part" data-target="garage-sec-clutch">
         <title>Koppeling</title>
         <rect x="630" y="128" width="42" height="32" rx="6" fill="var(--panel-alt)" stroke="var(--amber)"></rect>
       </g>
@@ -184,24 +184,29 @@
 
     <div class="garage-section" id="garage-sec-engine">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Motor</div>
-    <div class="row"><label>Merk</label><select id="g-engine-brand"></select></div>
+    <div class="row"><label>Merk (gemonteerd)</label><select id="g-engine-brand"></select></div>
     <div class="row"><label><input type="checkbox" id="g-engine-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
-    <div class="row"><label>Reserve motorblokken <span class="val" id="v-g-engine-spares">1</span></label>
-      <button class="secondary" id="g-buy-engine-spare" type="button">Extra motorblok kopen</button></div>
-    <p class="note">Een reservemotorblok wordt gratis gemonteerd als je motor het tijdens een evenement begeeft. Zonder reserve is je evenement voorbij zodra de motor het begeeft - zonder motor kun je niet verder racen (de reparatiekosten worden dan wel nog in rekening gebracht, voor het volgende evenement).</p>
+    <p class="note" style="margin-top:0;">Reserve-motorblokken hieronder mogen een ander merk of staat zijn dan wat nu gemonteerd zit.</p>
+    <div id="g-engine-inventory-list"></div>
+    <div class="row"><label>Merk (nieuwe reserve)</label><select id="g-engine-spare-brand"></select></div>
+    <div class="row"><label><input type="checkbox" id="g-engine-spare-secondhand"> Tweedehands</label></div>
+    <button class="secondary" id="g-buy-engine-spare" type="button">Reserve motorblok kopen</button>
+    <p class="note">Een reservemotorblok wordt gratis gemonteerd als je motor het tijdens een evenement begeeft - en wordt dan meteen je nieuwe hoofdmotor, andere merk en al. Zonder reserve is je evenement voorbij zodra de motor het begeeft - zonder motor kun je niet verder racen (de reparatiekosten worden dan wel nog in rekening gebracht, voor het volgende evenement).</p>
     </div>
 
     <div class="garage-section" id="garage-sec-heads">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Cilinderkoppen</div>
-    <div class="row"><label>Merk</label><select id="g-head-brand"></select></div>
+    <div class="row"><label>Merk (gemonteerd)</label><select id="g-head-brand"></select></div>
     <div class="row"><label><input type="checkbox" id="g-head-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
-    <div class="row"><label>Reserve cilinderkoppen <span class="val" id="v-g-head-spares">1</span></label>
-      <button class="secondary" id="g-buy-head-spare" type="button">Extra set koppen kopen</button></div>
+    <div id="g-head-inventory-list"></div>
+    <div class="row"><label>Merk (nieuwe reserve)</label><select id="g-head-spare-brand"></select></div>
+    <div class="row"><label><input type="checkbox" id="g-head-spare-secondhand"> Tweedehands</label></div>
+    <button class="secondary" id="g-buy-head-spare" type="button">Reserve set koppen kopen</button>
     </div>
 
     <div class="garage-section" id="garage-sec-blower">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Blower</div>
-    <div class="row"><label>Merk</label><select id="g-blower-brand"></select></div>
+    <div class="row"><label>Merk (gemonteerd)</label><select id="g-blower-brand"></select></div>
     <div class="row"><label><input type="checkbox" id="g-blower-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
     <div class="row"><label>Type</label>
       <select id="g-blower-type">
@@ -209,18 +214,26 @@
         <option value="setback">Setback blower (meer vermogen, betrouwbaarder, duurder)</option>
       </select>
     </div>
-    <div class="row"><label>Reserve blowers <span class="val" id="v-g-blower-spares">1</span></label>
-      <button class="secondary" id="g-buy-blower-spare" type="button">Extra blower kopen</button></div>
+    <div id="g-blower-inventory-list"></div>
+    <div class="row"><label>Merk (nieuwe reserve)</label><select id="g-blower-spare-brand"></select></div>
+    <div class="row"><label><input type="checkbox" id="g-blower-spare-secondhand"> Tweedehands</label></div>
+    <button class="secondary" id="g-buy-blower-spare" type="button">Reserve blower kopen</button>
+    </div>
+
+    <div class="garage-section" id="garage-sec-clutch">
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Koppeling</div>
+    <div class="row"><label>Merk (gemonteerd)</label><select id="g-clutch-brand"></select></div>
+    <div class="row"><label><input type="checkbox" id="g-clutch-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <p class="note" style="margin-top:0;">Plaatenaantal en warmteopbouw tijdens slippen zitten in het merk gebakken - een goedkope 5-plaats wordt heter tijdens slippen (minder tolerant), duurdere 6-plaats-modellen koeler en betrouwbaarder.</p>
+    <div id="g-clutch-inventory-list"></div>
+    <div class="row"><label>Merk (nieuwe reserve)</label><select id="g-clutch-spare-brand"></select></div>
+    <div class="row"><label><input type="checkbox" id="g-clutch-spare-secondhand"> Tweedehands</label></div>
+    <button class="secondary" id="g-buy-clutch-spare" type="button">Reservekoppeling kopen</button>
+    <p class="note">Een reservekoppeling wordt gratis gemonteerd als de koppeling het tijdens een evenement begeeft. Zonder reserve is je evenement voorbij zodra de koppeling het begeeft (de reparatiekosten worden dan wel nog in rekening gebracht, voor het volgende evenement).</p>
     </div>
 
     <div class="garage-section" id="garage-sec-chassis">
-    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Koppeling &amp; chassis</div>
-    <div class="row"><label>Aantal koppelingsplaten</label>
-      <select id="g-clutch-plates">
-        <option value="5">5-plaats (wordt heter tijdens slippen, minder tolerant)</option>
-        <option value="6">6-plaats (koeler, meer tolerant voor slip)</option>
-      </select>
-    </div>
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Chassis</div>
     <div class="row"><label>Bodytype</label>
       <select id="g-body-material">
         <option value="aluminium">Aluminium</option>
@@ -253,11 +266,12 @@
       <div class="stat"><div class="lbl">Totale bouwwaarde</div><div class="num" id="g-build-value">--</div></div>
       <div class="stat"><div class="lbl">Gewichtsverschil</div><div class="num" id="g-weight-delta">--</div></div>
     </div>
-    <div class="results-grid second" style="grid-template-columns:repeat(2,1fr);">
+    <div class="results-grid second" style="grid-template-columns:repeat(3,1fr);">
       <div class="stat"><div class="lbl">Vermogen</div><div class="num" id="g-power-mult">--</div></div>
-      <div class="stat"><div class="lbl">Betrouwbaarheid</div><div class="num" id="g-reliability-mult">--</div></div>
+      <div class="stat"><div class="lbl">Betrouwbaarheid motor</div><div class="num" id="g-reliability-mult">--</div></div>
+      <div class="stat"><div class="lbl">Betrouwbaarheid koppeling</div><div class="num" id="g-clutch-reliability-mult">--</div></div>
     </div>
-    <p class="note" style="margin-top:0;">Betrouwbaarheid boven 100% betekent dat de motor langzamer schade opbouwt dan de standaardbouw (kan dus meer hebben voor hij kapot gaat), eronder juist sneller - stem je brandstof- en ontstekingscurve bij een minder betrouwbare bouw voorzichtiger af.</p>
+    <p class="note" style="margin-top:0;">Betrouwbaarheid boven 100% betekent dat het onderdeel langzamer schade opbouwt dan de standaardbouw (kan dus meer hebben voor het kapot gaat), eronder juist sneller - stem je brandstof- en ontstekingscurve bij een minder betrouwbare motor voorzichtiger af, en houd bij een minder betrouwbare koppeling meer marge tot oververhitting aan.</p>
 
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Gewicht per band</div>
     <div class="results-grid" style="grid-template-columns:repeat(3,1fr);">

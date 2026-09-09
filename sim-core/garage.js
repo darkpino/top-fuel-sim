@@ -59,14 +59,20 @@ export const BODY_MATERIALS = {
   carbon: { name: "Carbon", priceNew: 15000, weightDeltaLb: -70 },
 };
 
-// Real reason a slipper clutch runs hotter with fewer plates: less total
-// friction surface for the same torque, so each plate dissipates more -
-// the direct mechanic the user asked for ("5 platen wordt heter tijdens
-// slippen en kan je dus minder lang laten slippen").
-export const CLUTCH_PLATE_OPTIONS = {
-  5: { name: "5-plaats", priceNew: 5000, heatRateMult: 1.35 },
-  6: { name: "6-plaats", priceNew: 6500, heatRateMult: 1.0 },
-};
+// A purchasable, ownable part like the other three - same brand tiering
+// (middle tier is the neutral default), plus the plate count baked into
+// each model rather than picked separately: fewer plates means less total
+// friction surface for the same torque, so each plate dissipates more and
+// the assembly runs hotter under slip (the original direct ask, "5 platen
+// wordt heter tijdens slippen en kan je dus minder lang laten slippen") -
+// now just a property of the cheap end of the catalog instead of an
+// independent dropdown.
+export const CLUTCH_BRANDS = [
+  { id: "basicgrip5", name: "BasicGrip 5-plaats", priceNew: 4500, plates: 5, heatRateMult: 1.35, reliabilityMult: 0.93, weightDeltaLb: 8 },
+  { id: "steadyhold6", name: "SteadyHold 6-plaats", priceNew: 6500, plates: 6, heatRateMult: 1.0, reliabilityMult: 1.00, weightDeltaLb: 0 },
+  { id: "apexclutch6", name: "Apex Billet 6-plaats", priceNew: 9500, plates: 6, heatRateMult: 0.9, reliabilityMult: 1.06, weightDeltaLb: -6 },
+  { id: "vortanclutch6", name: "Vortan Carbon 6-plaats", priceNew: 13000, plates: 6, heatRateMult: 0.82, reliabilityMult: 1.12, weightDeltaLb: -12 },
+];
 
 // Setback blowers move the supercharger's mass rearward and shorten the
 // belt run - shorter belt path and a straighter shot into the intake
@@ -109,21 +115,75 @@ export function findBrand(list, id) {
   return list.find((b) => b.id === id) || list[0];
 }
 
+// The four ownable, brand-tiered parts, each with an "equipped" unit
+// (config.<part>BrandId / config.<part>Secondhand) plus an inventory of
+// spares (config.<part>Inventory - an array of { brandId, secondhand }
+// units, each possibly a DIFFERENT brand/condition than the one currently
+// mounted, or than each other). PARTS drives the generic inventory
+// helpers below instead of writing near-identical per-part code four times.
+export const PARTS = {
+  engine: { brands: ENGINE_BRANDS, label: "motorblok" },
+  head: { brands: HEAD_BRANDS, label: "cilinderkop" },
+  blower: { brands: BLOWER_BRANDS, label: "blower" },
+  clutch: { brands: CLUTCH_BRANDS, label: "koppeling" },
+};
+
 export function defaultGarageConfig() {
   return {
     engineBrandId: ENGINE_BRANDS[1].id, engineSecondhand: false,
     headBrandId: HEAD_BRANDS[1].id, headSecondhand: false,
     blowerBrandId: BLOWER_BRANDS[1].id, blowerSecondhand: false,
     blowerType: "conventional",
-    clutchPlates: 6,
+    clutchBrandId: CLUTCH_BRANDS[1].id, clutchSecondhand: false,
     bodyMaterial: "aluminium",
     chassisLengthIn: CHASSIS_LENGTH_BASELINE_IN,
     tankSizeGal: TANK_SIZE_BASELINE_GAL,
     tankPosition: "neutral",
     mudflaps: true,
     enginePositionIn: 0,
-    engineSpares: 1, headSpares: 1, blowerSpares: 1,
+    // One starting spare per part, matching the default-equipped brand -
+    // keeps a fresh team's starting position identical to the old flat
+    // "1 spare" counts this replaces.
+    engineInventory: [{ brandId: ENGINE_BRANDS[1].id, secondhand: false }],
+    headInventory: [{ brandId: HEAD_BRANDS[1].id, secondhand: false }],
+    blowerInventory: [{ brandId: BLOWER_BRANDS[1].id, secondhand: false }],
+    clutchInventory: [{ brandId: CLUTCH_BRANDS[1].id, secondhand: false }],
   };
+}
+
+export function equippedUnit(config, part) {
+  return { brandId: config[part + "BrandId"], secondhand: config[part + "Secondhand"] };
+}
+
+function setEquippedUnit(config, part, unit) {
+  config[part + "BrandId"] = unit.brandId;
+  config[part + "Secondhand"] = unit.secondhand;
+}
+
+export function unitPrice(part, unit) {
+  return partPrice(findBrand(PARTS[part].brands, unit.brandId), unit.secondhand);
+}
+
+// Player-initiated swap: mount inventory[index] and return whatever was
+// equipped before it back into inventory (it isn't broken, just parked).
+export function installUnit(config, part, index) {
+  const inv = config[part + "Inventory"];
+  const incoming = inv[index];
+  if (!incoming) return;
+  const outgoing = equippedUnit(config, part);
+  inv.splice(index, 1, outgoing);
+  setEquippedUnit(config, part, incoming);
+}
+
+// Failure-triggered swap: mount the next available spare (discarding the
+// failed part - it's scrapped, not returned to inventory) and report
+// whether one was available at all. Called from finances.js's
+// chargeEngineFailure/chargeClutchFailure.
+export function consumeSpareOnFailure(config, part) {
+  const inv = config[part + "Inventory"];
+  if (!inv.length) return false;
+  setEquippedUnit(config, part, inv.shift());
+  return true;
 }
 
 // A part's own reliability tier, knocked down further if it's secondhand
@@ -155,6 +215,14 @@ export function computeEngineReliabilityMult(config) {
     * blowerType.reliabilityMult;
 }
 
+// The clutch's own reliability tier - tracked separately from the engine's
+// (it fails on its own heat-damage clock, see CLUTCH_DAMAGE_RATE in
+// run-simulator.js), same secondhand knock-down as the other three parts.
+export function computeClutchReliabilityMult(config) {
+  const clutch = findBrand(CLUTCH_BRANDS, config.clutchBrandId);
+  return partReliabilityMult(clutch, config.clutchSecondhand);
+}
+
 // Turns a build config into the handful of physics modifiers
 // run-simulator.js accepts, all defaulting to a neutral no-op so the
 // baseline build reproduces exactly the pre-garage physics.
@@ -162,29 +230,31 @@ export function computeGarageEffects(config) {
   const engine = findBrand(ENGINE_BRANDS, config.engineBrandId);
   const head = findBrand(HEAD_BRANDS, config.headBrandId);
   const blower = findBrand(BLOWER_BRANDS, config.blowerBrandId);
+  const clutch = findBrand(CLUTCH_BRANDS, config.clutchBrandId);
   const body = BODY_MATERIALS[config.bodyMaterial];
-  const plates = CLUTCH_PLATE_OPTIONS[config.clutchPlates];
   const blowerType = BLOWER_TYPES[config.blowerType];
   const tankPos = TANK_POSITIONS[config.tankPosition];
 
   const weightDeltaLb = body.weightDeltaLb
-    + engine.weightDeltaLb + head.weightDeltaLb + blower.weightDeltaLb
+    + engine.weightDeltaLb + head.weightDeltaLb + blower.weightDeltaLb + clutch.weightDeltaLb
     + (config.chassisLengthIn - CHASSIS_LENGTH_BASELINE_IN) * CHASSIS_WEIGHT_PER_IN_LB
     + (config.tankSizeGal - TANK_SIZE_BASELINE_GAL) * TANK_WEIGHT_PER_GAL_LB;
 
   const wheelieRiskBallastEquivLb = tankPos.ballastEquivLb
     - config.enginePositionIn * ENGINE_POSITION_BALLAST_EQUIV_PER_IN;
 
-  // Higher reliability means the engine should accumulate heat/lean
+  // Higher reliability means the engine (or clutch) should accumulate
   // damage MORE SLOWLY, so the damage-rate multiplier run-simulator.js
   // applies is the inverse of the reliability figure shown to the player.
   const reliabilityMult = computeEngineReliabilityMult(config);
+  const clutchReliabilityMult = computeClutchReliabilityMult(config);
 
   return {
     garageWeightDeltaLb: weightDeltaLb,
     garageWheelieRiskBallastEquivLb: wheelieRiskBallastEquivLb,
     garageDragCdaMult: config.mudflaps ? 1 : 0.99,
-    garageClutchHeatRateMult: plates.heatRateMult,
+    garageClutchHeatRateMult: clutch.heatRateMult,
+    garageClutchDamageMult: 1 / clutchReliabilityMult,
     garageTractionMult: blowerType.tractionMult,
     garagePowerMult: computeEnginePowerMult(config),
     garageEngineDamageMult: 1 / reliabilityMult,
@@ -195,23 +265,25 @@ export function totalBuildValue(config) {
   const engine = findBrand(ENGINE_BRANDS, config.engineBrandId);
   const head = findBrand(HEAD_BRANDS, config.headBrandId);
   const blower = findBrand(BLOWER_BRANDS, config.blowerBrandId);
+  const clutch = findBrand(CLUTCH_BRANDS, config.clutchBrandId);
   return partPrice(engine, config.engineSecondhand)
     + partPrice(head, config.headSecondhand)
     + partPrice(blower, config.blowerSecondhand)
     + BLOWER_TYPES[config.blowerType].priceDelta
     + BODY_MATERIALS[config.bodyMaterial].priceNew
-    + CLUTCH_PLATE_OPTIONS[config.clutchPlates].priceNew;
+    + partPrice(clutch, config.clutchSecondhand);
 }
 
 export function equippedPartPrice(config, part) {
   if (part === "engine") return partPrice(findBrand(ENGINE_BRANDS, config.engineBrandId), config.engineSecondhand);
   if (part === "head") return partPrice(findBrand(HEAD_BRANDS, config.headBrandId), config.headSecondhand);
   if (part === "blower") return partPrice(findBrand(BLOWER_BRANDS, config.blowerBrandId), config.blowerSecondhand) + BLOWER_TYPES[config.blowerType].priceDelta;
+  if (part === "clutch") return partPrice(findBrand(CLUTCH_BRANDS, config.clutchBrandId), config.clutchSecondhand);
   return 0;
 }
 
 export function spareLabel(part) {
-  return part === "engine" ? "motorblok" : part === "head" ? "cilinderkop" : "blower";
+  return PARTS[part].label;
 }
 
 // Static front/rear split for the per-axle weight readout. A rear-engine
