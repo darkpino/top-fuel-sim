@@ -5,32 +5,45 @@
 // type, mudflaps, engine position), and the math that turns a build
 // config into euros and into the small set of physics modifiers
 // run-simulator.js accepts (weight, wheelie-risk equivalent, drag,
-// clutch heat rate, traction). Brand/quality differences beyond price
-// and the explicitly-requested clutch-heat mechanic are deliberately
-// left flat for now - deeper reliability/performance differentiation
-// between brands is a later pass, same as secondhand-part reliability.
+// clutch heat rate, traction, power, and how fast the engine accumulates
+// heat/lean damage). Every brand carries a powerMult (better parts make
+// more power) and a reliabilityMult (better parts tolerate more abuse
+// before the engine lets go) alongside its price - the explicit
+// "expensive parts are better AND more reliable, cheap parts are
+// cheaper" tradeoff. Secondhand knocks reliability down further
+// (SECONDHAND_RELIABILITY_MULT) without touching power - a used part
+// still makes the power it always did, it's just closer to the end of
+// its life.
 
+// Reliability tiers are deliberately gentle (see garageEngineDamageMult
+// below): the engine failure model is calibrated tight around the
+// default tune (the whole point of that calibration - a real Top Fuel
+// motor lives on a knife edge), so even a modest multiplier on the
+// damage rate compounds fast over a run. A worst-case budget-everything-
+// secondhand build lands around 1.5x damage (survivable, but punishing
+// and worth retuning conservatively for), not an unrecoverable 3-4x.
 export const SECONDHAND_PRICE_MULT = 0.55;
+export const SECONDHAND_RELIABILITY_MULT = 0.9;
 
 export const ENGINE_BRANDS = [
-  { id: "ironclad", name: "Ironclad Racing", priceNew: 16000 },
-  { id: "nitroforge", name: "NitroForge", priceNew: 24000 },
-  { id: "apex", name: "Apex Billet", priceNew: 34000 },
-  { id: "vortan", name: "Vortan Dynamics", priceNew: 46000 },
+  { id: "ironclad", name: "Ironclad Racing", priceNew: 16000, powerMult: 0.98, reliabilityMult: 0.95 },
+  { id: "nitroforge", name: "NitroForge", priceNew: 24000, powerMult: 1.00, reliabilityMult: 1.00 },
+  { id: "apex", name: "Apex Billet", priceNew: 34000, powerMult: 1.02, reliabilityMult: 1.05 },
+  { id: "vortan", name: "Vortan Dynamics", priceNew: 46000, powerMult: 1.04, reliabilityMult: 1.10 },
 ];
 
 export const HEAD_BRANDS = [
-  { id: "trailblazer", name: "Trailblazer Heads", priceNew: 9000 },
-  { id: "redlineflow", name: "Redline Flow", priceNew: 13000 },
-  { id: "apexheads", name: "Apex Billet Heads", priceNew: 18000 },
-  { id: "vortanheads", name: "Vortan CNC", priceNew: 24000 },
+  { id: "trailblazer", name: "Trailblazer Heads", priceNew: 9000, powerMult: 0.97, reliabilityMult: 0.97 },
+  { id: "redlineflow", name: "Redline Flow", priceNew: 13000, powerMult: 1.00, reliabilityMult: 1.00 },
+  { id: "apexheads", name: "Apex Billet Heads", priceNew: 18000, powerMult: 1.03, reliabilityMult: 1.03 },
+  { id: "vortanheads", name: "Vortan CNC", priceNew: 24000, powerMult: 1.06, reliabilityMult: 1.06 },
 ];
 
 export const BLOWER_BRANDS = [
-  { id: "duneblast", name: "Duneblast Superchargers", priceNew: 11000 },
-  { id: "hurricane", name: "Hurricane Blower Co", priceNew: 15000 },
-  { id: "apexblower", name: "Apex Billet Blower", priceNew: 19000 },
-  { id: "vortanblower", name: "Vortan Rootstype", priceNew: 23000 },
+  { id: "duneblast", name: "Duneblast Superchargers", priceNew: 11000, powerMult: 0.97, reliabilityMult: 0.97 },
+  { id: "hurricane", name: "Hurricane Blower Co", priceNew: 15000, powerMult: 1.00, reliabilityMult: 1.00 },
+  { id: "apexblower", name: "Apex Billet Blower", priceNew: 19000, powerMult: 1.03, reliabilityMult: 1.03 },
+  { id: "vortanblower", name: "Vortan Rootstype", priceNew: 23000, powerMult: 1.06, reliabilityMult: 1.06 },
 ];
 
 export const BODY_MATERIALS = {
@@ -48,12 +61,13 @@ export const CLUTCH_PLATE_OPTIONS = {
 };
 
 // Setback blowers move the supercharger's mass rearward and shorten the
-// belt run, which in practice gives a little better mechanical grip on
-// the crank - modeled here as a small traction bump over a conventional
-// (in-line) mount.
+// belt run - shorter belt path and a straighter shot into the intake
+// give both a little more power AND (the direct ask) a motor that
+// tolerates more heat before it lets go, at a retrofit cost over a
+// conventional (in-line) mount.
 export const BLOWER_TYPES = {
-  conventional: { name: "Gewone blower", tractionMult: 1.0 },
-  setback: { name: "Setback blower", tractionMult: 1.015 },
+  conventional: { name: "Gewone blower", priceDelta: 0, tractionMult: 1.0, powerMult: 1.0, reliabilityMult: 1.0 },
+  setback: { name: "Setback blower", priceDelta: 4000, tractionMult: 1.015, powerMult: 1.04, reliabilityMult: 1.08 },
 };
 
 // Fuel tank position acts like ballast placement for wheelie-risk
@@ -104,6 +118,35 @@ export function defaultGarageConfig() {
   };
 }
 
+// A part's own reliability tier, knocked down further if it's secondhand
+// - a used part still makes full power, it's just more fragile.
+function partReliabilityMult(brand, secondhand) {
+  return brand.reliabilityMult * (secondhand ? SECONDHAND_RELIABILITY_MULT : 1);
+}
+
+// Combined power and reliability across the three parts that make up
+// "the motor" (block, heads, blower) plus the blower's mounting type.
+// Both start at 1.0 for the all-baseline-brand, conventional-blower
+// build, same neutral-default guarantee as the rest of computeGarageEffects.
+export function computeEnginePowerMult(config) {
+  const engine = findBrand(ENGINE_BRANDS, config.engineBrandId);
+  const head = findBrand(HEAD_BRANDS, config.headBrandId);
+  const blower = findBrand(BLOWER_BRANDS, config.blowerBrandId);
+  const blowerType = BLOWER_TYPES[config.blowerType];
+  return engine.powerMult * head.powerMult * blower.powerMult * blowerType.powerMult;
+}
+
+export function computeEngineReliabilityMult(config) {
+  const engine = findBrand(ENGINE_BRANDS, config.engineBrandId);
+  const head = findBrand(HEAD_BRANDS, config.headBrandId);
+  const blower = findBrand(BLOWER_BRANDS, config.blowerBrandId);
+  const blowerType = BLOWER_TYPES[config.blowerType];
+  return partReliabilityMult(engine, config.engineSecondhand)
+    * partReliabilityMult(head, config.headSecondhand)
+    * partReliabilityMult(blower, config.blowerSecondhand)
+    * blowerType.reliabilityMult;
+}
+
 // Turns a build config into the handful of physics modifiers
 // run-simulator.js accepts, all defaulting to a neutral no-op so the
 // baseline build reproduces exactly the pre-garage physics.
@@ -120,12 +163,19 @@ export function computeGarageEffects(config) {
   const wheelieRiskBallastEquivLb = tankPos.ballastEquivLb
     - config.enginePositionIn * ENGINE_POSITION_BALLAST_EQUIV_PER_IN;
 
+  // Higher reliability means the engine should accumulate heat/lean
+  // damage MORE SLOWLY, so the damage-rate multiplier run-simulator.js
+  // applies is the inverse of the reliability figure shown to the player.
+  const reliabilityMult = computeEngineReliabilityMult(config);
+
   return {
     garageWeightDeltaLb: weightDeltaLb,
     garageWheelieRiskBallastEquivLb: wheelieRiskBallastEquivLb,
     garageDragCdaMult: config.mudflaps ? 1 : 0.99,
     garageClutchHeatRateMult: plates.heatRateMult,
     garageTractionMult: blowerType.tractionMult,
+    garagePowerMult: computeEnginePowerMult(config),
+    garageEngineDamageMult: 1 / reliabilityMult,
   };
 }
 
@@ -136,6 +186,7 @@ export function totalBuildValue(config) {
   return partPrice(engine, config.engineSecondhand)
     + partPrice(head, config.headSecondhand)
     + partPrice(blower, config.blowerSecondhand)
+    + BLOWER_TYPES[config.blowerType].priceDelta
     + BODY_MATERIALS[config.bodyMaterial].priceNew
     + CLUTCH_PLATE_OPTIONS[config.clutchPlates].priceNew;
 }
@@ -143,7 +194,7 @@ export function totalBuildValue(config) {
 export function equippedPartPrice(config, part) {
   if (part === "engine") return partPrice(findBrand(ENGINE_BRANDS, config.engineBrandId), config.engineSecondhand);
   if (part === "head") return partPrice(findBrand(HEAD_BRANDS, config.headBrandId), config.headSecondhand);
-  if (part === "blower") return partPrice(findBrand(BLOWER_BRANDS, config.blowerBrandId), config.blowerSecondhand);
+  if (part === "blower") return partPrice(findBrand(BLOWER_BRANDS, config.blowerBrandId), config.blowerSecondhand) + BLOWER_TYPES[config.blowerType].priceDelta;
   return 0;
 }
 

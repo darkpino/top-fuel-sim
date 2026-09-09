@@ -989,6 +989,8 @@ function renderGarageSummary() {
   const effects = computeGarageEffects(garageConfig);
   const wd = Math.round(effects.garageWeightDeltaLb);
   $("g-weight-delta").textContent = (wd > 0 ? "+" : "") + wd + " lb";
+  $("g-power-mult").textContent = Math.round(effects.garagePowerMult * 100) + "%";
+  $("g-reliability-mult").textContent = Math.round((1 / effects.garageEngineDamageMult) * 100) + "%";
 }
 
 function renderGaragePanel() {

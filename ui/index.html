@@ -111,7 +111,7 @@
 
   <div class="panel" id="garagePanel" style="display:none;">
     <div class="sec-title">Auto bouwen</div>
-    <p class="note" style="margin-top:0;">Onderdelen en chassiskeuzes die worden opgeslagen en meegenomen naar elke run (test en evenement). Merkverschillen in vermogen en betrouwbaarheid tussen motor-, kop- en blowermerken - en de invloed van tweedehands onderdelen daarop - worden in een latere stap verder in de simulatie doorgevoerd; voor nu tellen ze mee in aanschafprijs en (bij de motor) in reserveonderdelen.</p>
+    <p class="note" style="margin-top:0;">Onderdelen en chassiskeuzes die worden opgeslagen en meegenomen naar elke run (test en evenement). Duurdere merken maken meer vermogen én zijn betrouwbaarder (de motor gaat minder snel kapot); tweedehands is goedkoper maar minder betrouwbaar zonder aan vermogen in te leveren. Zie "Vermogen" en "Betrouwbaarheid" hieronder voor het effect van je huidige bouw.</p>
 
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Motor</div>
     <div class="row"><label>Merk</label><select id="g-engine-brand"></select></div>
@@ -131,8 +131,8 @@
     <div class="row"><label><input type="checkbox" id="g-blower-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
     <div class="row"><label>Type</label>
       <select id="g-blower-type">
-        <option value="conventional">Gewone blower</option>
-        <option value="setback">Setback blower (iets meer tractie)</option>
+        <option value="conventional">Gewone blower (goedkoper)</option>
+        <option value="setback">Setback blower (meer vermogen, betrouwbaarder, duurder)</option>
       </select>
     </div>
     <div class="row"><label>Reserve blowers <span class="val" id="v-g-blower-spares">1</span></label>
@@ -170,10 +170,15 @@
     </div>
 
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Overzicht</div>
-    <div class="results-grid">
+    <div class="results-grid" style="grid-template-columns:repeat(2,1fr);">
       <div class="stat"><div class="lbl">Totale bouwwaarde</div><div class="num" id="g-build-value">--</div></div>
       <div class="stat"><div class="lbl">Gewichtsverschil</div><div class="num" id="g-weight-delta">--</div></div>
     </div>
+    <div class="results-grid second" style="grid-template-columns:repeat(2,1fr);">
+      <div class="stat"><div class="lbl">Vermogen</div><div class="num" id="g-power-mult">--</div></div>
+      <div class="stat"><div class="lbl">Betrouwbaarheid</div><div class="num" id="g-reliability-mult">--</div></div>
+    </div>
+    <p class="note" style="margin-top:0;">Betrouwbaarheid boven 100% betekent dat de motor langzamer schade opbouwt dan de standaardbouw (kan dus meer hebben voor hij kapot gaat), eronder juist sneller - stem je brandstof- en ontstekingscurve bij een minder betrouwbare bouw voorzichtiger af.</p>
     <p class="note" id="garage-status"></p>
   </div>
 

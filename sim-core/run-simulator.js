@@ -131,7 +131,7 @@ export function runSimulation(settings) {
     fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt, driverShutoffFt,
     ballastFrontLb, ballastRearLb, frontWingPct, wheelieBarHeightIn,
     garageWeightDeltaLb = 0, garageWheelieRiskBallastEquivLb = 0, garageDragCdaMult = 1,
-    garageClutchHeatRateMult = 1, garageTractionMult = 1,
+    garageClutchHeatRateMult = 1, garageTractionMult = 1, garagePowerMult = 1, garageEngineDamageMult = 1,
   } = settings;
 
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
@@ -254,8 +254,8 @@ export function runSimulation(settings) {
     // get 60ft into the real 0.80-0.86s range needs pairing with the wider
     // stage-2 hold below, or it just drags 330-660ft faster right along
     // with it instead of reproducing the real segment shape.
-    const LAUNCH_CAP = 20000 * mult;
-    const POWER_HP = 7300 * mult;
+    const LAUNCH_CAP = 20000 * mult * garagePowerMult;
+    const POWER_HP = 7300 * mult * garagePowerMult;
 
     const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, driverShutoffFt, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
@@ -299,14 +299,14 @@ export function runSimulation(settings) {
       clutchFailTime = t;
     }
 
-    heatDamage += Math.max(0, heatRisk - 0.62) * DT;
+    heatDamage += Math.max(0, heatRisk - 0.62) * garageEngineDamageMult * DT;
     // The retarder exists specifically to keep this at bay - it only bites
     // if the curve is dialed aggressively enough that even -30deg of
     // retard can't pull effective timing back under a safe line.
-    heatDamage += calcIgnitionHeatDamageRate(ignitionEffective) * DT;
+    heatDamage += calcIgnitionHeatDamageRate(ignitionEffective) * garageEngineDamageMult * DT;
     // Lean under load hurts the most right where lf is high - the clutch
     // is loaded, so the motor can least afford to be starved right then.
-    leanDamage += Math.max(0, -richness) * lf * LEAN_DAMAGE_RATE * DT;
+    leanDamage += Math.max(0, -richness) * lf * LEAN_DAMAGE_RATE * garageEngineDamageMult * DT;
     foulDamage += Math.max(0, richness) * FOUL_DAMAGE_RATE * DT;
     const engineDamage = heatDamage + leanDamage;
 
