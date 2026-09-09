@@ -873,3 +873,30 @@ $("deleteSetupBtn").addEventListener("click", () => {
 });
 
 refreshSetupSelect();
+
+// ---- Inklapbare panelen: klik op de titel van een paneel om 'm dicht/open
+// te klappen, zodat je alleen openzet wat je wil aanpassen. Onthoudt de
+// stand per paneel lokaal, net als de opgeslagen setups hierboven. ----
+
+const PANEL_COLLAPSE_KEY = "topfuel-panel-collapse";
+
+function loadPanelCollapseState() {
+  try { return JSON.parse(localStorage.getItem(PANEL_COLLAPSE_KEY) || "{}"); } catch { return {}; }
+}
+function savePanelCollapseState(state) {
+  try { localStorage.setItem(PANEL_COLLAPSE_KEY, JSON.stringify(state)); } catch { /* private mode, storage full, etc - silently no-ops */ }
+}
+
+function setupCollapsiblePanels() {
+  const state = loadPanelCollapseState();
+  document.querySelectorAll(".panel.collapsible").forEach(panel => {
+    const key = panel.dataset.collapseKey;
+    if (state[key]) panel.classList.add("collapsed");
+    panel.querySelector(".sec-title").addEventListener("click", () => {
+      panel.classList.toggle("collapsed");
+      state[key] = panel.classList.contains("collapsed");
+      savePanelCollapseState(state);
+    });
+  });
+}
+setupCollapsiblePanels();

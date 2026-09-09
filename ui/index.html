@@ -11,10 +11,18 @@
   <h1>Top Fuel Crew Chief — Run Sim</h1>
   <p class="sub">v0.3 prototype · 1000 ft · realistischere telemetrie: wheel speed vs ground speed + split-markers</p>
 
-  <div class="tabs">
-    <button class="tab active" id="tabTest">Testrun</button>
-    <button class="tab" id="tabEvent">Evenement</button>
-  </div>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <nav class="side-nav">
+        <button class="nav-btn active" id="tabTest">Testrun</button>
+        <button class="nav-btn" id="tabEvent">Evenement</button>
+        <button class="nav-btn disabled" type="button" disabled title="Binnenkort beschikbaar">Financiën</button>
+        <button class="nav-btn disabled" type="button" disabled title="Binnenkort beschikbaar">Auto bouwen</button>
+        <button class="nav-btn disabled" type="button" disabled title="Binnenkort beschikbaar">Team bouwen</button>
+      </nav>
+    </aside>
+
+    <div class="app-main">
 
   <div class="panel" id="eventPanel" style="display:none;">
     <div class="sec-title">Evenement</div>
@@ -87,8 +95,9 @@
 
   <div class="grid">
     <div>
-      <div class="panel" id="setupPanel">
+      <div class="panel collapsible" id="setupPanel" data-collapse-key="setup">
         <div class="sec-title">Setup</div>
+        <div class="panel-body">
         <div class="row">
           <label>Opgeslagen setups</label>
           <select id="setupSelect"><option value="">— kies een setup —</option></select>
@@ -101,10 +110,12 @@
         </div>
         <button class="run" id="saveSetupBtn">Setup opslaan</button>
         <p class="note" id="setup-status">Setups worden lokaal in je browser bewaard (niet gesynchroniseerd tussen apparaten of gedeeld). Omvat motor, koppeling, chassis en rijder - niet de omgevingscondities (die stel je apart in, of komen uit de actieve evenement-ronde).</p>
+        </div>
       </div>
 
-      <div class="panel">
+      <div class="panel collapsible" data-collapse-key="environment">
         <div class="sec-title">Environment</div>
+        <div class="panel-body">
         <div class="row"><label>Luchttemperatuur <span class="val" id="v-airtemp">30°C</span></label><input type="range" id="airtemp" min="10" max="45" value="30" step="1"></div>
         <div class="row"><label>Luchtvochtigheid <span class="val" id="v-hum">40%</span></label><input type="range" id="hum" min="0" max="100" value="40" step="1"></div>
         <div class="row"><label>Luchtdruk <span class="val" id="v-baro">29.90 inHg</span></label><input type="range" id="baro" min="2880" max="3020" value="2990" step="1"></div>
@@ -113,10 +124,12 @@
         <p class="note" id="da-hint">Density altitude: -- ft</p>
         <p class="note" id="grip-hint">Effectieve grip: -- (uitkomst van VHT% + baantemperatuur + bandenspanning)</p>
         <p class="note" id="event-env-note" style="display:none;">Tijdens een evenement worden deze vijf bepaald door de actieve ronde (zie het Evenement-paneel hierboven), niet door jou.</p>
+        </div>
       </div>
 
-      <div class="panel">
+      <div class="panel collapsible" data-collapse-key="engine">
         <div class="sec-title">Engine</div>
+        <div class="panel-body">
         <div class="row"><label>Blower overdrive <span class="val" id="v-blower">48%</span></label><input type="range" id="blower" min="20" max="70" value="48" step="1"></div>
         <div class="row"><label>Nitro percentage <span class="val" id="v-fuel">90%</span></label><input type="range" id="fuel" min="75" max="98" value="90" step="1"></div>
         <p class="note" id="nitro-hint">Richtwaarde voor dit weer: 90% (rondom 90% is de norm; bij warmere, ijlere lucht wat meer, bij koude dichte lucht wat minder)</p>
@@ -134,10 +147,12 @@
         <div class="row"><label>Ontsteking @4.0s <span class="val" id="v-ign6">38°</span></label><input type="range" id="ign6" min="20" max="75" value="38" step="1"></div>
         <p class="note">Ontsteking is een curve met 6 punten, zoals brandstof en koppeling. Nitro's trage verbranding vraagt véél meer voorontsteking dan benzine - op de launch 60-65° om het vermogen op te bouwen (MSD), daarna trekt de crew chief 'm terug naarmate de koppeling verder aankomt. Boven 65° levert meer graden geen extra vermogen meer op, alleen extra hitterisico. Vanaf 2,75s bewaakt een ingebouwde retarder het toerental: zodra het boven 7.900 rpm komt begint de box direct (maar geleidelijk) terug te trekken, en hoe verder het toerental daarboven blijft klimmen, hoe sneller hij verder terugtrekt - tot een plafond van 30° (max 15°/s terug omhoog), los van wat jij hier instelt - veiligheidsapparatuur, geen tuning-knop. Blijft de effectieve ontsteking ook ná die terugtrekking te hoog, dan loopt de motor alsnog heet risico.</p>
         <p class="note" id="power-hint">Geschat piekvermogen: -- pk</p>
+        </div>
       </div>
 
-      <div class="panel">
+      <div class="panel collapsible" data-collapse-key="clutch">
         <div class="sec-title">Clutch</div>
+        <div class="panel-body">
         <div class="row"><label>Stage 1 tijd <span class="val" id="v-s1t">0.85s</span></label><input type="range" id="s1t" min="0" max="100" value="85" step="5"></div>
         <div class="row"><label>Stage 1 max lockup <span class="val" id="v-s1p">78%</span></label><input type="range" id="s1p" min="10" max="90" value="78" step="1"></div>
         <div class="row"><label>Stage 1 lager snelheid <span class="val" id="v-s1speed">700%/s</span></label><input type="range" id="s1speed" min="20" max="800" value="700" step="5"></div>
@@ -150,10 +165,12 @@
         <div class="row"><label>Vingergewicht (gewenste lockup) <span class="val" id="v-fw">100</span></label><input type="range" id="fw" min="0" max="100" value="100" step="1"></div>
         <p class="note" id="clutch-reach-hint">Haalbare lockup per stage: --</p>
         <p class="note">Elke stage heeft zijn eigen lager snelheid (hydraulische bleed rate) - de koppeling beweegt dus rustig naar elk setpoint toe in plaats van te springen. Stage 3 is het plafond voor de rest van de run (géén automatische sprong naar 100% erna): op 100% geeft dat moment in echte telemetrie de piek-G, niet de launch. Zet het lager om de koppeling bewust te laten blijven slippen wanneer de baan geen volledige lockup aankan - dat beschermt de banden, maar de koppeling zelf betaalt de rekening (oververhit en uiteindelijk kapot als je het te lang of te ver volhoudt). Stage-percentages hoeven niet oplopend te zijn: een duidelijke terugval en langere hold in stage 2 na de eerste hit is normaal en zelfs nodig - dat is wat de 60ft-tijd los houdt van de rest van de run in plaats van de hele baan even hard te maken.</p>
+        </div>
       </div>
 
-      <div class="panel">
+      <div class="panel collapsible" data-collapse-key="chassis">
         <div class="sec-title">Chassis &amp; banden</div>
+        <div class="panel-body">
         <div class="row"><label>Bandenspanning <span class="val" id="v-tpsi">7.5 psi</span></label><input type="range" id="tpsi" min="60" max="90" value="75" step="1"></div>
         <div class="row"><label>Vleugelhoek (trim) <span class="val" id="v-wing">0.0°</span></label><input type="range" id="wing" min="-20" max="10" value="0" step="1"></div>
         <p class="note">Bandenspanning: NHRA Top Fuel loopt doorgaans 6–9 psi. Vleugeltrim is volgens het reglement asymmetrisch begrensd: maximaal +1° positief en -2° negatief ten opzichte van vlak (in Denver geldt geen maximum).</p>
@@ -164,10 +181,12 @@
         <div class="row"><label>Ballast — neus (voorvleugelbuis) <span class="val" id="v-ballfront">0 lb</span></label><input type="range" id="ballfront" min="0" max="250" value="0" step="5"></div>
         <div class="row"><label>Ballast — overig (vrij te plaatsen) <span class="val" id="v-ballrear">0 lb</span></label><input type="range" id="ballrear" min="0" max="150" value="0" step="5"></div>
         <p class="note">Het reglement staat maximaal 250 lb ballast toe, standaard gemonteerd in de voorvleugelbuis - dat is de eerste schuif. Los daarvan mag je verder in de auto nog vrij extra ballast plaatsen (bijv. om het zwaartepunt te verschuiven); dat is de tweede schuif. Beide tellen gewoon mee in het totaalgewicht - meer ballast is altijd een tijdoffer, maar neus-ballast houdt de voorwielen wel beter aan de grond.</p>
+        </div>
       </div>
 
-      <div class="panel">
+      <div class="panel collapsible" data-collapse-key="rijder">
         <div class="sec-title">Rijder</div>
+        <div class="panel-body">
         <div class="row"><label>Agressiviteit <span class="val" id="v-aggro">70</span></label><input type="range" id="aggro" min="0" max="100" value="70" step="5"></div>
         <p class="note">Bij aanhoudende bandenrook (&gt;~55% slip) pedalt een agressieve rijder de auto (korte gas-tik om de banden weer te laten grippen) tot 3x voor hij het opgeeft. Een minder agressieve rijder gaat sneller - of meteen - van het gas en breekt de run af.</p>
         <div class="row">
@@ -182,6 +201,7 @@
         <p class="note">Tot hoever de rijder actief op bandenrook let (pedalt/lost). Voorbij dit punt houdt hij vast wat de tune geeft, ook als het daarna alsnog gaat roken.</p>
         <div class="row"><label>Gas dicht op <span class="val" id="v-shutoff">1000</span> ft</label><input type="range" id="shutoff" min="60" max="1000" value="1000" step="10"></div>
         <p class="note">Vast, vooraf ingesteld afschakelpunt (zoals een delay box). Hier gaat de rijder altijd van het gas, los van rook en agressiviteit - dit staat los van het rook-reactiesysteem hierboven.</p>
+        </div>
       </div>
 
       <button class="run" id="runBtn">Run it</button>
@@ -240,6 +260,9 @@
           <div class="insp"><div class="lbl">Totaalgewicht</div><div class="status" id="i-weight">--</div></div>
         </div>
       </div>
+    </div>
+  </div>
+
     </div>
   </div>
 </div>
