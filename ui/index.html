@@ -44,6 +44,7 @@
 
     <div id="event-active" style="display:none;">
       <p class="note" style="margin-top:0; display:none;" id="event-round-label">--</p>
+      <button class="secondary" id="backToCurrentRoundBtn" style="display:none;">← Terug naar huidige ronde</button>
 
       <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:0;">Jouw rondes</div>
       <p class="note" style="margin-top:0;">Weer en resultaat per ronde die je al hebt gereden - vergelijk de conditie van een nieuwe ronde met een eerdere om je tune bij te stellen.</p>
@@ -187,7 +188,7 @@
     <div class="row"><label><input type="checkbox" id="g-engine-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
     <div class="row"><label>Reserve motorblokken <span class="val" id="v-g-engine-spares">1</span></label>
       <button class="secondary" id="g-buy-engine-spare" type="button">Extra motorblok kopen</button></div>
-    <p class="note">Een reservemotorblok wordt gratis gemonteerd als je motor het tijdens een evenement begeeft - zonder reserve moet je 'm ter plekke repareren, wat geld kost.</p>
+    <p class="note">Een reservemotorblok wordt gratis gemonteerd als je motor het tijdens een evenement begeeft. Zonder reserve is je evenement voorbij zodra de motor het begeeft - zonder motor kun je niet verder racen (de reparatiekosten worden dan wel nog in rekening gebracht, voor het volgende evenement).</p>
     </div>
 
     <div class="garage-section" id="garage-sec-heads">
@@ -355,7 +356,7 @@
         <div class="sec-title">Rijder</div>
         <div class="panel-body">
         <div class="row"><label>Agressiviteit <span class="val" id="v-aggro">70</span></label><input type="range" id="aggro" min="0" max="100" value="70" step="5"></div>
-        <p class="note">Bij aanhoudende bandenrook (&gt;~55% slip) pedalt een agressieve rijder de auto (korte gas-tik om de banden weer te laten grippen) tot 3x voor hij het opgeeft. Een minder agressieve rijder gaat sneller - of meteen - van het gas en breekt de run af.</p>
+        <p class="note">Bij aanhoudende bandenrook (&gt;~55% slip) pedalt de rijder de auto (korte gas-tik om de banden weer te laten grippen) voor hij het opgeeft - hoe vaak hangt af van agressiviteit: onder 20 helemaal niet (meteen van het gas), 20-49 één keer, 50-79 twee keer, vanaf 80 tot 3 keer.</p>
         <div class="row">
           <label>Reageert tot</label>
           <select id="watchft">

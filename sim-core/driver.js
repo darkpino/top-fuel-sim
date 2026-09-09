@@ -12,14 +12,25 @@
 const SMOKE_SLIP_THRESHOLD = 55; // slip% considered "in smoke", not just managed slip
 const PEDAL_DURATION = 0.12; // s - length of a single throttle lift/reapply
 const PEDAL_THROTTLE = 0.15; // fraction of commanded force kept during a pedal dip
-const MAX_PEDALS_BEFORE_LIFT = 3; // even a determined driver gives up eventually
-const LIFT_AGGRESSIVENESS_THRESHOLD = 35; // below this, the first reaction to smoke is a full lift
 
 // How long (s) of continuous smoke the driver tolerates before reacting at
 // all - a more aggressive driver waits longer, hoping the tires hook up on
 // their own.
 export function calcSmokeTolerance(aggressiveness) {
   return 0.10 + (aggressiveness / 100) * 0.35;
+}
+
+// How many times the driver is willing to pedal through a bout of smoke
+// before giving up and lifting for good - scales with aggressiveness
+// instead of a single on/off cutoff, so turning the dial down keeps
+// meaningfully reducing pedaling all the way to "won't pedal at all"
+// rather than jumping straight from "pedals up to 3x" to "never pedals"
+// at one threshold value.
+export function calcMaxPedals(aggressiveness) {
+  if (aggressiveness < 20) return 0;
+  if (aggressiveness < 50) return 1;
+  if (aggressiveness < 80) return 2;
+  return 3;
 }
 
 export function createDriverState() {
@@ -75,7 +86,7 @@ export function stepDriver(driverState, t, x, prevSlipPct, aggressiveness, watch
   if (driverState.smokeTime < calcSmokeTolerance(aggressiveness)) return 1;
 
   // Patience exhausted for this bout of smoke: pedal through it, or give up.
-  if (aggressiveness < LIFT_AGGRESSIVENESS_THRESHOLD || driverState.pedalCount >= MAX_PEDALS_BEFORE_LIFT) {
+  if (driverState.pedalCount >= calcMaxPedals(aggressiveness)) {
     driverState.lifted = true;
     driverState.liftTime = t;
     driverState.liftReason = "smoke";

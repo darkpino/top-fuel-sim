@@ -408,6 +408,7 @@ $("runBtn").addEventListener("click", () => {
 const envSliderIds = ["airtemp", "hum", "baro", "track", "grip"];
 let currentMode = "test";
 let ladderState = null; // null when no event is active
+let viewingRoundIndex = null; // non-null while browsing a past round read-only via the history table
 const EVENT_IDLE_STATUS = "Nog geen evenement gestart. Kies het aantal auto's en start: 4 kwalificatierondes bepalen de ladder, het bovenste deel (macht van 2) gaat door naar de eliminatie. Elke ronde heeft eigen gesimuleerde omstandigheden - het hele veld rijdt onder dezelfde condities als jij.";
 
 // ---- Financiën & garage: teambudget, transacties, sponsors en de
@@ -510,10 +511,9 @@ $("startEventBtn").addEventListener("click", () => {
     field: [player, ...generateAiField(totalEntries - 1, seed + 1)],
     rng: mulberry32(seed + 777),
     playerHistory: new Array(rounds.length).fill(null),
-    qOrder: null, bracketPool: null, bracketPairs: null, bracketResults: null,
-    lanes: null, bye: null, byeResult: null, playerLaneChoice: null, opponentLaneChoice: null,
-    playerPairIndex: null, playerOpponent: null, playerOutcome: null,
+    qOrder: null, bracketPool: null, elimRounds: {}, playerOutcome: null,
   };
+  viewingRoundIndex = null;
   $("event-setup").style.display = "none";
   $("event-active").style.display = "block";
   $("event-result").style.display = "none";
@@ -561,37 +561,38 @@ function activateLadderRound() {
   } else {
     const survivors = ladderState.bracketPool.filter(e => !e.eliminated);
     const { pairs, bye } = pairBracketRound(survivors);
-    ladderState.bracketPairs = pairs;
-    ladderState.bracketResults = new Array(pairs.length).fill(null);
-    ladderState.bye = bye;
-    ladderState.byeResult = null;
-    ladderState.lanes = generateLaneVariants(roundDef.conditions, ladderState.rng);
-    ladderState.playerPairIndex = null;
-    ladderState.playerOpponent = null;
-    ladderState.playerLaneChoice = null;
-    ladderState.opponentLaneChoice = null;
+    // Kept per round index (not overwritten each round) so a past
+    // elimination round's pairs/times stay browsable via the history
+    // table instead of disappearing the moment the next round starts.
+    const ed = {
+      pairs, results: new Array(pairs.length).fill(null),
+      bye, byeResult: null,
+      lanes: generateLaneVariants(roundDef.conditions, ladderState.rng),
+      playerPairIndex: null, playerOpponent: null, playerLaneChoice: null, opponentLaneChoice: null,
+    };
+    ladderState.elimRounds[ladderState.roundIndex] = ed;
 
     if (bye && !bye.isPlayer) {
-      ladderState.byeResult = runSimulation({ ...bye.tune, ...roundDef.conditions });
+      ed.byeResult = runSimulation({ ...bye.tune, ...roundDef.conditions });
     }
 
     pairs.forEach(([a, b], i) => {
       if (a === player || b === player) {
-        ladderState.playerPairIndex = i;
-        ladderState.playerOpponent = a === player ? b : a;
-        if (player.qualPosition > ladderState.playerOpponent.qualPosition) {
-          const oppLane = pickBetterLane(ladderState.lanes);
-          ladderState.opponentLaneChoice = oppLane;
-          ladderState.playerLaneChoice = oppLane === "A" ? "B" : "A";
+        ed.playerPairIndex = i;
+        ed.playerOpponent = a === player ? b : a;
+        if (player.qualPosition > ed.playerOpponent.qualPosition) {
+          const oppLane = pickBetterLane(ed.lanes);
+          ed.opponentLaneChoice = oppLane;
+          ed.playerLaneChoice = oppLane === "A" ? "B" : "A";
         }
         return;
       }
       const higherSeed = a.qualPosition < b.qualPosition ? a : b;
       const lowerSeed = higherSeed === a ? b : a;
-      const higherLane = pickBetterLane(ladderState.lanes);
+      const higherLane = pickBetterLane(ed.lanes);
       const lowerLane = higherLane === "A" ? "B" : "A";
-      const resultHigher = runSimulation({ ...higherSeed.tune, ...ladderState.lanes[higherLane] });
-      const resultLower = runSimulation({ ...lowerSeed.tune, ...ladderState.lanes[lowerLane] });
+      const resultHigher = runSimulation({ ...higherSeed.tune, ...ed.lanes[higherLane] });
+      const resultLower = runSimulation({ ...lowerSeed.tune, ...ed.lanes[lowerLane] });
       const resultA = higherSeed === a ? resultHigher : resultLower;
       const resultB = higherSeed === a ? resultLower : resultHigher;
       const reactA = calcReactionTime(a.tune.driverAggressiveness, ladderState.rng);
@@ -600,9 +601,10 @@ function activateLadderRound() {
       const loser = winner === a ? b : a;
       loser.eliminated = true;
       loser.eliminatedRound = roundDef.roundNumber;
-      ladderState.bracketResults[i] = { a, b, resultA, resultB, reactA, reactB, winner };
+      ed.results[i] = { a, b, resultA, resultB, reactA, reactB, winner };
     });
   }
+  viewingRoundIndex = null;
   renderLadderRoundUi();
 }
 
@@ -615,22 +617,40 @@ function refreshLadderView() {
 }
 
 function renderLadderRoundUi() {
-  const roundDef = ladderState.rounds[ladderState.roundIndex];
+  const isHistorical = viewingRoundIndex !== null;
+  const activeIndex = isHistorical ? viewingRoundIndex : ladderState.roundIndex;
+  const roundDef = ladderState.rounds[activeIndex];
   $("event-round-label").style.display = "block";
-  $("event-round-label").textContent = `Actieve ronde: ${roundDef.id} — ${roundDef.label}`;
+  $("event-round-label").textContent = isHistorical
+    ? `Bekijk ronde: ${roundDef.id} — ${roundDef.label} (afgerond)`
+    : `Actieve ronde: ${roundDef.id} — ${roundDef.label}`;
+  $("backToCurrentRoundBtn").style.display = isHistorical ? "block" : "none";
   const isQuali = roundDef.phase === "qualifying";
   $("quali-block").style.display = isQuali ? "block" : "none";
   $("elim-block").style.display = isQuali ? "none" : "block";
-  $("skipQualBtn").style.display = isQuali && ladderState.playerOutcome === null ? "block" : "none";
+  $("skipQualBtn").style.display = !isHistorical && isQuali && ladderState.playerOutcome === null ? "block" : "none";
   if (isQuali) {
-    $("runRoundBtn").style.display = "block";
+    $("runRoundBtn").style.display = isHistorical ? "none" : "block";
     $("lane-choice-block").style.display = "none";
     renderQualiTable(roundDef);
   } else {
-    renderBracketTable(roundDef);
+    renderBracketTable(roundDef, activeIndex, isHistorical);
   }
   renderHistoryTable();
 }
+
+// Browsing a completed round from the "Jouw rondes" table - read-only,
+// no simulations run. Only rounds already in the past (index < the
+// active round, or the whole event finished) are reachable this way.
+function viewRound(i) {
+  viewingRoundIndex = i;
+  renderLadderRoundUi();
+}
+function backToCurrentRound() {
+  viewingRoundIndex = null;
+  renderLadderRoundUi();
+}
+$("backToCurrentRoundBtn").addEventListener("click", backToCurrentRound);
 
 // The "Jouw rondes" history is the point of this table: every round's
 // weather sits right next to what you actually did with it, so comparing
@@ -651,16 +671,24 @@ function renderHistoryTable() {
     let statusTxt;
     if (isFuture) statusTxt = "--";
     else if (i === ladderState.roundIndex && !h) {
-      statusTxt = round.phase === "elimination" && ladderState.playerOpponent ? `aan jou vs ${ladderState.playerOpponent.name}` : "actief";
+      const ed = round.phase === "elimination" ? ladderState.elimRounds[i] : null;
+      statusTxt = ed && ed.playerOpponent ? `aan jou vs ${ed.playerOpponent.name}` : "actief";
     } else if (!h) statusTxt = "--";
     else if (h.skipped) statusTxt = "overgeslagen";
     else if (h.bye) statusTxt = "bye — automatisch door";
     else if (round.phase === "elimination" && h.opponent) statusTxt = `vs ${h.opponent.name}: ${h.won ? "gewonnen" : "verloren"} (${roundResultText(h.opponentResult)})`;
     else statusTxt = roundResultText(h.result);
     const cls = h ? "done" : (i === ladderState.roundIndex ? "current" : "future");
-    return `<tr class="${cls}"><td>${round.id}</td>${condCells}<td>${et60Txt}</td><td>${etTxt}</td><td>${mphTxt}</td><td>${escapeHtml(statusTxt)}</td></tr>`;
+    // Any round with a recorded history entry (a run, a skip, or a bye)
+    // is browsable read-only via viewRound - see the click handler below.
+    const rowAttrs = h ? ` data-round-index="${i}" class="${cls} clickable" title="Klik om deze ronde te bekijken"` : ` class="${cls}"`;
+    return `<tr${rowAttrs}><td>${round.id}</td>${condCells}<td>${et60Txt}</td><td>${etTxt}</td><td>${mphTxt}</td><td>${escapeHtml(statusTxt)}</td></tr>`;
   }).join("");
 }
+$("history-table-body").addEventListener("click", (e) => {
+  const row = e.target.closest("tr[data-round-index]");
+  if (row) viewRound(+row.dataset.roundIndex);
+});
 
 function renderQualiTable(roundDef) {
   const sessionIndex = roundDef.roundNumber - 1;
@@ -674,35 +702,37 @@ function renderQualiTable(roundDef) {
   }).join("");
 }
 
-function renderBracketTable(roundDef) {
+function renderBracketTable(roundDef, roundIndex = ladderState.roundIndex, isHistorical = false) {
   const player = ladderState.field.find(e => e.isPlayer);
-  const bye = ladderState.bye;
+  const ed = ladderState.elimRounds[roundIndex];
+  const bye = ed.bye;
 
   // Lane choice is only a live decision while the player is genuinely the
   // higher seed and hasn't picked yet - otherwise it's already resolved
-  // (opponent picked, or there's no opponent this round at all).
-  const playerNeedsLaneChoice = ladderState.playerOpponent && ladderState.playerLaneChoice === null
-    && player.qualPosition < ladderState.playerOpponent.qualPosition;
+  // (opponent picked, or there's no opponent this round at all). Never a
+  // live decision while browsing a past round read-only.
+  const playerNeedsLaneChoice = !isHistorical && ed.playerOpponent && ed.playerLaneChoice === null
+    && player.qualPosition < ed.playerOpponent.qualPosition;
   $("lane-choice-block").style.display = playerNeedsLaneChoice ? "block" : "none";
-  $("runRoundBtn").style.display = playerNeedsLaneChoice ? "none" : "block";
+  if (!isHistorical) $("runRoundBtn").style.display = playerNeedsLaneChoice ? "none" : "block";
   if (playerNeedsLaneChoice) {
-    $("laneA-grip").textContent = ladderState.lanes.A.gripSliderPct.toFixed(0);
-    $("laneA-track").textContent = ladderState.lanes.A.trackTempC.toFixed(0);
-    $("laneB-grip").textContent = ladderState.lanes.B.gripSliderPct.toFixed(0);
-    $("laneB-track").textContent = ladderState.lanes.B.trackTempC.toFixed(0);
+    $("laneA-grip").textContent = ed.lanes.A.gripSliderPct.toFixed(0);
+    $("laneA-track").textContent = ed.lanes.A.trackTempC.toFixed(0);
+    $("laneB-grip").textContent = ed.lanes.B.gripSliderPct.toFixed(0);
+    $("laneB-track").textContent = ed.lanes.B.trackTempC.toFixed(0);
   }
 
   if (bye && bye.isPlayer) {
     $("opponent-info").textContent = `Ronde ${roundDef.roundNumber}: bye - jij bent de best overgebleven auto zonder tegenstander deze ronde en gaat automatisch door, ongeacht je pass. Rijd 'm nog wel voor de tijd.`;
   } else if (bye) {
-    $("opponent-info").textContent = `Ronde ${roundDef.roundNumber}: jij (seed ${player.qualPosition}) vs ${ladderState.playerOpponent.name} — ${ladderState.playerOpponent.team} (seed ${ladderState.playerOpponent.qualPosition}). ${entrantLabel(bye)} heeft deze ronde een bye.`;
-  } else if (ladderState.playerOpponent) {
-    const laneTxt = ladderState.playerLaneChoice ? ` — jij rijdt baan ${ladderState.playerLaneChoice}` : "";
-    $("opponent-info").textContent = `Ronde ${roundDef.roundNumber}: jij (seed ${player.qualPosition}) vs ${ladderState.playerOpponent.name} — ${ladderState.playerOpponent.team} (seed ${ladderState.playerOpponent.qualPosition}, kwaltijd ${ladderState.playerOpponent.bestEt.toFixed(3)}s, "${ladderState.playerOpponent.archetype}")${laneTxt}`;
+    $("opponent-info").textContent = `Ronde ${roundDef.roundNumber}: jij (seed ${player.qualPosition}) vs ${ed.playerOpponent.name} — ${ed.playerOpponent.team} (seed ${ed.playerOpponent.qualPosition}). ${entrantLabel(bye)} heeft deze ronde een bye.`;
+  } else if (ed.playerOpponent) {
+    const laneTxt = ed.playerLaneChoice ? ` — jij rijdt baan ${ed.playerLaneChoice}` : "";
+    $("opponent-info").textContent = `Ronde ${roundDef.roundNumber}: jij (seed ${player.qualPosition}) vs ${ed.playerOpponent.name} — ${ed.playerOpponent.team} (seed ${ed.playerOpponent.qualPosition}, kwaltijd ${ed.playerOpponent.bestEt.toFixed(3)}s, "${ed.playerOpponent.archetype}")${laneTxt}`;
   }
 
-  const rows = ladderState.bracketPairs.map(([a, b], i) => {
-    const res = ladderState.bracketResults[i];
+  const rows = ed.pairs.map(([a, b], i) => {
+    const res = ed.results[i];
     const involvesPlayer = a === player || b === player;
     const aTxt = res ? roundResultText(res.resultA) : "--";
     const bTxt = res ? roundResultText(res.resultB) : "--";
@@ -711,7 +741,7 @@ function renderBracketTable(roundDef) {
     return `<tr class="${cls}"><td>${entrantLabel(a)}</td><td>${aTxt}</td><td>${entrantLabel(b)}</td><td>${bTxt}</td><td>${resultTxt}</td></tr>`;
   });
   if (bye) {
-    const byeTxt = ladderState.byeResult ? roundResultText(ladderState.byeResult) : (bye.isPlayer ? "aan jou" : "--");
+    const byeTxt = ed.byeResult ? roundResultText(ed.byeResult) : (bye.isPlayer ? "aan jou" : "--");
     const cls = bye.isPlayer ? "current" : "done";
     rows.push(`<tr class="${cls}"><td>${entrantLabel(bye)} (bye)</td><td>${byeTxt}</td><td>—</td><td>—</td><td>${entrantLabel(bye)} door</td></tr>`);
   }
@@ -719,7 +749,7 @@ function renderBracketTable(roundDef) {
 }
 
 function choosePlayerLane(lane) {
-  ladderState.playerLaneChoice = lane;
+  ladderState.elimRounds[ladderState.roundIndex].playerLaneChoice = lane;
   renderBracketTable(ladderState.rounds[ladderState.roundIndex]);
 }
 $("chooseLaneA").addEventListener("click", () => choosePlayerLane("A"));
@@ -758,13 +788,21 @@ function renderFinalResult(text) {
 // pass, bye pass - not a skipped qualifying round, not a Testrun-tab
 // run) costs run money, plus a repair cost on top if the motor or
 // koppeling let go - waived for the motor if a spare block is on hand.
+// Returns whether this was a FATAL engine failure - no spare left to
+// swap in, meaning the team has no working motor and the event is over,
+// not just an expensive rebuild.
 function chargePlayerRun(r) {
   chargeRunCost(financesState);
-  if (r.engineFailed) chargeEngineFailure(financesState, garageConfig);
+  let fatalEngineFailure = false;
+  if (r.engineFailed) {
+    fatalEngineFailure = garageConfig.engineSpares <= 0;
+    chargeEngineFailure(financesState, garageConfig);
+  }
   if (r.clutchFailed) chargeClutchFailure(financesState, garageConfig);
   saveFinancesState();
   saveGarageConfig();
   renderFinancePanel();
+  return fatalEngineFailure;
 }
 
 // Awards prize money for how the event ended, offers 1-2 sponsor deals
@@ -785,12 +823,13 @@ function runPlayerQualifying(skip) {
   const sessionIndex = roundDef.roundNumber - 1;
   const player = ladderState.field.find(e => e.isPlayer);
   applyConditions(roundDef.conditions);
+  let fatalEngineFailure = false;
   if (!skip) {
     const r = runSimulation(readSettings());
     player.quals[sessionIndex] = r;
     if (r.finished && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
     ladderState.playerHistory[ladderState.roundIndex] = { result: r };
-    chargePlayerRun(r);
+    fatalEngineFailure = chargePlayerRun(r);
     renderRunResult(r);
   } else {
     player.quals[sessionIndex] = null;
@@ -801,6 +840,14 @@ function runPlayerQualifying(skip) {
   for (let i = playerIdx + 1; i < order.length; i++) runQualifyingAttempt(order[i], sessionIndex, roundDef.conditions, false);
   renderQualiTable(roundDef);
   renderHistoryTable();
+  if (fatalEngineFailure) {
+    ladderState.playerOutcome = "dnq";
+    finishEvent(
+      { qualified: false },
+      `Motor kapot zonder reservemotorblok tijdens de kwalificatie — zonder motor kun je niet verder racen. Het evenement is voorbij voor je team.`
+    );
+    return;
+  }
   advanceLadderRound();
 }
 
@@ -810,17 +857,24 @@ function runPlayerBye() {
   const roundDef = ladderState.rounds[ladderState.roundIndex];
   applyConditions(roundDef.conditions);
   const r = runSimulation(readSettings());
-  ladderState.byeResult = r;
+  ladderState.elimRounds[ladderState.roundIndex].byeResult = r;
   ladderState.playerHistory[ladderState.roundIndex] = { result: r, bye: true };
-  chargePlayerRun(r);
+  const fatalEngineFailure = chargePlayerRun(r);
   renderRunResult(r);
   renderBracketTable(roundDef);
   renderHistoryTable();
-  if (roundDef.roundNumber === totalElimRoundsFor(ladderState.bracketSize)) {
+  const isFinalRound = roundDef.roundNumber === totalElimRoundsFor(ladderState.bracketSize);
+  if (isFinalRound) {
     ladderState.playerOutcome = "champion";
     finishEvent(
       { qualified: true, champion: true, totalElimRounds: totalElimRoundsFor(ladderState.bracketSize) },
       `Kampioen! Je won de finale van dit evenement (bye in de laatste ronde) (${ladderState.totalEntries} auto's).`
+    );
+  } else if (fatalEngineFailure) {
+    ladderState.playerOutcome = "eliminated";
+    finishEvent(
+      { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber + 1 },
+      `Motor kapot zonder reservemotorblok — je kreeg deze ronde een bye, maar zonder motor kun je niet verder racen. Het evenement is voorbij voor je team.`
     );
   } else {
     advanceLadderRound();
@@ -829,19 +883,20 @@ function runPlayerBye() {
 
 function runPlayerElimination() {
   const roundDef = ladderState.rounds[ladderState.roundIndex];
-  const [a, b] = ladderState.bracketPairs[ladderState.playerPairIndex];
+  const ed = ladderState.elimRounds[ladderState.roundIndex];
+  const [a, b] = ed.pairs[ed.playerPairIndex];
   const player = ladderState.field.find(e => e.isPlayer);
   const playerIsA = a === player;
-  const opponent = ladderState.playerOpponent;
+  const opponent = ed.playerOpponent;
 
   // Lane choice picked earlier (or assigned, if the opponent had the
   // pick) decides which of this round's two lane variants each side runs.
-  const playerLane = ladderState.playerLaneChoice || pickBetterLane(ladderState.lanes);
+  const playerLane = ed.playerLaneChoice || pickBetterLane(ed.lanes);
   const opponentLane = playerLane === "A" ? "B" : "A";
-  applyConditions(ladderState.lanes[playerLane]);
+  applyConditions(ed.lanes[playerLane]);
 
   const rPlayer = runSimulation(readSettings());
-  const rOpponent = runSimulation({ ...opponent.tune, ...ladderState.lanes[opponentLane] });
+  const rOpponent = runSimulation({ ...opponent.tune, ...ed.lanes[opponentLane] });
   const reactPlayer = calcReactionTime(+$("aggro").value, ladderState.rng);
   const reactOpponent = calcReactionTime(opponent.tune.driverAggressiveness, ladderState.rng);
 
@@ -853,29 +908,39 @@ function runPlayerElimination() {
   const loser = winner === a ? b : a;
   loser.eliminated = true;
   loser.eliminatedRound = roundDef.roundNumber;
-  ladderState.bracketResults[ladderState.playerPairIndex] = { a, b, resultA, resultB, reactA, reactB, winner };
+  ed.results[ed.playerPairIndex] = { a, b, resultA, resultB, reactA, reactB, winner };
   ladderState.playerHistory[ladderState.roundIndex] = { result: rPlayer, opponent, opponentResult: rOpponent, won: winner.isPlayer };
 
-  chargePlayerRun(rPlayer);
+  const fatalEngineFailure = chargePlayerRun(rPlayer);
   renderRunResult(rPlayer);
   renderBracketTable(roundDef);
   renderHistoryTable();
 
+  const isFinalRound = roundDef.roundNumber === totalElimRoundsFor(ladderState.bracketSize);
   if (winner.isPlayer) {
-    if (roundDef.roundNumber === totalElimRoundsFor(ladderState.bracketSize)) {
+    if (isFinalRound) {
       ladderState.playerOutcome = "champion";
       finishEvent(
         { qualified: true, champion: true, totalElimRounds: totalElimRoundsFor(ladderState.bracketSize) },
         `Kampioen! Je won de finale van dit evenement (${ladderState.totalEntries} auto's).`
+      );
+    } else if (fatalEngineFailure) {
+      ladderState.playerOutcome = "eliminated";
+      finishEvent(
+        { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber + 1 },
+        `Motor kapot zonder reservemotorblok — je won deze ronde nog wel, maar zonder motor kun je niet verder racen. Het evenement is voorbij voor je team.`
       );
     } else {
       advanceLadderRound();
     }
   } else {
     ladderState.playerOutcome = "eliminated";
+    const engineNote = fatalEngineFailure
+      ? ` Je motor ging bovendien kapot zonder reservemotorblok — die moet voor het volgende evenement vervangen worden.`
+      : "";
     finishEvent(
       { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber },
-      `Uitgeschakeld in ${roundDef.label.toLowerCase()} door ${opponent.name} (${opponent.team}).`
+      `Uitgeschakeld in ${roundDef.label.toLowerCase()} door ${opponent.name} (${opponent.team}).${engineNote}`
     );
   }
 }
@@ -883,7 +948,7 @@ function runPlayerElimination() {
 $("runRoundBtn").addEventListener("click", () => {
   const roundDef = ladderState.rounds[ladderState.roundIndex];
   if (roundDef.phase === "qualifying") runPlayerQualifying(false);
-  else if (ladderState.bye && ladderState.bye.isPlayer) runPlayerBye();
+  else if (ladderState.elimRounds[ladderState.roundIndex].bye?.isPlayer) runPlayerBye();
   else runPlayerElimination();
 });
 $("skipQualBtn").addEventListener("click", () => runPlayerQualifying(true));
