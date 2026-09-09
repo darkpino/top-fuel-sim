@@ -16,9 +16,9 @@ const WEIGHT_LB = 2320;
 const V_FLOOR = 30;
 const CDA = 9.0;
 const RHO_REF = 0.00237;
-// Rear wing: NHRA rules cap adjustable trim at +-1.5 deg from level; the
-// fixed wing itself produces most of the ~5000-6000 lb of downforce at
-// 300 mph.
+// Rear wing: NHRA rules cap adjustable trim asymmetrically at +1 deg max /
+// -2 deg min from level (no max in Denver); the fixed wing itself produces
+// most of the ~5000-6000 lb of downforce at 300 mph.
 const WING_BASE_K = 0.0284;
 // Effective rotating-mass weight for the rear wheel/driveline: much lower
 // than the car's weight, so a spinning tire can rev up far faster than the

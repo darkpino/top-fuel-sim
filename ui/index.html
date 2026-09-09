@@ -63,8 +63,8 @@
       <div class="panel">
         <div class="sec-title">Chassis &amp; banden</div>
         <div class="row"><label>Bandenspanning <span class="val" id="v-tpsi">7.5 psi</span></label><input type="range" id="tpsi" min="60" max="90" value="75" step="1"></div>
-        <div class="row"><label>Vleugelhoek (trim) <span class="val" id="v-wing">0.0°</span></label><input type="range" id="wing" min="-15" max="15" value="0" step="1"></div>
-        <p class="note">Bandenspanning: NHRA Top Fuel loopt doorgaans 6–9 psi. Vleugeltrim mag van het reglement maximaal ±1,5° van vlak.</p>
+        <div class="row"><label>Vleugelhoek (trim) <span class="val" id="v-wing">0.0°</span></label><input type="range" id="wing" min="-20" max="10" value="0" step="1"></div>
+        <p class="note">Bandenspanning: NHRA Top Fuel loopt doorgaans 6–9 psi. Vleugeltrim is volgens het reglement asymmetrisch begrensd: maximaal +1° positief en -2° negatief ten opzichte van vlak (in Denver geldt geen maximum).</p>
       </div>
 
       <div class="panel">
@@ -112,26 +112,14 @@
           </div>
           <div id="spinFlag"></div>
 
-          <div class="sec-title" style="margin-top:18px;">Motortoerental</div>
-          <p class="note" style="margin-top:0;">Indicatief kanaal, geen gekalibreerde uitkomst (zoals "geschat piekvermogen"). Top Fuel heeft geen versnellingsbak - de koppeling is het enige wat toerental en wielsnelheid koppelt. Het toerental blijft daardoor grotendeels in een band hangen, met een duidelijke "pulldown" rond de lockup (stage 2→3) waar de belasting piekt, en een lichte klim naar het einde toe naarmate de snelheid oploopt.</p>
-          <svg id="rpmChart" viewBox="0 0 640 140" role="img" aria-label="Motortoerental over tijd"></svg>
+          <div class="sec-title" style="margin-top:18px;">Motor: toerental, ontsteking &amp; brandstof</div>
+          <p class="note" style="margin-top:0;">Alle drie indicatieve kanalen, geen gekalibreerde uitkomsten (zoals "geschat piekvermogen") - hier gecombineerd in één grafiek omdat ze onderling samenhangen. Elk kanaal heeft zijn eigen schaal (toerental links in paars, ontsteking rechts-binnen in oranje, brandstofdebiet rechts-buiten in cyaan), dus lees op kleur, niet op absolute hoogte tussen kanalen. Top Fuel heeft geen versnellingsbak - de koppeling koppelt toerental en wielsnelheid, met een duidelijke "pulldown" rond de lockup (stage 2→3). Brandstofpomp is motorgedreven en volgt het toerental direct. Ontsteking toont de ingestelde curve (gestippeld) tegenover de effectieve waarde na de retarder (doorgetrokken); voor 2,75s zijn ze gelijk, erna trekt de retarder automatisch terug zodra het toerental boven 7.900 rpm komt.</p>
+          <svg id="engineChart" viewBox="0 0 640 200" role="img" aria-label="Motortoerental, ontsteking en brandstofdebiet over tijd"></svg>
           <div class="legend">
             <span><span class="dot" style="background:#b98ee0"></span>toerental (rpm)</span>
-          </div>
-
-          <div class="sec-title" style="margin-top:18px;">Brandstofdebiet</div>
-          <p class="note" style="margin-top:0;">Indicatief kanaal. Brandstofpomp is motorgedreven, dus debiet volgt het toerental hierboven direct - de brandstofcurve (Engine-paneel) bepaalt vervolgens hoeveel daarvan de injectoren bereikt.</p>
-          <svg id="fuelChart" viewBox="0 0 640 140" role="img" aria-label="Brandstofdebiet over tijd"></svg>
-          <div class="legend">
+            <span><span class="dot" style="background:#7a8fae"></span>ontsteking ingesteld (°)</span>
+            <span><span class="dot" style="background:#e0704a"></span>ontsteking effectief (°)</span>
             <span><span class="dot" style="background:#5ec8d8"></span>brandstofdebiet (gpm)</span>
-          </div>
-
-          <div class="sec-title" style="margin-top:18px;">Ontsteking</div>
-          <p class="note" style="margin-top:0;">Ingestelde curve (gestippeld) versus effectieve ontsteking na de retarder (doorgetrokken). Voor 2,75s zijn ze altijd gelijk - de retarder is dan nog geblokkeerd. Erna trekt hij automatisch terug zodra het toerental boven 7.900 rpm komt, los van je eigen instelling.</p>
-          <svg id="ignitionChart" viewBox="0 0 640 140" role="img" aria-label="Ontstekingstiming over tijd"></svg>
-          <div class="legend">
-            <span><span class="dot" style="background:#7a8fae"></span>ingesteld (°)</span>
-            <span><span class="dot" style="background:#e0704a"></span>effectief na retarder (°)</span>
           </div>
         </div>
       </div>

@@ -171,82 +171,38 @@ function drawChart(trace, splits) {
   $("traceChart").innerHTML = svg;
 }
 
-function drawFuelChart(trace) {
-  const W = 640, H = 140, padL = 42, padR = 12, padT = 10, padB = 22;
-  const maxGpm = Math.max(...trace.map(p => p.fuel_gpm), 10) * 1.1;
+function drawEngineChart(trace) {
+  const W = 640, H = 200, padL = 48, padR = 66, padT = 10, padB = 22;
   const maxT = trace[trace.length - 1].t;
   function xs(t) { return padL + (t / maxT) * (W - padL - padR); }
-  function ys(gpm) { return H - padB - (gpm / maxGpm) * (H - padT - padB); }
 
-  const linePoints = trace.map(p => `${xs(p.t).toFixed(1)},${ys(p.fuel_gpm).toFixed(1)}`).join(" L ");
-  const fuelPath = "M " + linePoints;
-  const areaPath = `M ${xs(0).toFixed(1)},${ys(0).toFixed(1)} L ${linePoints} L ${xs(maxT).toFixed(1)},${ys(0).toFixed(1)} Z`;
-
-  let gridLines = "";
-  for (let i = 0; i <= 2; i++) {
-    const yy = padT + i * (H - padT - padB) / 2;
-    const val = Math.round(maxGpm - i * maxGpm / 2);
-    gridLines += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="#2c333b" stroke-width="1"/>`;
-    gridLines += `<text x="${padL - 6}" y="${yy + 4}" text-anchor="end" font-size="10" fill="#8b939b" font-family="ui-monospace,monospace">${val}</text>`;
-  }
-
-  const svg = `
-    ${gridLines}
-    <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#2c333b" stroke-width="1"/>
-    <path d="${areaPath}" fill="#5ec8d8" opacity="0.15" stroke="none"/>
-    <path d="${fuelPath}" fill="none" stroke="#5ec8d8" stroke-width="2"/>
-  `;
-  $("fuelChart").setAttribute("viewBox", `0 0 ${W} ${H}`);
-  $("fuelChart").innerHTML = svg;
-}
-
-function drawRpmChart(trace) {
-  const W = 640, H = 140, padL = 42, padR = 12, padT = 10, padB = 22;
   const rpms = trace.map(p => p.rpm);
-  const minRpm = Math.min(...rpms) * 0.97;
-  const maxRpm = Math.max(...rpms) * 1.03;
-  const maxT = trace[trace.length - 1].t;
-  function xs(t) { return padL + (t / maxT) * (W - padL - padR); }
-  function ys(rpm) { return H - padB - ((rpm - minRpm) / (maxRpm - minRpm)) * (H - padT - padB); }
+  const rpmLo = Math.min(...rpms) * 0.97, rpmHi = Math.max(...rpms) * 1.03;
+  function ysRpm(v) { return H - padB - ((v - rpmLo) / (rpmHi - rpmLo)) * (H - padT - padB); }
 
-  const rpmPath = "M " + trace.map(p => `${xs(p.t).toFixed(1)},${ys(p.rpm).toFixed(1)}`).join(" L ");
+  const ignVals = trace.flatMap(p => [p.ignition_set, p.ignition_effective]);
+  const ignLo = Math.min(...ignVals) - 2, ignHi = Math.max(...ignVals) + 2;
+  function ysIgn(v) { return H - padB - ((v - ignLo) / (ignHi - ignLo)) * (H - padT - padB); }
 
-  let gridLines = "";
-  for (let i = 0; i <= 2; i++) {
-    const yy = padT + i * (H - padT - padB) / 2;
-    const val = Math.round(maxRpm - i * (maxRpm - minRpm) / 2);
-    gridLines += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="#2c333b" stroke-width="1"/>`;
-    gridLines += `<text x="${padL - 6}" y="${yy + 4}" text-anchor="end" font-size="10" fill="#8b939b" font-family="ui-monospace,monospace">${val}</text>`;
-  }
+  const gpmHi = Math.max(...trace.map(p => p.fuel_gpm), 10) * 1.1;
+  function ysGpm(v) { return H - padB - (v / gpmHi) * (H - padT - padB); }
 
-  const svg = `
-    ${gridLines}
-    <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#2c333b" stroke-width="1"/>
-    <path d="${rpmPath}" fill="none" stroke="#b98ee0" stroke-width="2"/>
-  `;
-  $("rpmChart").setAttribute("viewBox", `0 0 ${W} ${H}`);
-  $("rpmChart").innerHTML = svg;
-}
-
-function drawIgnitionChart(trace) {
-  const W = 640, H = 140, padL = 42, padR = 12, padT = 10, padB = 22;
-  const vals = trace.flatMap(p => [p.ignition_set, p.ignition_effective]);
-  const minV = Math.min(...vals) - 2;
-  const maxV = Math.max(...vals) + 2;
-  const maxT = trace[trace.length - 1].t;
-  function xs(t) { return padL + (t / maxT) * (W - padL - padR); }
-  function ys(v) { return H - padB - ((v - minV) / (maxV - minV)) * (H - padT - padB); }
-
-  const setPath = "M " + trace.map(p => `${xs(p.t).toFixed(1)},${ys(p.ignition_set).toFixed(1)}`).join(" L ");
-  const effPath = "M " + trace.map(p => `${xs(p.t).toFixed(1)},${ys(p.ignition_effective).toFixed(1)}`).join(" L ");
+  const rpmPath = "M " + trace.map(p => `${xs(p.t).toFixed(1)},${ysRpm(p.rpm).toFixed(1)}`).join(" L ");
+  const gpmPath = "M " + trace.map(p => `${xs(p.t).toFixed(1)},${ysGpm(p.fuel_gpm).toFixed(1)}`).join(" L ");
+  const ignSetPath = "M " + trace.map(p => `${xs(p.t).toFixed(1)},${ysIgn(p.ignition_set).toFixed(1)}`).join(" L ");
+  const ignEffPath = "M " + trace.map(p => `${xs(p.t).toFixed(1)},${ysIgn(p.ignition_effective).toFixed(1)}`).join(" L ");
   const armX = xs(Math.min(IGNITION_RETARD_ARM_TIME, maxT));
 
   let gridLines = "";
   for (let i = 0; i <= 2; i++) {
     const yy = padT + i * (H - padT - padB) / 2;
-    const val = Math.round(maxV - i * (maxV - minV) / 2);
+    const rpmVal = Math.round(rpmHi - i * (rpmHi - rpmLo) / 2);
+    const ignVal = Math.round(ignHi - i * (ignHi - ignLo) / 2);
+    const gpmVal = Math.round(gpmHi - i * gpmHi / 2);
     gridLines += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="#2c333b" stroke-width="1"/>`;
-    gridLines += `<text x="${padL - 6}" y="${yy + 4}" text-anchor="end" font-size="10" fill="#8b939b" font-family="ui-monospace,monospace">${val}°</text>`;
+    gridLines += `<text x="${padL - 6}" y="${yy + 4}" text-anchor="end" font-size="10" fill="#b98ee0" font-family="ui-monospace,monospace">${rpmVal}</text>`;
+    gridLines += `<text x="${W - padR + 6}" y="${yy + 4}" text-anchor="start" font-size="9" fill="#e0704a" font-family="ui-monospace,monospace">${ignVal}°</text>`;
+    gridLines += `<text x="${W - padR + 34}" y="${yy + 4}" text-anchor="start" font-size="9" fill="#5ec8d8" font-family="ui-monospace,monospace">${gpmVal}</text>`;
   }
 
   const svg = `
@@ -254,11 +210,13 @@ function drawIgnitionChart(trace) {
     <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#2c333b" stroke-width="1"/>
     <line x1="${armX.toFixed(1)}" y1="${padT}" x2="${armX.toFixed(1)}" y2="${H - padB}" stroke="#e0b34a" stroke-width="1" stroke-dasharray="3,3"/>
     <text x="${armX.toFixed(1)}" y="${padT + 9}" font-size="9" fill="#e0b34a" font-family="ui-monospace,monospace">retarder armed</text>
-    <path d="${setPath}" fill="none" stroke="#7a8fae" stroke-width="2" stroke-dasharray="4,3"/>
-    <path d="${effPath}" fill="none" stroke="#e0704a" stroke-width="2"/>
+    <path d="${gpmPath}" fill="none" stroke="#5ec8d8" stroke-width="1.5" opacity="0.85"/>
+    <path d="${ignSetPath}" fill="none" stroke="#7a8fae" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.9"/>
+    <path d="${ignEffPath}" fill="none" stroke="#e0704a" stroke-width="1.5" opacity="0.9"/>
+    <path d="${rpmPath}" fill="none" stroke="#b98ee0" stroke-width="2.5"/>
   `;
-  $("ignitionChart").setAttribute("viewBox", `0 0 ${W} ${H}`);
-  $("ignitionChart").innerHTML = svg;
+  $("engineChart").setAttribute("viewBox", `0 0 ${W} ${H}`);
+  $("engineChart").innerHTML = svg;
 }
 
 function statusClass(val, warnAt, badAt) {
@@ -311,9 +269,7 @@ $("runBtn").addEventListener("click", () => {
     { label: "660'", t: r.et660 },
     { label: r.finished ? "1000'" : null, t: r.finished ? r.et : null },
   ]);
-  drawFuelChart(r.trace);
-  drawRpmChart(r.trace);
-  drawIgnitionChart(r.trace);
+  drawEngineChart(r.trace);
 
   const spinFlag = $("spinFlag");
   let flags = "";
