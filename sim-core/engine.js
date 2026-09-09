@@ -20,14 +20,35 @@
 // than silently treated as a normal tuning knob.
 const LEGAL_NITRO_MAX = 90;
 
-// Ignition efficiency peaks at 40deg (the reference "optimal" advance) and
-// falls off symmetrically either side - too little advance leaves power on
-// the table, too much risks detonation (see heatRisk below, which doesn't
-// yet fold ignition in - a static per-run number wasn't worth it, but see
-// activeIgnition()/calcIgnitionRetard() for why this is now evaluated per
-// instant instead of once for the whole run).
+// Real numbers (MSD's Joe Pando, on the actual Power Grid system): "At
+// launch, you need 60 to 65 degrees of timing to get power up" - nitro's
+// slow burn means these motors run FAR more advance than a gasoline engine
+// ever would, and there's no symmetric "optimal" advance the way a
+// gasoline tune has one - more advance simply makes more power, right up
+// to where sustained heat/cylinder pressure risks taking the engine out
+// (see IGNITION_SAFE_DEG below, and the retarder in calcIgnitionRetard).
+// Saturates at 65deg since that's the real ceiling the article gives -
+// past it there's no evidence pushing further does anything but add risk.
 export function calcIgnEff(ignitionDeg) {
-  return 1 - Math.abs(ignitionDeg - 40) / 40 * 0.30;
+  return 0.80 + Math.min(ignitionDeg, 65) / 65 * 0.30;
+}
+
+// "Between those two lines the timing is limited to 15 degrees per second
+// of timing advance. That doesn't allow timing to come back in too fast."
+// A real, ruled rate limit - timing can drop (retard) as fast as the curve
+// or retarder call for, but climbing back up is capped, so a driver can't
+// just slam full advance back in the instant RPM dips.
+export const IGNITION_MAX_ADVANCE_RATE = 15; // deg/s
+
+// How much sustained advance the engine can take before cylinder heat
+// becomes real damage risk - this is what the retarder exists to protect
+// against. Only matters if the curve is set aggressively enough that even
+// -30deg of retard can't pull it back under this line.
+export const IGNITION_SAFE_DEG = 50;
+const IGNITION_HEAT_RATE = 0.12;
+
+export function calcIgnitionHeatDamageRate(effectiveIgnitionDeg) {
+  return Math.max(0, (effectiveIgnitionDeg - IGNITION_SAFE_DEG) / 30) * IGNITION_HEAT_RATE;
 }
 
 export function calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition }) {

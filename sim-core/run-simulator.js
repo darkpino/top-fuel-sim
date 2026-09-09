@@ -6,6 +6,7 @@ import {
   calcEngineFactors, calcMult, calcEngineRpm, calcFuelFlowGpm,
   calcIdealFuelPct, calcMixtureRichness, activeFuelPct,
   calcIgnEff, activeIgnition, calcIgnitionRetard,
+  IGNITION_MAX_ADVANCE_RATE, calcIgnitionHeatDamageRate,
 } from "./engine.js";
 import { activeSetpoint, activeSpeed, calcFingerDesired, calcWornFingerDesired, stepBearingPos } from "./clutch.js";
 import { calcOptimalPsi, calcPsiPenalty, calcTireWear } from "./tires.js";
@@ -173,6 +174,7 @@ export function runSimulation(settings) {
   let earlyLoadSum = 0;
   let earlyLoadCount = 0;
   let peakIgnitionRetard = 0;
+  let ignitionActual = ignitionCurve[0];
   let ignEffIntegral = 0;
 
   while (x < 1000 && t < MAX_T) {
@@ -198,7 +200,17 @@ export function runSimulation(settings) {
     // timing further out on top of it once armed - see engine.js for both.
     const ignitionSet = activeIgnition(t, ignitionCurve);
     const ignitionRetardDeg = calcIgnitionRetard(t, rpm);
-    const ignitionEffective = ignitionSet - ignitionRetardDeg;
+    const ignitionTarget = ignitionSet - ignitionRetardDeg;
+    // Timing can drop (retard, or the curve itself calling for less) as
+    // fast as it needs to, but climbing back toward more advance is rate-
+    // limited - a real ruled cap so a tuner can't just slam full advance
+    // back in the instant the retarder eases off.
+    if (ignitionTarget > ignitionActual) {
+      ignitionActual = Math.min(ignitionTarget, ignitionActual + IGNITION_MAX_ADVANCE_RATE * DT);
+    } else {
+      ignitionActual = ignitionTarget;
+    }
+    const ignitionEffective = ignitionActual;
     const ignEff = calcIgnEff(ignitionEffective);
     peakIgnitionRetard = Math.max(peakIgnitionRetard, ignitionRetardDeg);
     ignEffIntegral += ignEff * DT;
@@ -260,6 +272,10 @@ export function runSimulation(settings) {
     }
 
     heatDamage += Math.max(0, heatRisk - 0.62) * DT;
+    // The retarder exists specifically to keep this at bay - it only bites
+    // if the curve is dialed aggressively enough that even -30deg of
+    // retard can't pull effective timing back under a safe line.
+    heatDamage += calcIgnitionHeatDamageRate(ignitionEffective) * DT;
     // Lean under load hurts the most right where lf is high - the clutch
     // is loaded, so the motor can least afford to be starved right then.
     leanDamage += Math.max(0, -richness) * lf * LEAN_DAMAGE_RATE * DT;
