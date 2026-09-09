@@ -206,7 +206,11 @@ export function computeQualifyingLadder(entrants, bracketSize) {
 }
 
 // Largest power of two that both fits the field and doesn't exceed
-// maxBracket - keeps V1 free of byes: every qualifier gets an opponent.
+// maxBracket. The bracket is sized off total ENTRIES at event start, but
+// only entrants who actually post a valid qualifying time fill it - a car
+// that DNFs all 4 sessions never qualifies even if there'd be room, which
+// can leave a round with an odd number of survivors. See pairBracketRound
+// for how that's handled (a bye), rather than assuming it away.
 export function deriveBracketSize(totalEntries, maxBracket) {
   let size = 1;
   while (size * 2 <= totalEntries && size * 2 <= maxBracket) size *= 2;
@@ -217,13 +221,42 @@ export function deriveBracketSize(totalEntries, maxBracket) {
 // Call again each round on that round's survivors (still ordered by their
 // ORIGINAL qualifying seed) rather than re-seeding - a real eliminator
 // ladder is fixed at qualifying, not redrawn round to round.
+// An odd survivor count (a qualifier's opponent already lost the field
+// via DNF, not via a real pairing) gives the single best remaining seed a
+// bye - real NHRA practice when a round comes up short a car - returned
+// separately from pairs rather than self-paired.
 export function pairBracketRound(survivorsBySeed) {
-  const n = survivorsBySeed.length;
+  const list = [...survivorsBySeed];
+  const bye = list.length % 2 === 1 ? list.shift() : null;
+  const n = list.length;
   const pairs = [];
   for (let i = 0; i < n / 2; i++) {
-    pairs.push([survivorsBySeed[i], survivorsBySeed[n - 1 - i]]);
+    pairs.push([list[i], list[n - 1 - i]]);
   }
-  return pairs;
+  return { pairs, bye };
+}
+
+// Lane choice: real tracks are never perfectly identical side to side, so
+// each elimination round gets two lane variants (small grip/track-temp
+// deltas off that round's base conditions) that persist for the whole
+// round - the same two physical lanes every pair uses, not a fresh draw
+// per pair. The better-qualified driver in each pair picks; this is a
+// genuine (if modest) strategic choice, not cosmetic.
+export function generateLaneVariants(baseConditions, rng) {
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const gripDelta = (rng() * 2 - 1) * 6;
+  const trackDelta = (rng() * 2 - 1) * 3;
+  return {
+    A: { ...baseConditions, gripSliderPct: clamp(baseConditions.gripSliderPct + gripDelta, 20, 100), trackTempC: clamp(baseConditions.trackTempC + trackDelta, 15, 65) },
+    B: { ...baseConditions, gripSliderPct: clamp(baseConditions.gripSliderPct - gripDelta, 20, 100), trackTempC: clamp(baseConditions.trackTempC - trackDelta, 15, 65) },
+  };
+}
+
+// Simple AI heuristic for lane choice: take the grippier lane. Used both
+// for AI-vs-AI pairs and to tell the player which lane is left when their
+// opponent (not them) has the pick.
+export function pickBetterLane(lanes) {
+  return lanes.A.gripSliderPct >= lanes.B.gripSliderPct ? "A" : "B";
 }
 
 // Real Top Fuel reaction times run roughly 0.000-0.150s off a pro tree;

@@ -37,6 +37,15 @@
     <div id="event-active" style="display:none;">
       <p class="note" style="margin-top:0; display:none;" id="event-round-label">--</p>
 
+      <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:0;">Jouw rondes</div>
+      <p class="note" style="margin-top:0;">Weer en resultaat per ronde die je al hebt gereden - vergelijk de conditie van een nieuwe ronde met een eerdere om je tune bij te stellen.</p>
+      <div style="overflow-x:auto;">
+        <table class="event-table" id="history-table">
+          <thead><tr><th>Ronde</th><th>Lucht</th><th>Vocht</th><th>Druk</th><th>Baan</th><th>VHT</th><th>60ft</th><th>ET</th><th>mph</th><th>Status</th></tr></thead>
+          <tbody id="history-table-body"></tbody>
+        </table>
+      </div>
+
       <div id="quali-block" style="display:none;">
         <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:0;">Kwalificatiestand</div>
         <p class="note" style="margin-top:0;">"Tijd deze sessie" laat zien wie er onder de huidige omstandigheden al voor je is gegaan - gebruik dat voor last-minute aanpassingen (koppeling, ontsteking) voor je zelf rijdt.</p>
@@ -53,9 +62,14 @@
         <p class="note" style="margin-top:0;" id="opponent-info">--</p>
         <div style="overflow-x:auto;">
           <table class="event-table" id="bracket-table">
-            <thead><tr><th>Duel</th><th>Resultaat</th></tr></thead>
+            <thead><tr><th>Auto A</th><th>Tijd A</th><th>Auto B</th><th>Tijd B</th><th>Resultaat</th></tr></thead>
             <tbody id="bracket-table-body"></tbody>
           </table>
+        </div>
+        <div id="lane-choice-block" style="display:none;">
+          <p class="note" style="margin-top:0;">Jij bent hoger gekwalificeerd dan je tegenstander - kies je baan voor dit rondje. De twee banen wijken licht af in grip en baantemperatuur, hetzelfde stel banen voor de hele ronde.</p>
+          <button class="secondary" id="chooseLaneA">Baan A — grip <span id="laneA-grip">--</span>%, baan <span id="laneA-track">--</span>°C</button>
+          <button class="secondary" id="chooseLaneB">Baan B — grip <span id="laneB-grip">--</span>%, baan <span id="laneB-track">--</span>°C</button>
         </div>
       </div>
 

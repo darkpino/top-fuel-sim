@@ -7,6 +7,7 @@ import { buildRoundDefs, generateEventConditions } from "../sim-core/event.js";
 import {
   generateAiField, deriveRunningOrder, runQualifyingAttempt, computeQualifyingLadder,
   deriveBracketSize, pairBracketRound, calcReactionTime, resolveHeadToHead, mulberry32,
+  generateLaneVariants, pickBetterLane,
 } from "../sim-core/ladder.js";
 
 function $(id) { return document.getElementById(id); }
@@ -450,13 +451,15 @@ $("startEventBtn").addEventListener("click", () => {
     quals: [null, null, null, null], bestEt: null, bestMph: null,
     qualPosition: null, qualified: false, eliminated: false, eliminatedRound: null,
   };
+  const rounds = generateEventConditions(roundDefs, seed);
   ladderState = {
-    bracketSize, totalEntries, seed,
-    rounds: generateEventConditions(roundDefs, seed),
+    bracketSize, totalEntries, seed, rounds,
     roundIndex: 0,
     field: [player, ...generateAiField(totalEntries - 1, seed + 1)],
     rng: mulberry32(seed + 777),
+    playerHistory: new Array(rounds.length).fill(null),
     qOrder: null, bracketPool: null, bracketPairs: null, bracketResults: null,
+    lanes: null, bye: null, byeResult: null, playerLaneChoice: null, opponentLaneChoice: null,
     playerPairIndex: null, playerOpponent: null, playerOutcome: null,
   };
   $("event-setup").style.display = "none";
@@ -485,7 +488,13 @@ $("newEventBtn").addEventListener("click", () => {
 // every AI entrant scheduled ahead of the player this session (see
 // deriveRunningOrder), or for elimination resolves every pair that
 // doesn't involve the player - the player's own pass is the only one
-// deferred to a button click.
+// deferred to a button click. Elimination rounds also draw this round's
+// two lane variants (see generateLaneVariants) and, for every pair
+// including the player's, let the higher seed pick - AI pairs use a
+// simple "take the grippier lane" heuristic (pickBetterLane) since
+// there's no player judgment to model there. A short survivor count gets
+// one bye (pairBracketRound), which still runs a solo pass but always
+// advances regardless of outcome.
 function activateLadderRound() {
   const roundDef = ladderState.rounds[ladderState.roundIndex];
   applyConditions(roundDef.conditions);
@@ -499,17 +508,40 @@ function activateLadderRound() {
     for (let i = 0; i < playerIdx; i++) runQualifyingAttempt(order[i], sessionIndex, roundDef.conditions, false);
   } else {
     const survivors = ladderState.bracketPool.filter(e => !e.eliminated);
-    const pairs = pairBracketRound(survivors);
+    const { pairs, bye } = pairBracketRound(survivors);
     ladderState.bracketPairs = pairs;
     ladderState.bracketResults = new Array(pairs.length).fill(null);
+    ladderState.bye = bye;
+    ladderState.byeResult = null;
+    ladderState.lanes = generateLaneVariants(roundDef.conditions, ladderState.rng);
+    ladderState.playerPairIndex = null;
+    ladderState.playerOpponent = null;
+    ladderState.playerLaneChoice = null;
+    ladderState.opponentLaneChoice = null;
+
+    if (bye && !bye.isPlayer) {
+      ladderState.byeResult = runSimulation({ ...bye.tune, ...roundDef.conditions });
+    }
+
     pairs.forEach(([a, b], i) => {
       if (a === player || b === player) {
         ladderState.playerPairIndex = i;
         ladderState.playerOpponent = a === player ? b : a;
+        if (player.qualPosition > ladderState.playerOpponent.qualPosition) {
+          const oppLane = pickBetterLane(ladderState.lanes);
+          ladderState.opponentLaneChoice = oppLane;
+          ladderState.playerLaneChoice = oppLane === "A" ? "B" : "A";
+        }
         return;
       }
-      const resultA = runSimulation({ ...a.tune, ...roundDef.conditions });
-      const resultB = runSimulation({ ...b.tune, ...roundDef.conditions });
+      const higherSeed = a.qualPosition < b.qualPosition ? a : b;
+      const lowerSeed = higherSeed === a ? b : a;
+      const higherLane = pickBetterLane(ladderState.lanes);
+      const lowerLane = higherLane === "A" ? "B" : "A";
+      const resultHigher = runSimulation({ ...higherSeed.tune, ...ladderState.lanes[higherLane] });
+      const resultLower = runSimulation({ ...lowerSeed.tune, ...ladderState.lanes[lowerLane] });
+      const resultA = higherSeed === a ? resultHigher : resultLower;
+      const resultB = higherSeed === a ? resultLower : resultHigher;
       const reactA = calcReactionTime(a.tune.driverAggressiveness, ladderState.rng);
       const reactB = calcReactionTime(b.tune.driverAggressiveness, ladderState.rng);
       const winner = resolveHeadToHead(reactA, resultA, reactB, resultB) === "A" ? a : b;
@@ -538,8 +570,44 @@ function renderLadderRoundUi() {
   $("quali-block").style.display = isQuali ? "block" : "none";
   $("elim-block").style.display = isQuali ? "none" : "block";
   $("skipQualBtn").style.display = isQuali && ladderState.playerOutcome === null ? "block" : "none";
-  if (isQuali) renderQualiTable(roundDef);
-  else renderBracketTable(roundDef);
+  if (isQuali) {
+    $("runRoundBtn").style.display = "block";
+    $("lane-choice-block").style.display = "none";
+    renderQualiTable(roundDef);
+  } else {
+    renderBracketTable(roundDef);
+  }
+  renderHistoryTable();
+}
+
+// The "Jouw rondes" history is the point of this table: every round's
+// weather sits right next to what you actually did with it, so comparing
+// a new round's conditions to a past one (to decide how to re-tune) is
+// just reading down the columns - see the Evenement note text. Future
+// rounds' weather stays hidden until they're current.
+function renderHistoryTable() {
+  $("history-table-body").innerHTML = ladderState.rounds.map((round, i) => {
+    const isFuture = i > ladderState.roundIndex;
+    const c = round.conditions;
+    const condCells = isFuture
+      ? `<td colspan="5" style="text-align:center;">nog onbekend</td>`
+      : `<td>${c.airtempC}°C</td><td>${c.humidity}%</td><td>${c.baroInHg.toFixed(2)}</td><td>${c.trackTempC}°C</td><td>${c.gripSliderPct}%</td>`;
+    const h = ladderState.playerHistory[i];
+    const et60Txt = h && h.result && h.result.et60 ? h.result.et60.toFixed(3) : "--";
+    const etTxt = h && h.result && h.result.finished ? h.result.et.toFixed(3) : "--";
+    const mphTxt = h && h.result ? h.result.mph.toFixed(1) : "--";
+    let statusTxt;
+    if (isFuture) statusTxt = "--";
+    else if (i === ladderState.roundIndex && !h) {
+      statusTxt = round.phase === "elimination" && ladderState.playerOpponent ? `aan jou vs ${ladderState.playerOpponent.name}` : "actief";
+    } else if (!h) statusTxt = "--";
+    else if (h.skipped) statusTxt = "overgeslagen";
+    else if (h.bye) statusTxt = "bye — automatisch door";
+    else if (round.phase === "elimination" && h.opponent) statusTxt = `vs ${h.opponent.name}: ${h.won ? "gewonnen" : "verloren"} (${roundResultText(h.opponentResult)})`;
+    else statusTxt = roundResultText(h.result);
+    const cls = h ? "done" : (i === ladderState.roundIndex ? "current" : "future");
+    return `<tr class="${cls}"><td>${round.id}</td>${condCells}<td>${et60Txt}</td><td>${etTxt}</td><td>${mphTxt}</td><td>${escapeHtml(statusTxt)}</td></tr>`;
+  }).join("");
 }
 
 function renderQualiTable(roundDef) {
@@ -556,18 +624,54 @@ function renderQualiTable(roundDef) {
 
 function renderBracketTable(roundDef) {
   const player = ladderState.field.find(e => e.isPlayer);
-  if (ladderState.playerOpponent) {
-    $("opponent-info").textContent = `Ronde ${roundDef.roundNumber}: jij (seed ${player.qualPosition}) vs ${ladderState.playerOpponent.name} — ${ladderState.playerOpponent.team} (seed ${ladderState.playerOpponent.qualPosition}, kwaltijd ${ladderState.playerOpponent.bestEt.toFixed(3)}s, "${ladderState.playerOpponent.archetype}")`;
+  const bye = ladderState.bye;
+
+  // Lane choice is only a live decision while the player is genuinely the
+  // higher seed and hasn't picked yet - otherwise it's already resolved
+  // (opponent picked, or there's no opponent this round at all).
+  const playerNeedsLaneChoice = ladderState.playerOpponent && ladderState.playerLaneChoice === null
+    && player.qualPosition < ladderState.playerOpponent.qualPosition;
+  $("lane-choice-block").style.display = playerNeedsLaneChoice ? "block" : "none";
+  $("runRoundBtn").style.display = playerNeedsLaneChoice ? "none" : "block";
+  if (playerNeedsLaneChoice) {
+    $("laneA-grip").textContent = ladderState.lanes.A.gripSliderPct.toFixed(0);
+    $("laneA-track").textContent = ladderState.lanes.A.trackTempC.toFixed(0);
+    $("laneB-grip").textContent = ladderState.lanes.B.gripSliderPct.toFixed(0);
+    $("laneB-track").textContent = ladderState.lanes.B.trackTempC.toFixed(0);
   }
-  $("bracket-table-body").innerHTML = ladderState.bracketPairs.map(([a, b], i) => {
+
+  if (bye && bye.isPlayer) {
+    $("opponent-info").textContent = `Ronde ${roundDef.roundNumber}: bye - jij bent de best overgebleven auto zonder tegenstander deze ronde en gaat automatisch door, ongeacht je pass. Rijd 'm nog wel voor de tijd.`;
+  } else if (bye) {
+    $("opponent-info").textContent = `Ronde ${roundDef.roundNumber}: jij (seed ${player.qualPosition}) vs ${ladderState.playerOpponent.name} — ${ladderState.playerOpponent.team} (seed ${ladderState.playerOpponent.qualPosition}). ${entrantLabel(bye)} heeft deze ronde een bye.`;
+  } else if (ladderState.playerOpponent) {
+    const laneTxt = ladderState.playerLaneChoice ? ` — jij rijdt baan ${ladderState.playerLaneChoice}` : "";
+    $("opponent-info").textContent = `Ronde ${roundDef.roundNumber}: jij (seed ${player.qualPosition}) vs ${ladderState.playerOpponent.name} — ${ladderState.playerOpponent.team} (seed ${ladderState.playerOpponent.qualPosition}, kwaltijd ${ladderState.playerOpponent.bestEt.toFixed(3)}s, "${ladderState.playerOpponent.archetype}")${laneTxt}`;
+  }
+
+  const rows = ladderState.bracketPairs.map(([a, b], i) => {
     const res = ladderState.bracketResults[i];
     const involvesPlayer = a === player || b === player;
-    const label = `${entrantLabel(a)} — ${entrantLabel(b)}`;
+    const aTxt = res ? roundResultText(res.resultA) : "--";
+    const bTxt = res ? roundResultText(res.resultB) : "--";
     const resultTxt = res ? `${entrantLabel(res.winner)} wint` : (involvesPlayer ? "aan jou" : "--");
     const cls = involvesPlayer ? "current" : (res ? "done" : "future");
-    return `<tr class="${cls}"><td>${label}</td><td>${resultTxt}</td></tr>`;
-  }).join("");
+    return `<tr class="${cls}"><td>${entrantLabel(a)}</td><td>${aTxt}</td><td>${entrantLabel(b)}</td><td>${bTxt}</td><td>${resultTxt}</td></tr>`;
+  });
+  if (bye) {
+    const byeTxt = ladderState.byeResult ? roundResultText(ladderState.byeResult) : (bye.isPlayer ? "aan jou" : "--");
+    const cls = bye.isPlayer ? "current" : "done";
+    rows.push(`<tr class="${cls}"><td>${entrantLabel(bye)} (bye)</td><td>${byeTxt}</td><td>—</td><td>—</td><td>${entrantLabel(bye)} door</td></tr>`);
+  }
+  $("bracket-table-body").innerHTML = rows.join("");
 }
+
+function choosePlayerLane(lane) {
+  ladderState.playerLaneChoice = lane;
+  renderBracketTable(ladderState.rounds[ladderState.roundIndex]);
+}
+$("chooseLaneA").addEventListener("click", () => choosePlayerLane("A"));
+$("chooseLaneB").addEventListener("click", () => choosePlayerLane("B"));
 
 function totalElimRoundsFor(bracketSize) {
   return Math.round(Math.log2(bracketSize));
@@ -607,27 +711,54 @@ function runPlayerQualifying(skip) {
     const r = runSimulation(readSettings());
     player.quals[sessionIndex] = r;
     if (r.finished && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
+    ladderState.playerHistory[ladderState.roundIndex] = { result: r };
     renderRunResult(r);
   } else {
     player.quals[sessionIndex] = null;
+    ladderState.playerHistory[ladderState.roundIndex] = { skipped: true };
   }
   const order = ladderState.qOrder;
   const playerIdx = order.findIndex(e => e.isPlayer);
   for (let i = playerIdx + 1; i < order.length; i++) runQualifyingAttempt(order[i], sessionIndex, roundDef.conditions, false);
   renderQualiTable(roundDef);
+  renderHistoryTable();
   advanceLadderRound();
+}
+
+// A bye still runs a solo pass (for the record, same as a real single) but
+// always advances - there's no opponent to lose to.
+function runPlayerBye() {
+  const roundDef = ladderState.rounds[ladderState.roundIndex];
+  applyConditions(roundDef.conditions);
+  const r = runSimulation(readSettings());
+  ladderState.byeResult = r;
+  ladderState.playerHistory[ladderState.roundIndex] = { result: r, bye: true };
+  renderRunResult(r);
+  renderBracketTable(roundDef);
+  renderHistoryTable();
+  if (roundDef.roundNumber === totalElimRoundsFor(ladderState.bracketSize)) {
+    ladderState.playerOutcome = "champion";
+    renderFinalResult(`Kampioen! Je won de finale van dit evenement (bye in de laatste ronde) (${ladderState.totalEntries} auto's).`);
+  } else {
+    advanceLadderRound();
+  }
 }
 
 function runPlayerElimination() {
   const roundDef = ladderState.rounds[ladderState.roundIndex];
-  applyConditions(roundDef.conditions);
   const [a, b] = ladderState.bracketPairs[ladderState.playerPairIndex];
   const player = ladderState.field.find(e => e.isPlayer);
   const playerIsA = a === player;
   const opponent = ladderState.playerOpponent;
 
+  // Lane choice picked earlier (or assigned, if the opponent had the
+  // pick) decides which of this round's two lane variants each side runs.
+  const playerLane = ladderState.playerLaneChoice || pickBetterLane(ladderState.lanes);
+  const opponentLane = playerLane === "A" ? "B" : "A";
+  applyConditions(ladderState.lanes[playerLane]);
+
   const rPlayer = runSimulation(readSettings());
-  const rOpponent = runSimulation({ ...opponent.tune, ...roundDef.conditions });
+  const rOpponent = runSimulation({ ...opponent.tune, ...ladderState.lanes[opponentLane] });
   const reactPlayer = calcReactionTime(+$("aggro").value, ladderState.rng);
   const reactOpponent = calcReactionTime(opponent.tune.driverAggressiveness, ladderState.rng);
 
@@ -640,9 +771,11 @@ function runPlayerElimination() {
   loser.eliminated = true;
   loser.eliminatedRound = roundDef.roundNumber;
   ladderState.bracketResults[ladderState.playerPairIndex] = { a, b, resultA, resultB, reactA, reactB, winner };
+  ladderState.playerHistory[ladderState.roundIndex] = { result: rPlayer, opponent, opponentResult: rOpponent, won: winner.isPlayer };
 
   renderRunResult(rPlayer);
   renderBracketTable(roundDef);
+  renderHistoryTable();
 
   if (winner.isPlayer) {
     if (roundDef.roundNumber === totalElimRoundsFor(ladderState.bracketSize)) {
@@ -660,6 +793,7 @@ function runPlayerElimination() {
 $("runRoundBtn").addEventListener("click", () => {
   const roundDef = ladderState.rounds[ladderState.roundIndex];
   if (roundDef.phase === "qualifying") runPlayerQualifying(false);
+  else if (ladderState.bye && ladderState.bye.isPlayer) runPlayerBye();
   else runPlayerElimination();
 });
 $("skipQualBtn").addEventListener("click", () => runPlayerQualifying(true));
