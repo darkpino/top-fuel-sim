@@ -90,50 +90,53 @@ export function calcRecommendedNitro(powerMultNow) {
 }
 
 // Engine RPM: informational channel (same status as "geschat piekvermogen"),
-// not a calibrated output like ET/mph. Top Fuel runs no gearbox, so the
-// clutch is the only thing between engine and wheel, tuned specifically to
-// hold RPM in a fairly narrow band despite ground speed climbing - but
-// "narrow band" is not "dead flat": real onboard traces show visible
-// texture layered on that band, from two distinct sources this now
-// models explicitly instead of one authored sine bump:
-// 1) A pulldown SAG whenever the clutch's own stage curve asks for MORE
-//    lockup than it's currently holding - the crank fighting a sudden
-//    increase in mechanical resistance. Sized by how big that stage's
-//    actual lockup jump is (so a gentler tune shows a gentler dip, an
-//    aggressive one a deeper one), not a fixed number - and evaluated at
-//    BOTH stage transitions (s1->s2 and s2->s3), not just one. When a
-//    transition is actually a lockup RELEASE (s2pct < s1pct, a common,
-//    deliberate tune to save the tires after the initial hit), that
-//    transition's dip is correctly zero - less load doesn't sag RPM.
-// 2) A FLARE whenever the tire was slipping the previous instant - the
-//    opposite regime from a lockup sag: the tire breaking loose lets the
-//    engine rev past the band rather than bog down against one, exactly
-//    the launch spike real telemetry shows at the hit before the tire
-//    hooks and the clutch takes hold. Uses the previous timestep's slip%
-//    (run-simulator.js's established one-step-delay pattern) since actual
-//    slip isn't known until force/traction are resolved later in the same
-//    step.
+// not a calibrated output like ET/mph. Top Fuel runs no gearbox - the
+// clutch is the ONLY thing between engine and wheel, which means once it's
+// actually locked up, engine RPM and wheel RPM are the same curve (a rigid
+// 1:1 mechanical link through the fixed final drive), not two things that
+// happen to be tuned to look similar. So this is now a genuine blend
+// between two regimes rather than one authored band with bumps layered on:
+// - Not locked (lf near 0): the engine free-revs, decoupled from wheel
+//   speed - it climbs off the line toward its own band, and flares further
+//   above that band whenever the tire was slipping the previous instant
+//   (the launch spike real telemetry shows at the hit, before the tire
+//   hooks and the clutch takes hold).
+// - Locked (lf near 1): RPM IS wheel speed through the fixed gear
+//   constant below - no band, no plateau, it just follows however fast
+//   the car is actually going, for as long as it's going that fast.
+// calcEngineRpm blends the two by lf (today's actual lockup fraction, not
+// an authored stage timeline), so the transition - and its depth - falls
+// out of the real clutch curve instead of a separately hand-tuned dip:
+// grabbing lockup while wheel speed hasn't caught up to the free-revving
+// band yet pulls RPM DOWN toward the (lower) locked-equivalent value, the
+// real "pulldown" moment - and after that, RPM keeps climbing right along
+// with ground speed for the rest of the run instead of holding flat,
+// which is also why the overspeed retarder (engine.js further down) isn't
+// guaranteed to fire on every single run: whether locked-RPM actually
+// climbs past the 7,900rpm redline before the finish now depends on the
+// tune and the run's speed, not on an always-above-redline authored plateau.
 const STAGING_RPM = 3000; // idling, staged, before the tree drops
-const LAUNCH_RPM = 8600; // the band the clutch is tuned to hold RPM in
-const RISE_DURATION = 0.3; // s - how fast RPM climbs off the line to the band
-const PULLDOWN_RPM_PER_LOCKUP_FRAC = 1100; // rpm sag per 1.0 (100%) of lockup jump
-const FLARE_RPM_PER_SLIP_PCT = 26; // rpm flare per 1% of tire slip
-const DRIFT_RPM_PER_FTS = 0.55; // drift with speed - the band is not perfectly flat
+const LAUNCH_RPM = 8600; // free-revving band the engine climbs to before lockup
+const RISE_DURATION = 0.3; // s - how fast RPM climbs off the line to that band
+const FLARE_RPM_PER_SLIP_PCT = 26; // rpm flare per 1% of tire slip, pre-lockup only
+const GEAR_RPM_PER_FTS = 16.2; // rpm per ft/s of wheel speed once fully locked - the fixed final-drive ratio
+// lf (effective lockup fraction) is a torque-capacity number, not a "is the
+// clutch mechanically rigid yet" flag - a slipper clutch is DESIGNED to
+// still be slipping internally well before lf gets anywhere near 1.0
+// (that's the entire point of staging lockup instead of an on/off switch),
+// so blending toward locked-RPM in proportion to lf itself is wrong - it
+// would tie RPM to wheel speed while the plates are still very much
+// sliding against each other. Only once lf gets close to its 1.0 ceiling
+// is there no more meaningful internal slip left, so genuine 1:1 lock -
+// and the ramp toward it - only starts here.
+const LOCK_ENGAGE_START = 0.9;
 
-function pulldownBump(t, fromTime, toTime) {
-  if (t < fromTime || t >= toTime) return 0;
-  const frac = (t - fromTime) / Math.max(0.001, toTime - fromTime);
-  return Math.sin(Math.PI * frac); // 0 at both edges, 1 at the midpoint
-}
-
-export function calcEngineRpm({ t, groundSpeedFtS, s1time, s2time, s3time, s1pct, s2pct, s3pct, priorSlipPct }) {
+export function calcEngineRpm({ t, wheelSpeedFtS, lf, priorSlipPct }) {
   const riseFrac = Math.min(1, t / RISE_DURATION);
-  const plateau = STAGING_RPM + (LAUNCH_RPM - STAGING_RPM) * riseFrac;
-  const drift = DRIFT_RPM_PER_FTS * groundSpeedFtS;
-  const dip1 = PULLDOWN_RPM_PER_LOCKUP_FRAC * Math.max(0, s2pct - s1pct) * pulldownBump(t, s1time, s2time);
-  const dip2 = PULLDOWN_RPM_PER_LOCKUP_FRAC * Math.max(0, s3pct - s2pct) * pulldownBump(t, s2time, s3time);
-  const flare = FLARE_RPM_PER_SLIP_PCT * Math.max(0, priorSlipPct || 0);
-  return plateau + drift - dip1 - dip2 + flare;
+  const freeRpm = STAGING_RPM + (LAUNCH_RPM - STAGING_RPM) * riseFrac + FLARE_RPM_PER_SLIP_PCT * Math.max(0, priorSlipPct || 0);
+  const lockedRpm = GEAR_RPM_PER_FTS * wheelSpeedFtS;
+  const lockFrac = Math.max(0, Math.min(1, (lf - LOCK_ENGAGE_START) / (1 - LOCK_ENGAGE_START)));
+  return freeRpm * (1 - lockFrac) + lockedRpm * lockFrac;
 }
 
 // Fuel flow: a nitro fuel pump is a positive-displacement gear pump driven
@@ -154,14 +157,23 @@ export function calcFuelFlowGpm(rpm, fuelVolFactor) {
 // afford to go lean. This is the target curve a crew chief is chasing with
 // timed fuel stages: open the valve further when RPM sags, pull it back
 // when RPM climbs, to keep the delivered mixture roughly constant despite
-// the pump's own RPM-driven swings. Floored at the pulldown's own minimum
-// so the brief staging-to-launch spin-up (RPM starting well below the
-// plateau by design, not from being under load) doesn't read as a lean
-// spike - that transient isn't a mixture problem, just the motor coming up
-// to speed.
+// the pump's own RPM-driven swings.
+// Floored well above idle (unlike the old ~STAGING_RPM floor) because the
+// mechanical pulldown now genuinely tracks wheel speed once locked (see
+// calcEngineRpm above) and can swing much lower than the old authored dip
+// ever did - a full-throttle car that hooks up hard right after a modest
+// speed can see engine rpm sag a long way below the free-revving band for
+// real. Below this floor there's no more fuel-curve slider room to chase
+// it anyway (the valve is already maxed out well before rpm gets that
+// low), so flooring the RICHNESS TARGET here isn't hiding the dip - the
+// dip still shows up in full on the RPM channel itself - it just stops
+// demanding fuel% beyond what's physically settable, the same way the
+// engine's compression/nitro/blower factors are physical numbers rather
+// than blank checks.
+const IDEAL_FUEL_RPM_FLOOR = 7200;
+
 export function calcIdealFuelPct(rpm, referenceFuelPct) {
-  const rpmFloor = LAUNCH_RPM - PULLDOWN_RPM_PER_LOCKUP_FRAC;
-  return referenceFuelPct * (LAUNCH_RPM / Math.max(rpm, rpmFloor));
+  return referenceFuelPct * (LAUNCH_RPM / Math.max(rpm, IDEAL_FUEL_RPM_FLOOR));
 }
 
 // Deviation between what's actually being fed in and what the RPM at that

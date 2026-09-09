@@ -218,7 +218,7 @@ export function runSimulation(settings) {
     peakWornGain = Math.max(peakWornGain, wornFingerDesired - fingerDesired);
     const lf = Math.min(wornFingerDesired, bearingPos) * heatBoost;
 
-    const rpm = calcEngineRpm({ t, groundSpeedFtS: v, s1time, s2time, s3time, s1pct, s2pct, s3pct, priorSlipPct: lastSlipPct });
+    const rpm = calcEngineRpm({ t, wheelSpeedFtS: wheelV, lf, priorSlipPct: lastSlipPct });
     const fuelVolPctNow = activeFuelPct(t, fuelStages);
     // Ignition is a curve too now, and the retard system (real safety
     // equipment on cars like these, not a driver-tunable knob) can pull

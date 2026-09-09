@@ -89,6 +89,7 @@ function updateEngineHints() {
   const tirePsi = +$("tpsi").value / 10;
 
   const da = calcDensityAltitude(airtempC, humidity, baroInHg);
+  $("da-hint").textContent = `Density altitude: ${Math.round(da).toLocaleString("nl-NL")} ft`;
   const powerMultNow = calcPowerMult(da);
   const { fuelFactor, blowerFactor, compressionFactor } = calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition });
   const { mult } = calcMult({ fuelFactor, fuelVolPct: fuel1Pct, blowerFactor, ignEff: calcIgnEff(ignition), compressionFactor, powerMult: powerMultNow });
