@@ -11,8 +11,26 @@
   <h1>Top Fuel Crew Chief — Run Sim</h1>
   <p class="sub">v0.3 prototype · 1000 ft · realistischere telemetrie: wheel speed vs ground speed + split-markers</p>
 
+  <div class="tabs">
+    <button class="tab active" id="tabTest">Testrun</button>
+    <button class="tab" id="tabEvent">Evenement</button>
+  </div>
+
   <div class="grid">
     <div>
+      <div class="panel" id="eventPanel" style="display:none;">
+        <div class="sec-title">Evenement</div>
+        <p class="note" style="margin-top:0;" id="event-status">Nog geen evenement gestart. 4 kwalificatierondes, daarna 4 eliminatierondes, elk met eigen (gesimuleerde) weersomstandigheden — jij tunet elke ronde opnieuw. Nog geen tegenstander/AI-tijden, kwalificatieladder of bracket-koppeling: dat komt later boven op deze rondestructuur.</p>
+        <div class="round-ladder" id="round-ladder"></div>
+        <div id="event-current" style="display:none;">
+          <p class="note" style="margin-top:0;" id="event-round-label">--</p>
+          <div class="cond-grid" id="event-conditions"></div>
+        </div>
+        <button class="run" id="startEventBtn">Start evenement</button>
+        <button class="run" id="runRoundBtn" style="display:none;">Run deze ronde</button>
+        <button class="secondary" id="newEventBtn" style="display:none;">Nieuw evenement</button>
+      </div>
+
       <div class="panel">
         <div class="sec-title">Environment</div>
         <div class="row"><label>Luchttemperatuur <span class="val" id="v-airtemp">30°C</span></label><input type="range" id="airtemp" min="10" max="45" value="30" step="1"></div>
@@ -21,6 +39,7 @@
         <div class="row"><label>Baan temperatuur <span class="val" id="v-track">28°C</span></label><input type="range" id="track" min="15" max="65" value="28" step="1"></div>
         <div class="row"><label>VHT / baanprep <span class="val" id="v-grip">70%</span></label><input type="range" id="grip" min="0" max="100" value="70" step="1"></div>
         <p class="note" id="grip-hint">Effectieve grip: -- (uitkomst van VHT% + baantemperatuur + bandenspanning)</p>
+        <p class="note" id="event-env-note" style="display:none;">Tijdens een evenement worden deze vijf bepaald door de actieve ronde (zie het Evenement-paneel hierboven), niet door jou.</p>
       </div>
 
       <div class="panel">

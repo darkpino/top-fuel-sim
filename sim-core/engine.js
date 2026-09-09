@@ -116,9 +116,9 @@ export function calcRecommendedNitro(powerMultNow) {
 const STAGING_RPM = 3000; // idling, staged, before the tree drops
 const LAUNCH_RPM = 8600; // the band the clutch is tuned to hold RPM in
 const RISE_DURATION = 0.3; // s - how fast RPM climbs off the line to the band
-const PULLDOWN_RPM_PER_LOCKUP_FRAC = 700; // rpm sag per 1.0 (100%) of lockup jump
-const FLARE_RPM_PER_SLIP_PCT = 15; // rpm flare per 1% of tire slip
-const DRIFT_RPM_PER_FTS = 0.3; // faint drift with speed - the band is not perfectly flat
+const PULLDOWN_RPM_PER_LOCKUP_FRAC = 1100; // rpm sag per 1.0 (100%) of lockup jump
+const FLARE_RPM_PER_SLIP_PCT = 26; // rpm flare per 1% of tire slip
+const DRIFT_RPM_PER_FTS = 0.55; // drift with speed - the band is not perfectly flat
 
 function pulldownBump(t, fromTime, toTime) {
   if (t < fromTime || t >= toTime) return 0;

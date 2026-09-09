@@ -39,3 +39,19 @@ svg{width:100%; height:auto; display:block; margin-top:10px;}
 .placeholder{color:var(--muted); font-size:13px; text-align:center; padding:40px 0;}
 .flag{background:rgba(194,59,50,0.15); border:1px solid var(--red); color:#f2938c; font-size:12px; padding:8px 10px; border-radius:4px; margin-top:10px;}
 .note{font-size:11px; color:var(--muted); margin-top:8px;}
+.tabs{display:flex; gap:8px; margin-bottom:16px;}
+.tab{background:var(--panel); color:var(--muted); border:1px solid var(--border); border-radius:6px; padding:10px 18px; font-family:var(--disp); font-weight:800; font-size:14px; letter-spacing:0.5px; cursor:pointer;}
+.tab.active{background:var(--amber); color:#1a1200; border-color:var(--amber);}
+.round-ladder{display:flex; flex-direction:column; gap:6px; margin-bottom:14px;}
+.round-row{display:flex; align-items:center; justify-content:space-between; background:var(--panel-alt); border-radius:6px; padding:8px 12px; font-size:12px; border-left:3px solid var(--border);}
+.round-row.current{border-left-color:var(--amber);}
+.round-row.done{border-left-color:var(--green);}
+.round-row .rlabel{color:var(--text); font-weight:600;}
+.round-row .rphase{color:var(--muted); margin-left:6px; font-weight:400;}
+.round-row .rresult{font-family:var(--mono); color:var(--muted);}
+.round-row.done .rresult{color:var(--text);}
+.cond-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:14px;}
+.cond{background:var(--panel-alt); border-radius:6px; padding:8px 10px;}
+.cond .lbl{font-size:10px; color:var(--muted); margin-bottom:2px;}
+.cond .num{font-family:var(--mono); font-size:13px; font-weight:700;}
+button.secondary{width:100%; background:var(--panel-alt); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:10px; font-family:var(--disp); font-weight:800; font-size:14px; letter-spacing:0.5px; cursor:pointer; margin-top:8px;}

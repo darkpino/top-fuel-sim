@@ -3,6 +3,7 @@ import { calcEngineFactors, calcMult, calcRecommendedNitro, calcIgnEff, IGNITION
 import { calcClutchReach } from "../sim-core/clutch.js";
 import { calcOptimalPsi, calcPsiPenalty } from "../sim-core/tires.js";
 import { runSimulation } from "../sim-core/run-simulator.js";
+import { generateEventConditions } from "../sim-core/event.js";
 
 function $(id) { return document.getElementById(id); }
 
@@ -266,8 +267,7 @@ function readSettings() {
   };
 }
 
-$("runBtn").addEventListener("click", () => {
-  const r = runSimulation(readSettings());
+function renderRunResult(r) {
   $("placeholder").style.display = "none";
   $("resultsContent").style.display = "block";
   $("inspPanel").style.display = "block";
@@ -378,4 +378,132 @@ $("runBtn").addEventListener("click", () => {
 
   $("i-weight").textContent = `${Math.round(r.weightLb).toLocaleString("nl-NL")} lb`;
   $("i-weight").className = "status ok";
+}
+
+$("runBtn").addEventListener("click", () => {
+  renderRunResult(runSimulation(readSettings()));
 });
+
+// ---- Evenement: 4 kwalificatie- + 4 eliminatierondes, elk met eigen
+// gegenereerde omstandigheden. Geen tegenstander/AI-tijden, ladder of
+// bracket-koppeling nog - zie sim-core/event.js voor waarom dat een latere
+// laag bovenop deze rondestructuur wordt, niet een herbouw ervan. ----
+
+const envSliderIds = ["airtemp", "hum", "baro", "track", "grip"];
+let currentMode = "test";
+let eventRounds = null; // array from generateEventConditions(), or null when no event is active
+let eventRoundIndex = 0; // index of the round that's next up / active
+let eventResults = []; // parallel array; eventResults[i] set once round i has been run
+const EVENT_IDLE_STATUS = "Nog geen evenement gestart. 4 kwalificatierondes, daarna 4 eliminatierondes, elk met eigen (gesimuleerde) weersomstandigheden — jij tunet elke ronde opnieuw. Nog geen tegenstander/AI-tijden, kwalificatieladder of bracket-koppeling: dat komt later boven op deze rondestructuur.";
+
+function eventInProgress() {
+  return eventRounds !== null && eventRoundIndex < eventRounds.length;
+}
+
+function updateEnvLock() {
+  const locked = currentMode === "event" && eventInProgress();
+  envSliderIds.forEach(id => { $(id).disabled = locked; });
+  $("event-env-note").style.display = locked ? "block" : "none";
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  $("tabTest").classList.toggle("active", mode === "test");
+  $("tabEvent").classList.toggle("active", mode === "event");
+  $("eventPanel").style.display = mode === "event" ? "block" : "none";
+  $("runBtn").style.display = mode === "event" ? "none" : "block";
+  updateEnvLock();
+  if (mode === "event" && eventInProgress()) renderCurrentRoundInfo();
+}
+$("tabTest").addEventListener("click", () => setMode("test"));
+$("tabEvent").addEventListener("click", () => setMode("event"));
+
+function applyConditions(cond) {
+  $("airtemp").value = cond.airtempC;
+  $("hum").value = cond.humidity;
+  $("baro").value = Math.round(cond.baroInHg * 100);
+  $("track").value = cond.trackTempC;
+  $("grip").value = cond.gripSliderPct;
+  envSliderIds.forEach(id => $(id).dispatchEvent(new Event("input")));
+}
+
+function roundResultText(result) {
+  if (!result) return "--";
+  if (result.finished) return `${result.et.toFixed(3)}s @ ${result.mph.toFixed(1)} mph`;
+  if (result.engineFailed) return "motor kapot";
+  if (result.clutchFailed) return "koppeling kapot";
+  return "DNF";
+}
+
+function renderRoundLadder() {
+  $("round-ladder").innerHTML = eventRounds.map((round, i) => {
+    const result = eventResults[i];
+    const cls = result ? "done" : (i === eventRoundIndex ? "current" : "");
+    const resultTxt = result ? roundResultText(result) : (i === eventRoundIndex ? "actief" : "--");
+    return `<div class="round-row ${cls}"><span><span class="rlabel">${round.id}</span><span class="rphase">${round.label}</span></span><span class="rresult">${resultTxt}</span></div>`;
+  }).join("");
+}
+
+function renderCurrentRoundInfo() {
+  const round = eventRounds[eventRoundIndex];
+  $("event-current").style.display = "block";
+  $("event-round-label").textContent = `Actieve ronde: ${round.id} — ${round.label}`;
+  const c = round.conditions;
+  $("event-conditions").innerHTML = `
+    <div class="cond"><div class="lbl">Lucht</div><div class="num">${c.airtempC}°C</div></div>
+    <div class="cond"><div class="lbl">Vocht</div><div class="num">${c.humidity}%</div></div>
+    <div class="cond"><div class="lbl">Luchtdruk</div><div class="num">${c.baroInHg.toFixed(2)} inHg</div></div>
+    <div class="cond"><div class="lbl">Baan</div><div class="num">${c.trackTempC}°C</div></div>
+    <div class="cond"><div class="lbl">VHT/prep</div><div class="num">${c.gripSliderPct}%</div></div>
+  `;
+  applyConditions(c);
+}
+
+$("startEventBtn").addEventListener("click", () => {
+  eventRounds = generateEventConditions();
+  eventResults = [];
+  eventRoundIndex = 0;
+  $("event-status").textContent = "Evenement bezig — tune je auto voor elke ronde en druk op \"Run deze ronde\".";
+  $("startEventBtn").style.display = "none";
+  $("runRoundBtn").style.display = "block";
+  $("newEventBtn").style.display = "block";
+  renderRoundLadder();
+  renderCurrentRoundInfo();
+  updateEnvLock();
+});
+
+$("runRoundBtn").addEventListener("click", () => {
+  if (!eventRounds || eventRoundIndex >= eventRounds.length) return;
+  applyConditions(eventRounds[eventRoundIndex].conditions);
+  const r = runSimulation(readSettings());
+  eventResults[eventRoundIndex] = r;
+  renderRunResult(r);
+  eventRoundIndex++;
+  renderRoundLadder();
+  if (eventRoundIndex >= eventRounds.length) {
+    $("event-status").textContent = "Evenement compleet — alle 4 kwalificatie- en 4 eliminatierondes gereden.";
+    $("runRoundBtn").style.display = "none";
+    $("event-current").style.display = "none";
+    updateEnvLock();
+  } else {
+    $("event-status").textContent = eventRoundIndex === 4
+      ? "Kwalificatie compleet — eliminaties beginnen."
+      : "Volgende ronde klaar om getuned te worden.";
+    renderCurrentRoundInfo();
+  }
+});
+
+$("newEventBtn").addEventListener("click", () => {
+  eventRounds = null;
+  eventResults = [];
+  eventRoundIndex = 0;
+  $("event-status").textContent = EVENT_IDLE_STATUS;
+  $("startEventBtn").style.display = "block";
+  $("runRoundBtn").style.display = "none";
+  $("newEventBtn").style.display = "none";
+  $("round-ladder").innerHTML = "";
+  $("event-current").style.display = "none";
+  updateEnvLock();
+});
+
+setMode("test");
