@@ -32,7 +32,7 @@ function $(id) { return document.getElementById(id); }
 // hint (updateEngineHints, called at module load below) can read it.
 let currentTrackElevationFt = 0;
 
-const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "fuel2", "fuel3", "gasket", "ign1", "ign2", "ign3", "ign4", "ign5", "ign6", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "s4t", "s4p", "s4speed", "s5t", "s5p", "s5speed", "s6t", "s6p", "s6speed", "fw", "tpsi", "wing", "fwing", "wbar", "ballfront", "ballrear", "aggro", "shutoff"];
+const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1t", "fuel1p", "fuel2t", "fuel2p", "fuel3t", "fuel3p", "fuel4t", "fuel4p", "fuel5t", "fuel5p", "fuel6t", "fuel6p", "gasket", "ign1", "ign2", "ign3", "ign4", "ign5", "ign6", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "s4t", "s4p", "s4speed", "s5t", "s5p", "s5speed", "s6t", "s6p", "s6speed", "fw", "tpsi", "wing", "fwing", "wbar", "ballfront", "ballrear", "aggro", "shutoff"];
 
 function fmt(id, val) {
   switch (id) {
@@ -43,7 +43,8 @@ function fmt(id, val) {
     case "grip": return val + "%";
     case "blower": return val + "%";
     case "fuel": return val + "%";
-    case "fuel1": case "fuel2": case "fuel3": return val + "%";
+    case "fuel1p": case "fuel2p": case "fuel3p": case "fuel4p": case "fuel5p": case "fuel6p": return val + "%";
+    case "fuel1t": case "fuel2t": case "fuel3t": case "fuel4t": case "fuel5t": case "fuel6t": return (val / 100).toFixed(2) + "s";
     case "gasket": return (val / 1000).toFixed(3) + '"';
     case "ign1": case "ign2": case "ign3": case "ign4": case "ign5": case "ign6": return val + "°";
     case "s1t": case "s2t": case "s3t": case "s4t": case "s5t": case "s6t": return (val / 100).toFixed(2) + "s";
@@ -89,6 +90,23 @@ function readClutchStages() {
   };
 }
 
+function readFuelStages() {
+  return {
+    fuel1time: +$("fuel1t").value / 100,
+    fuel1pct: +$("fuel1p").value,
+    fuel2time: +$("fuel2t").value / 100,
+    fuel2pct: +$("fuel2p").value,
+    fuel3time: +$("fuel3t").value / 100,
+    fuel3pct: +$("fuel3p").value,
+    fuel4time: +$("fuel4t").value / 100,
+    fuel4pct: +$("fuel4p").value,
+    fuel5time: +$("fuel5t").value / 100,
+    fuel5pct: +$("fuel5p").value,
+    fuel6time: +$("fuel6t").value / 100,
+    fuel6pct: +$("fuel6p").value,
+  };
+}
+
 const CLUTCH_STAGE_NUMBERS = [1, 2, 3, 4, 5, 6];
 
 function updateClutchReachHint() {
@@ -116,7 +134,7 @@ function updateEngineHints() {
   const gripSliderPct = +$("grip").value;
   const blowerOD = +$("blower").value;
   const fuelPct = +$("fuel").value;
-  const fuel1Pct = +$("fuel1").value;
+  const fuel1Pct = +$("fuel1p").value;
   const gasketThou = +$("gasket").value;
   const ignition = +$("ign1").value; // launch-point ignition, for this one-off "at launch" estimate
   const tirePsi = +$("tpsi").value / 10;
@@ -159,7 +177,7 @@ function updateEngineHints() {
   const gripKN = Math.round(2600 + Math.max(0, Math.min(1, (gripEstimate - 0.6) / 6.0)) * 800);
   gripHint.textContent = `Effectieve grip: ${gripKN} kN (${tempQuality})`;
 }
-["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "gasket", "ign1", "tpsi"].forEach(id => {
+["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1p", "gasket", "ign1", "tpsi"].forEach(id => {
   $(id).addEventListener("input", updateEngineHints);
 });
 updateEngineHints();
@@ -283,12 +301,10 @@ function readSettings() {
     trackElevationFt: currentTrackElevationFt,
     blowerOD: +$("blower").value,
     fuelPct: +$("fuel").value,
-    fuel1Pct: +$("fuel1").value,
-    fuel2Pct: +$("fuel2").value,
-    fuel3Pct: +$("fuel3").value,
     gasketThou: +$("gasket").value,
     ignitionCurve: ["ign1", "ign2", "ign3", "ign4", "ign5", "ign6"].map(id => +$(id).value),
     ...readClutchStages(),
+    ...readFuelStages(),
     fingerWeight: +$("fw").value,
     tirePsi: +$("tpsi").value / 10,
     wingAngle: +$("wing").value / 10,
@@ -656,6 +672,13 @@ function refreshLadderView() {
 
 function renderLadderRoundUi() {
   const isHistorical = viewingRoundIndex !== null;
+  // Once the event has concluded (win, loss, or DNQ), no round - not even
+  // the one that was still "current" when it ended - can be run again.
+  // Browsing history back to it must stay read-only, same as any other
+  // past round, instead of re-showing run/skip/lane controls that would
+  // otherwise re-simulate an already-decided round.
+  const eventOver = ladderState.playerOutcome !== null;
+  const readOnly = isHistorical || eventOver;
   const activeIndex = isHistorical ? viewingRoundIndex : ladderState.roundIndex;
   const roundDef = ladderState.rounds[activeIndex];
   $("event-round-label").style.display = "block";
@@ -666,13 +689,13 @@ function renderLadderRoundUi() {
   const isQuali = roundDef.phase === "qualifying";
   $("quali-block").style.display = isQuali ? "block" : "none";
   $("elim-block").style.display = isQuali ? "none" : "block";
-  $("skipQualBtn").style.display = !isHistorical && isQuali && ladderState.playerOutcome === null ? "block" : "none";
+  $("skipQualBtn").style.display = !readOnly && isQuali ? "block" : "none";
   if (isQuali) {
-    $("runRoundBtn").style.display = isHistorical ? "none" : "block";
+    $("runRoundBtn").style.display = readOnly ? "none" : "block";
     $("lane-choice-block").style.display = "none";
     renderQualiTable(roundDef);
   } else {
-    renderBracketTable(roundDef, activeIndex, isHistorical);
+    renderBracketTable(roundDef, activeIndex, readOnly);
   }
   renderHistoryTable();
 }
@@ -740,7 +763,7 @@ function renderQualiTable(roundDef) {
   }).join("");
 }
 
-function renderBracketTable(roundDef, roundIndex = ladderState.roundIndex, isHistorical = false) {
+function renderBracketTable(roundDef, roundIndex = ladderState.roundIndex, readOnly = false) {
   const player = ladderState.field.find(e => e.isPlayer);
   const ed = ladderState.elimRounds[roundIndex];
   const bye = ed.bye;
@@ -748,11 +771,12 @@ function renderBracketTable(roundDef, roundIndex = ladderState.roundIndex, isHis
   // Lane choice is only a live decision while the player is genuinely the
   // higher seed and hasn't picked yet - otherwise it's already resolved
   // (opponent picked, or there's no opponent this round at all). Never a
-  // live decision while browsing a past round read-only.
-  const playerNeedsLaneChoice = !isHistorical && ed.playerOpponent && ed.playerLaneChoice === null
+  // live decision while browsing a past round, or after the event itself
+  // has already ended (readOnly covers both).
+  const playerNeedsLaneChoice = !readOnly && ed.playerOpponent && ed.playerLaneChoice === null
     && player.qualPosition < ed.playerOpponent.qualPosition;
   $("lane-choice-block").style.display = playerNeedsLaneChoice ? "block" : "none";
-  if (!isHistorical) $("runRoundBtn").style.display = playerNeedsLaneChoice ? "none" : "block";
+  if (!readOnly) $("runRoundBtn").style.display = playerNeedsLaneChoice ? "none" : "block";
   if (playerNeedsLaneChoice) {
     $("laneA-grip").textContent = ed.lanes.A.gripSliderPct.toFixed(0);
     $("laneA-track").textContent = ed.lanes.A.trackTempC.toFixed(0);
@@ -996,6 +1020,11 @@ function runPlayerElimination() {
 }
 
 $("runRoundBtn").addEventListener("click", () => {
+  // Guards against re-running an already-decided round: this button
+  // should always be hidden in that case (see renderLadderRoundUi), but
+  // never trust display state alone for something that charges money and
+  // mutates results.
+  if (viewingRoundIndex !== null || ladderState.playerOutcome !== null) return;
   const roundDef = ladderState.rounds[ladderState.roundIndex];
   if (roundDef.phase === "qualifying") runPlayerQualifying(false);
   else if (ladderState.elimRounds[ladderState.roundIndex].bye?.isPlayer) runPlayerBye();

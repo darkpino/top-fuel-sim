@@ -65,7 +65,10 @@ const AI_ARCHETYPES = [
   {
     name: "Balanced Pro",
     tune: {
-      blowerOD: 48.6, fuelPct: 90, fuel1Pct: 70.6, fuel2Pct: 90, fuel3Pct: 85, gasketThou: 39,
+      blowerOD: 48.6, fuelPct: 90,
+      fuel1time: 0.8, fuel1pct: 70.6, fuel2time: 1.25, fuel2pct: 78.36, fuel3time: 1.75, fuel3pct: 90,
+      fuel4time: 2.95, fuel4pct: 90, fuel5time: 3.6, fuel5pct: 87.5, fuel6time: 4.2, fuel6pct: 85,
+      gasketThou: 39,
       ignitionCurve: [62, 58, 52.3, 46.3, 42.3, 38.3],
       s1time: 0.8, s1pct: 0.65, s1speed: 5.0, s2time: 1.25, s2pct: 0.67, s2speed: 0.2, s3time: 1.75, s3pct: 0.69, s3speed: 0.1,
       s4time: 2.2, s4pct: 0.73, s4speed: 0.2, s5time: 2.6, s5pct: 0.85, s5speed: 0.8, s6time: 2.95, s6pct: 1.0, s6speed: 1.6,
@@ -76,7 +79,10 @@ const AI_ARCHETYPES = [
   {
     name: "Aggressive Gambler",
     tune: {
-      blowerOD: 51.6, fuelPct: 90, fuel1Pct: 72.4, fuel2Pct: 91.5, fuel3Pct: 86.5, gasketThou: 37,
+      blowerOD: 51.6, fuelPct: 90,
+      fuel1time: 0.8, fuel1pct: 72.4, fuel2time: 1.25, fuel2pct: 80.04, fuel3time: 1.75, fuel3pct: 91.5,
+      fuel4time: 2.95, fuel4pct: 91.5, fuel5time: 3.6, fuel5pct: 89, fuel6time: 4.2, fuel6pct: 86.5,
+      gasketThou: 37,
       ignitionCurve: [62.9, 59.2, 53.8, 47.8, 43.2, 39.2],
       s1time: 0.772, s1pct: 0.658, s1speed: 5.107, s2time: 1.206, s2pct: 0.678, s2speed: 0.204, s3time: 1.688, s3pct: 0.698, s3speed: 0.102,
       s4time: 2.122, s4pct: 0.738, s4speed: 0.204, s5time: 2.508, s5pct: 0.857, s5speed: 0.817, s6time: 2.846, s6pct: 1.0, s6speed: 1.634,
@@ -87,7 +93,10 @@ const AI_ARCHETYPES = [
   {
     name: "Conservative Veteran",
     tune: {
-      blowerOD: 46.8, fuelPct: 88, fuel1Pct: 69.4, fuel2Pct: 88.5, fuel3Pct: 83.5, gasketThou: 41,
+      blowerOD: 46.8, fuelPct: 88,
+      fuel1time: 0.8, fuel1pct: 69.4, fuel2time: 1.25, fuel2pct: 77.04, fuel3time: 1.75, fuel3pct: 88.5,
+      fuel4time: 2.95, fuel4pct: 88.5, fuel5time: 3.6, fuel5pct: 86, fuel6time: 4.2, fuel6pct: 83.5,
+      gasketThou: 41,
       ignitionCurve: [60.8, 57.1, 51.4, 45.7, 41.7, 37.7],
       s1time: 0.814, s1pct: 0.643, s1speed: 4.893, s2time: 1.272, s2pct: 0.663, s2speed: 0.196, s3time: 1.781, s3pct: 0.683, s3speed: 0.098,
       s4time: 2.239, s4pct: 0.722, s4speed: 0.196, s5time: 2.646, s5pct: 0.843, s5speed: 0.783, s6time: 3.002, s6pct: 0.994, s6speed: 1.566,
@@ -98,7 +107,10 @@ const AI_ARCHETYPES = [
   {
     name: "Budget Team",
     tune: {
-      blowerOD: 43.8, fuelPct: 85, fuel1Pct: 68.5, fuel2Pct: 87, fuel3Pct: 82.3, gasketThou: 42,
+      blowerOD: 43.8, fuelPct: 85,
+      fuel1time: 0.8, fuel1pct: 68.5, fuel2time: 1.25, fuel2pct: 75.9, fuel3time: 1.75, fuel3pct: 87,
+      fuel4time: 2.95, fuel4pct: 87, fuel5time: 3.6, fuel5pct: 84.65, fuel6time: 4.2, fuel6pct: 82.3,
+      gasketThou: 42,
       ignitionCurve: [59.9, 56.2, 50.8, 45.4, 41.4, 37.4],
       s1time: 0.808, s1pct: 0.638, s1speed: 4.786, s2time: 1.263, s2pct: 0.658, s2speed: 0.191, s3time: 1.769, s3pct: 0.678, s3speed: 0.096,
       s4time: 2.223, s4pct: 0.718, s4speed: 0.191, s5time: 2.628, s5pct: 0.838, s5speed: 0.766, s6time: 2.981, s6pct: 0.985, s6speed: 1.531,
@@ -109,7 +121,10 @@ const AI_ARCHETYPES = [
   {
     name: "Clutch Specialist",
     tune: {
-      blowerOD: 49.2, fuelPct: 90, fuel1Pct: 71.2, fuel2Pct: 90.6, fuel3Pct: 85.6, gasketThou: 39,
+      blowerOD: 49.2, fuelPct: 90,
+      fuel1time: 0.8, fuel1pct: 71.2, fuel2time: 1.25, fuel2pct: 78.96, fuel3time: 1.75, fuel3pct: 90.6,
+      fuel4time: 2.95, fuel4pct: 90.6, fuel5time: 3.6, fuel5pct: 88.1, fuel6time: 4.2, fuel6pct: 85.6,
+      gasketThou: 39,
       ignitionCurve: [61.7, 57.7, 52, 46, 42, 38],
       s1time: 0.786, s1pct: 0.653, s1speed: 5.214, s2time: 1.228, s2pct: 0.673, s2speed: 0.209, s3time: 1.719, s3pct: 0.693, s3speed: 0.104,
       s4time: 2.161, s4pct: 0.733, s4speed: 0.209, s5time: 2.554, s5pct: 0.853, s5speed: 0.834, s6time: 2.898, s6pct: 1.0, s6speed: 1.669,
@@ -120,7 +135,10 @@ const AI_ARCHETYPES = [
   {
     name: "Wildcard Rookie",
     tune: {
-      blowerOD: 51, fuelPct: 91, fuel1Pct: 71.8, fuel2Pct: 89.4, fuel3Pct: 84.1, gasketThou: 38,
+      blowerOD: 51, fuelPct: 91,
+      fuel1time: 0.8, fuel1pct: 71.8, fuel2time: 1.25, fuel2pct: 78.84, fuel3time: 1.75, fuel3pct: 89.4,
+      fuel4time: 2.95, fuel4pct: 89.4, fuel5time: 3.6, fuel5pct: 86.75, fuel6time: 4.2, fuel6pct: 84.1,
+      gasketThou: 38,
       ignitionCurve: [62.6, 58.6, 52.9, 46.9, 42.6, 38.6],
       s1time: 0.758, s1pct: 0.662, s1speed: 5.321, s2time: 1.184, s2pct: 0.682, s2speed: 0.213, s3time: 1.657, s3pct: 0.702, s3speed: 0.106,
       s4time: 2.084, s4pct: 0.742, s4speed: 0.213, s5time: 2.462, s5pct: 0.862, s5speed: 0.851, s6time: 2.794, s6pct: 1.0, s6speed: 1.703,
@@ -140,9 +158,12 @@ function jitterTune(base, rng) {
   return {
     ...base,
     blowerOD: clamp(jit(base.blowerOD, 0.02), 20, 70),
-    fuel1Pct: clamp(jit(base.fuel1Pct, 0.015), 40, 100),
-    fuel2Pct: clamp(jit(base.fuel2Pct, 0.015), 40, 100),
-    fuel3Pct: clamp(jit(base.fuel3Pct, 0.015), 40, 100),
+    fuel1pct: clamp(jit(base.fuel1pct, 0.015), 40, 100),
+    fuel2pct: clamp(jit(base.fuel2pct, 0.015), 40, 100),
+    fuel3pct: clamp(jit(base.fuel3pct, 0.015), 40, 100),
+    fuel4pct: clamp(jit(base.fuel4pct, 0.015), 40, 100),
+    fuel5pct: clamp(jit(base.fuel5pct, 0.015), 40, 100),
+    fuel6pct: clamp(jit(base.fuel6pct, 0.015), 40, 100),
     gasketThou: clamp(Math.round(jit(base.gasketThou, 0.02)), 25, 60),
     ignitionCurve: base.ignitionCurve.map((v) => clamp(jit(v, 0.015), 20, 75)),
     driverAggressiveness: clamp(Math.round(jit(base.driverAggressiveness, 0.025)), 0, 100),

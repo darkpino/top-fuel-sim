@@ -182,17 +182,22 @@ export function calcMixtureRichness(actualFuelPct, idealFuelPct) {
   return (actualFuelPct - idealFuelPct) / 100;
 }
 
-// Fuel curve: brandstoftoevoer is a 3-stage timer just like the clutch (in
-// a real car it's typically driven off the same timer box) - fuel1Pct
-// through launch and the dip, fuel2Pct through the lockup/pulldown (richer,
-// to counter the RPM sag), fuel3Pct once fully locked and speed - and RPM -
-// is climbing again (leaner, to counter the RPM rise). Reuses the clutch's
-// s2time/s3time as its stage boundaries rather than adding a separate timer.
+// Fuel curve: brandstoftoevoer is now a 6-stage timer of its own, same
+// shape as the clutch's 6-stage model (see clutch.js's activeSetpoint) -
+// each stage times out into the next rather than sharing the clutch's own
+// s2time/s6time boundaries, so the fuel curve can be shaped independently
+// (open longer through the pulldown, close sooner or later after lockup,
+// etc.) instead of being locked to whatever the clutch tune happens to do.
+// Unlike the clutch's bearing, fuel volume has no travel/ramp dynamics to
+// model - it's a direct step to each stage's target, same as the old
+// 3-stage version, just with more points to shape the curve.
+const FUEL_STAGE_NUMBERS = [1, 2, 3, 4, 5, 6];
+
 export function activeFuelPct(t, fuelStages) {
-  const { s2time, fuel1Pct, s3time, fuel2Pct, fuel3Pct } = fuelStages;
-  if (t < s2time) return fuel1Pct;
-  if (t < s3time) return fuel2Pct;
-  return fuel3Pct;
+  for (const n of FUEL_STAGE_NUMBERS) {
+    if (t < fuelStages[`fuel${n}time`]) return fuelStages[`fuel${n}pct`];
+  }
+  return fuelStages.fuel6pct;
 }
 
 // Generic breakpoint-curve sampler: points is an array of {t, v} sorted by

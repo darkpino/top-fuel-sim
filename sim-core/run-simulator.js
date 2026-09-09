@@ -131,7 +131,8 @@ export function runSimulation(settings) {
     blowerOD, fuelPct, gasketThou, ignitionCurve,
     s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
     s4time, s4pct, s4speed, s5time, s5pct, s5speed, s6time, s6pct, s6speed,
-    fuel1Pct, fuel2Pct, fuel3Pct,
+    fuel1time, fuel1pct, fuel2time, fuel2pct, fuel3time, fuel3pct,
+    fuel4time, fuel4pct, fuel5time, fuel5pct, fuel6time, fuel6pct,
     fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt, driverShutoffFt,
     ballastFrontLb, ballastRearLb, frontWingPct, wheelieBarHeightIn,
     garageWeightDeltaLb = 0, garageWheelieRiskBallastEquivLb = 0, garageDragCdaMult = 1,
@@ -180,13 +181,12 @@ export function runSimulation(settings) {
     s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
     s4time, s4pct, s4speed, s5time, s5pct, s5speed, s6time, s6pct, s6speed,
   };
-  // Fuel curve still only has 3 phases (launch/lockup-pulldown/eindfase),
-  // sharing the clutch's own timing rather than a separate timer: fuel2
-  // (pulldown) starts when the clutch begins its pullback (s2time, same
-  // as before), fuel3 (eindfase) starts once the clutch reaches its final
-  // stage-6 target - full lockup, now the last of six stages instead of
-  // the third of three.
-  const fuelStages = { s2time, fuel1Pct, s3time: s6time, fuel2Pct, fuel3Pct };
+  // Fuel curve: its own independent 6-stage timer (see activeFuelPct in
+  // engine.js), no longer tied to the clutch's stage boundaries.
+  const fuelStages = {
+    fuel1time, fuel1pct, fuel2time, fuel2pct, fuel3time, fuel3pct,
+    fuel4time, fuel4pct, fuel5time, fuel5pct, fuel6time, fuel6pct,
+  };
   const fingerDesired = calcFingerDesired(fingerWeight);
 
   let t = 0, v = 0, x = 0, wheelV = 0;
@@ -264,7 +264,7 @@ export function runSimulation(settings) {
     peakIgnitionRetard = Math.max(peakIgnitionRetard, ignitionRetardDeg);
     ignEffIntegral += ignEff * DT;
     const { fuelVolFactor, mult } = calcMult({ fuelFactor, fuelVolPct: fuelVolPctNow, blowerFactor, ignEff, compressionFactor, powerMult });
-    const idealFuelPct = calcIdealFuelPct(rpm, fuel1Pct);
+    const idealFuelPct = calcIdealFuelPct(rpm, fuel1pct);
     const richness = calcMixtureRichness(fuelVolPctNow, idealFuelPct);
     richnessIntegral += richness * DT;
 
