@@ -16,6 +16,34 @@ const WEIGHT_LB = 2320;
 const V_FLOOR = 30;
 const CDA = 9.0;
 const RHO_REF = 0.00237;
+// Ballast: NHRA General Reg 4:2 permits up to 250 lb for cars running
+// 8.49s or quicker (Top Fuel qualifies), normally mounted in the front
+// wing tube - that's ballastFrontLb, capped at the slider level. Anything
+// placed elsewhere in the car (ballastRearLb) isn't subject to that same
+// nose-specific cap; both simply add to the car's total weight, but only
+// the nose ballast (and the wheelie bar / front wing settings below) do
+// anything for front-end lift risk.
+// Wheelie risk: how hard the launch is trying to pick the front end up,
+// net of what's fighting that - nose ballast, front wing "bite," and a
+// shorter wheelie bar (more leverage against the lift) all relieve it,
+// none of them eliminate it outright. Reuses avgEarlyLoad (already
+// computed for tire-shake risk) as the "how hard is the hit" input, since
+// that's the same quantity that determines how much force is trying to
+// rotate the car onto its rear wheels.
+const WHEELIE_BAR_MAX_IN = 4.0; // rulebook cap: racing surface to underside of wheels
+const WHEELIE_RISK_LOAD_COEFF = 1.0;
+const WHEELIE_RISK_BALLAST_RELIEF = 1 / 300; // risk relieved per lb of nose ballast
+const WHEELIE_RISK_WING_RELIEF = 1 / 150; // risk relieved per 1% front wing
+const WHEELIE_RISK_BAR_RELIEF = 0.15; // risk relieved per inch below the 4" max
+const WHEELIE_RISK_THRESHOLD = 0.55;
+// Front wing "hunting": too much front-end aero bite at real speed makes
+// the nose hunt side to side instead of tracking straight - the opposite
+// failure mode from too little (which just lets the front end come up,
+// covered by wheelie risk above). Scales with both how aggressive the
+// wing is set and how fast the car actually got, so a mild front wing
+// setting that never reaches speed where it'd matter doesn't flag.
+const FRONT_WING_HUNT_REF_MPH = 300;
+const FRONT_WING_HUNT_THRESHOLD = 0.85;
 // Rear wing: NHRA rules cap adjustable trim asymmetrically at +1 deg max /
 // -2 deg min from level (no max in Denver); the fixed wing itself produces
 // most of the ~5000-6000 lb of downforce at 300 mph.
@@ -101,10 +129,12 @@ export function runSimulation(settings) {
     s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
     fuel1Pct, fuel2Pct, fuel3Pct,
     fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt, driverShutoffFt,
+    ballastFrontLb, ballastRearLb, frontWingPct, wheelieBarHeightIn,
   } = settings;
 
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
   const powerMult = calcPowerMult(densityAltitude);
+  const weightLb = WEIGHT_LB + ballastFrontLb + ballastRearLb;
 
   // ignition: 40 is a throwaway - ignEff is no longer static, it's sampled
   // from ignitionCurve (and the retard system) fresh every timestep below.
@@ -235,7 +265,7 @@ export function runSimulation(settings) {
     const availableForce = Math.min(powerForce, LAUNCH_CAP) * throttle;
     const clutchSlipLoss = Math.max(0, availableForce - engineForce);
     const wingDownforce = WING_K * v * v;
-    const maxTraction = (WEIGHT_LB + wingDownforce) * baseGripCoeff * (1 + TIRE_PEAK_GRIP_BONUS);
+    const maxTraction = (weightLb + wingDownforce) * baseGripCoeff * (1 + TIRE_PEAK_GRIP_BONUS);
     const loadRatio = engineForce / maxTraction;
     let appliedForce, slipPct, slipping;
     if (engineForce > maxTraction) {
@@ -295,7 +325,7 @@ export function runSimulation(settings) {
     // much of the driveline is actually coupled (lf), not just aero.
     const engineBrakeForce = ENGINE_BRAKE_COEFF * (1 - throttle) * lf * v;
     const net = appliedForce - drag - engineBrakeForce;
-    const accel = net * 32.174 / WEIGHT_LB;
+    const accel = net * 32.174 / weightLb;
     v = Math.max(0, v + accel * DT);
     x += v * DT;
 
@@ -367,6 +397,17 @@ export function runSimulation(settings) {
   const avgEarlyLoad = earlyLoadCount ? earlyLoadSum / earlyLoadCount : 0;
   const tireShakeRisk = avgEarlyLoad > TIRE_SHAKE_LOAD_THRESHOLD && growthEfficiency < TIRE_SHAKE_EFFICIENCY_THRESHOLD;
 
+  // How hard the launch was trying to pick the front end up (avgEarlyLoad,
+  // the same "how loaded was the hit" figure tire shake uses), net of
+  // what's fighting that lift - nose ballast, front wing bite, and a
+  // wheelie bar riding lower than the 4" legal max.
+  const wheelieRisk = avgEarlyLoad * WHEELIE_RISK_LOAD_COEFF
+    - ballastFrontLb * WHEELIE_RISK_BALLAST_RELIEF
+    - frontWingPct * WHEELIE_RISK_WING_RELIEF
+    - (WHEELIE_BAR_MAX_IN - wheelieBarHeightIn) * WHEELIE_RISK_BAR_RELIEF
+    > WHEELIE_RISK_THRESHOLD;
+  const frontWingHuntRisk = (frontWingPct / 100) * (mph / FRONT_WING_HUNT_REF_MPH) > FRONT_WING_HUNT_THRESHOLD;
+
   return {
     finished, et, mph, et60, et330, et660, mph660, trace, densityAltitude,
     clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk, nitroIllegal, tireShakeRisk,
@@ -377,5 +418,6 @@ export function runSimulation(settings) {
     clutchWearLockupGainPct: peakWornGain * 100,
     peakIgnitionRetard,
     anySpin: trace.some(p => p.slip > 5),
+    weightLb, wheelieRisk, frontWingHuntRisk,
   };
 }

@@ -6,7 +6,7 @@ import { runSimulation } from "../sim-core/run-simulator.js";
 
 function $(id) { return document.getElementById(id); }
 
-const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "fuel2", "fuel3", "gasket", "ign1", "ign2", "ign3", "ign4", "ign5", "ign6", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "fw", "tpsi", "wing", "aggro", "shutoff"];
+const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "fuel2", "fuel3", "gasket", "ign1", "ign2", "ign3", "ign4", "ign5", "ign6", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "fw", "tpsi", "wing", "fwing", "wbar", "ballfront", "ballrear", "aggro", "shutoff"];
 
 function fmt(id, val) {
   switch (id) {
@@ -30,6 +30,9 @@ function fmt(id, val) {
     case "fw": return val;
     case "tpsi": return (val / 10).toFixed(1) + " psi";
     case "wing": return (val / 10).toFixed(1) + "°";
+    case "fwing": return val + "%";
+    case "wbar": return (val / 10).toFixed(1) + '"';
+    case "ballfront": case "ballrear": return val + " lb";
     case "aggro": return val;
     case "shutoff": return val + " ft";
   }
@@ -253,6 +256,10 @@ function readSettings() {
     fingerWeight: +$("fw").value,
     tirePsi: +$("tpsi").value / 10,
     wingAngle: +$("wing").value / 10,
+    frontWingPct: +$("fwing").value,
+    wheelieBarHeightIn: +$("wbar").value / 10,
+    ballastFrontLb: +$("ballfront").value,
+    ballastRearLb: +$("ballrear").value,
     driverAggressiveness: +$("aggro").value,
     driverWatchUntilFt: +$("watchft").value,
     driverShutoffFt: +$("shutoff").value,
@@ -302,6 +309,8 @@ $("runBtn").addEventListener("click", () => {
     else flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% liep te heet. Bij aanhouden loopt dit uit op motorschade.</div>`;
   }
   if (r.tireShakeRisk) flags += `<div class="flag">Tire shake-risico: de bandenspanning past niet goed bij deze baan terwijl de launch wel zwaar belast wordt — de band groeit niet goed in, wat in het echt een harde trilling geeft in plaats van een schone hook-up. Stel de bandenspanning bij richting de richtwaarde.</div>`;
+  if (r.wheelieRisk) flags += `<div class="flag">Wheelie-risico: de launch belast de voorkant zwaarder dan de neus-ballast, voorvleugel en wheeliebar samen kunnen compenseren — de voorwielen komen te ver los. Meer ballast op de neus, meer voorvleugel, of de wheeliebar lager zetten helpen hier tegen.</div>`;
+  if (r.frontWingHuntRisk) flags += `<div class="flag">De voorvleugel staat agressief genoeg, en de auto is snel genoeg, dat de besturing bij topsnelheid kan gaan "zoeken" (lichtjes heen en weer) in plaats van strak recht te lopen. Zet de voorvleugel iets terug.</div>`;
   if (r.peakIgnitionRetard > 15) flags += `<div class="flag">De retarder heeft flink ingegrepen (tot ${r.peakIgnitionRetard.toFixed(0)}° teruggetrokken) — het toerental zat ruim boven de 7.900 rpm-grens na 2,75s. Dat kost vermogen precies wanneer je het nodig hebt; zet de ontsteking in de latere punten wat conservatiever of werk aan wat het toerental daar zo hoog houdt.</div>`;
   if (r.nitroIllegal) flags += `<div class="flag">Deze run gebruikt meer dan 90% nitro — buiten het reglement, alleen geldig als testrun.</div>`;
   if (r.anySpin && !r.engineFailed) flags += `<div class="flag">Wielenspin gedetecteerd tijdens de run — motorvermogen overschreed de beschikbare grip.</div>`;
@@ -366,4 +375,7 @@ $("runBtn").addEventListener("click", () => {
   const retardCls = statusClass(r.peakIgnitionRetard, 8, 15);
   $("i-retard").textContent = r.peakIgnitionRetard > 0.1 ? `${r.peakIgnitionRetard.toFixed(1)}° teruggetrokken` : "niet geactiveerd";
   $("i-retard").className = "status " + (r.peakIgnitionRetard > 0.1 ? retardCls : "ok");
+
+  $("i-weight").textContent = `${Math.round(r.weightLb).toLocaleString("nl-NL")} lb`;
+  $("i-weight").className = "status ok";
 });

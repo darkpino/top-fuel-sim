@@ -65,6 +65,13 @@
         <div class="row"><label>Bandenspanning <span class="val" id="v-tpsi">7.5 psi</span></label><input type="range" id="tpsi" min="60" max="90" value="75" step="1"></div>
         <div class="row"><label>Vleugelhoek (trim) <span class="val" id="v-wing">0.0°</span></label><input type="range" id="wing" min="-20" max="10" value="0" step="1"></div>
         <p class="note">Bandenspanning: NHRA Top Fuel loopt doorgaans 6–9 psi. Vleugeltrim is volgens het reglement asymmetrisch begrensd: maximaal +1° positief en -2° negatief ten opzichte van vlak (in Denver geldt geen maximum).</p>
+        <div class="row"><label>Voorvleugel <span class="val" id="v-fwing">50%</span></label><input type="range" id="fwing" min="0" max="100" value="50" step="5"></div>
+        <p class="note">Het reglement begrenst de voorvleugel op breedte (max 63") en bodemspeling van de spoiler (max 5.00"), niet op een graden-hoek zoals de achtervleugel - dit is dus een relatieve instelling, geen letterlijk aantal graden. Weinig voorvleugel geeft weinig grip vóór: bij een harde launch willen de voorwielen dan te veel omhoog. Veel voorvleugel houdt de neus juist stevig laag, maar een té agressieve stand op hoge snelheid maakt de besturing "zoekend" (de neus gaat lichtjes heen en weer i.p.v. strak recht te lopen) in plaats van stabieler.</p>
+        <div class="row"><label>Wheeliebar hoogte <span class="val" id="v-wbar">2.5"</span></label><input type="range" id="wbar" min="10" max="40" value="25" step="1"></div>
+        <p class="note">Hoogte van wegdek tot onderkant wielen; het reglement staat maximaal 4 inch toe. Lager geeft meer hefboom tegen wheelies (stabieler bij een harde hit), hoger laat de neus verder los komen.</p>
+        <div class="row"><label>Ballast — neus (voorvleugelbuis) <span class="val" id="v-ballfront">0 lb</span></label><input type="range" id="ballfront" min="0" max="250" value="0" step="5"></div>
+        <div class="row"><label>Ballast — overig (vrij te plaatsen) <span class="val" id="v-ballrear">0 lb</span></label><input type="range" id="ballrear" min="0" max="150" value="0" step="5"></div>
+        <p class="note">Het reglement staat maximaal 250 lb ballast toe, standaard gemonteerd in de voorvleugelbuis - dat is de eerste schuif. Los daarvan mag je verder in de auto nog vrij extra ballast plaatsen (bijv. om het zwaartepunt te verschuiven); dat is de tweede schuif. Beide tellen gewoon mee in het totaalgewicht - meer ballast is altijd een tijdoffer, maar neus-ballast houdt de voorwielen wel beter aan de grond.</p>
       </div>
 
       <div class="panel">
@@ -138,6 +145,7 @@
           <div class="insp"><div class="lbl">Rijdersactie</div><div class="status" id="i-driver">--</div></div>
           <div class="insp"><div class="lbl">Cilinders</div><div class="status" id="i-cyl">--</div></div>
           <div class="insp"><div class="lbl">Ontstekingsretarder</div><div class="status" id="i-retard">--</div></div>
+          <div class="insp"><div class="lbl">Totaalgewicht</div><div class="status" id="i-weight">--</div></div>
         </div>
       </div>
     </div>
