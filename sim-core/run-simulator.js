@@ -42,6 +42,19 @@ const HEAT_GLAZE_LOSS = 0.35;
 // aero drag, is why an early lift costs real time and trap speed instead
 // of just gently coasting out the rest of the pass.
 const ENGINE_BRAKE_COEFF = 12;
+// The launch itself gets a mechanical advantage that steady-state grip/
+// torque numbers don't capture: hard weight transfer onto the rear
+// slicks plus tire growth swells the contact patch right at the hit
+// (grip side), and a clutch pack's static friction bites harder than its
+// settled sliding friction the instant it takes load (torque side). Both
+// fade out as the car gets rolling - by ~100mph the weight transfer has
+// normalized and the pack has settled into steady engagement - which is
+// exactly why a strong 60ft (low .8s) pairs with a mid-3s ET instead of
+// the whole run just being uniformly quicker: the bonus only touches the
+// first couple hundred feet.
+const LAUNCH_GRIP_BONUS = 1.5;
+const LAUNCH_TORQUE_BONUS = 0.5;
+const LAUNCH_BONUS_DECAY_FTS = 150; // ~102 mph
 const DT = 0.004;
 const MAX_T = 10.0;
 // Holding lockup back to stay under the traction ceiling isn't free: the
@@ -161,8 +174,9 @@ export function runSimulation(settings) {
     // re-anchoring fuelFactor to hit 1.0 at the 90% legal nitro max (was
     // ~1.12 at 90% under the old formula) reproduces the exact same power
     // at 90% as before - the reference point moved, not the calibration.
-    const LAUNCH_CAP = 14583 * mult;
-    const POWER_HP = 7291 * mult;
+    const launchBonusFrac = Math.max(0, 1 - v / LAUNCH_BONUS_DECAY_FTS);
+    const LAUNCH_CAP = 14583 * mult * (1 + LAUNCH_TORQUE_BONUS * launchBonusFrac);
+    const POWER_HP = 7291 * mult * (1 + LAUNCH_TORQUE_BONUS * launchBonusFrac);
 
     const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, driverShutoffFt, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
@@ -176,7 +190,7 @@ export function runSimulation(settings) {
     const availableForce = Math.min(powerForce, LAUNCH_CAP) * throttle;
     const clutchSlipLoss = Math.max(0, availableForce - engineForce);
     const wingDownforce = WING_K * v * v;
-    const maxTraction = (WEIGHT_LB + wingDownforce) * baseGripCoeff;
+    const maxTraction = (WEIGHT_LB + wingDownforce) * baseGripCoeff * (1 + LAUNCH_GRIP_BONUS * launchBonusFrac);
     let appliedForce, slipPct, slipping;
     if (engineForce > maxTraction) {
       slipPct = Math.min(100, ((engineForce - maxTraction) / engineForce) * 100);
