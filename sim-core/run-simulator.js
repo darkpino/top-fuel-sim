@@ -20,12 +20,6 @@ const RHO_REF = 0.00237;
 // -2 deg min from level (no max in Denver); the fixed wing itself produces
 // most of the ~5000-6000 lb of downforce at 300 mph.
 const WING_BASE_K = 0.0284;
-// Effective rotating-mass weight for the rear wheel/driveline: much lower
-// than the car's weight, so a spinning tire can rev up far faster than the
-// chassis accelerates - this is what produces the characteristic early
-// wheel-speed spike above ground speed on real telemetry traces.
-const WHEEL_WEIGHT_LB = 260;
-const MAX_SLIP_EXCESS_FTS = 260;
 // Clutch temperature builds from tire slip AND from the clutch's own
 // internal slip (see CLUTCH_SLIP_HEAT_RATE below), and makes the pack
 // grabbier (aggressiveness boost) up to a point - but past HEAT_GLAZE_START
@@ -193,7 +187,7 @@ export function runSimulation(settings) {
     peakWornGain = Math.max(peakWornGain, wornFingerDesired - fingerDesired);
     const lf = Math.min(wornFingerDesired, bearingPos) * heatBoost;
 
-    const rpm = calcEngineRpm({ t, groundSpeedFtS: v, s2time, s3time });
+    const rpm = calcEngineRpm({ t, groundSpeedFtS: v, s1time, s2time, s3time, s1pct, s2pct, s3pct, priorSlipPct: lastSlipPct });
     const fuelVolPctNow = activeFuelPct(t, fuelStages);
     // Ignition is a curve too now, and the retard system (real safety
     // equipment on cars like these, not a driver-tunable knob) can pull
@@ -306,9 +300,17 @@ export function runSimulation(settings) {
     x += v * DT;
 
     if (slipping) {
-      const wheelAccel = (engineForce - appliedForce) * 32.174 / WHEEL_WEIGHT_LB + accel;
-      wheelV = Math.min(v + MAX_SLIP_EXCESS_FTS, wheelV + wheelAccel * DT);
-      if (wheelV < v) wheelV = v;
+      // Wheel speed excess now comes directly from the same force-based
+      // slip% that already governs the efficiency penalty above, instead of
+      // a separately integrated "rotating mass" model - that model had no
+      // ceiling tied to what the tire was actually costing in forward
+      // force, so a sustained ~30% force slip (a real but modest amount -
+      // nowhere near a full smoked-tire burnout) could still integrate the
+      // displayed wheel speed up to 100+mph above ground speed. Treating
+      // slipPct as a standard tire slip ratio - (wheelV-v)/wheelV - keeps
+      // the number exactly as "smoky" as the ET consequence it's paired
+      // with: 30% slip reads as ~1.4x ground speed, not a runaway spike.
+      wheelV = v / (1 - Math.min(slipPct, 90) / 100);
     } else {
       // Below the smoke ceiling the tire is still visibly running ahead of
       // ground speed on a real data logger - it's growing into its patch,

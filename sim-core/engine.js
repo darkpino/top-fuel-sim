@@ -90,33 +90,50 @@ export function calcRecommendedNitro(powerMultNow) {
 }
 
 // Engine RPM: informational channel (same status as "geschat piekvermogen"),
-// not a calibrated output like ET/mph. Real onboard RPM traces (data
-// loggers, not driver lore) show a sharp rise off the line to a plateau
-// that then holds FLAT for nearly the whole run - not a pronounced dip and
-// climb. Top Fuel runs no gearbox, so the clutch is the only thing between
-// engine and wheel, and it's tuned specifically to keep RPM flat despite
-// ground speed climbing; the "pulldown" crew chiefs tune the fuel curve
-// around is a real but comparatively subtle sag layered on top of that
-// flat band, centered on the clutch's s2->s3 lockup ramp where the load
-// spikes hardest.
+// not a calibrated output like ET/mph. Top Fuel runs no gearbox, so the
+// clutch is the only thing between engine and wheel, tuned specifically to
+// hold RPM in a fairly narrow band despite ground speed climbing - but
+// "narrow band" is not "dead flat": real onboard traces show visible
+// texture layered on that band, from two distinct sources this now
+// models explicitly instead of one authored sine bump:
+// 1) A pulldown SAG whenever the clutch's own stage curve asks for MORE
+//    lockup than it's currently holding - the crank fighting a sudden
+//    increase in mechanical resistance. Sized by how big that stage's
+//    actual lockup jump is (so a gentler tune shows a gentler dip, an
+//    aggressive one a deeper one), not a fixed number - and evaluated at
+//    BOTH stage transitions (s1->s2 and s2->s3), not just one. When a
+//    transition is actually a lockup RELEASE (s2pct < s1pct, a common,
+//    deliberate tune to save the tires after the initial hit), that
+//    transition's dip is correctly zero - less load doesn't sag RPM.
+// 2) A FLARE whenever the tire was slipping the previous instant - the
+//    opposite regime from a lockup sag: the tire breaking loose lets the
+//    engine rev past the band rather than bog down against one, exactly
+//    the launch spike real telemetry shows at the hit before the tire
+//    hooks and the clutch takes hold. Uses the previous timestep's slip%
+//    (run-simulator.js's established one-step-delay pattern) since actual
+//    slip isn't known until force/traction are resolved later in the same
+//    step.
 const STAGING_RPM = 3000; // idling, staged, before the tree drops
-const LAUNCH_RPM = 8600; // the flat plateau band the clutch holds RPM in
-const RISE_DURATION = 0.3; // s - how fast RPM climbs off the line to the plateau
-const PULLDOWN_DEPTH_RPM = 400;
+const LAUNCH_RPM = 8600; // the band the clutch is tuned to hold RPM in
+const RISE_DURATION = 0.3; // s - how fast RPM climbs off the line to the band
+const PULLDOWN_RPM_PER_LOCKUP_FRAC = 700; // rpm sag per 1.0 (100%) of lockup jump
+const FLARE_RPM_PER_SLIP_PCT = 15; // rpm flare per 1% of tire slip
 const DRIFT_RPM_PER_FTS = 0.3; // faint drift with speed - the band is not perfectly flat
 
-function pulldownBump(t, s2time, s3time) {
-  if (t < s2time || t >= s3time) return 0;
-  const frac = (t - s2time) / Math.max(0.001, s3time - s2time);
+function pulldownBump(t, fromTime, toTime) {
+  if (t < fromTime || t >= toTime) return 0;
+  const frac = (t - fromTime) / Math.max(0.001, toTime - fromTime);
   return Math.sin(Math.PI * frac); // 0 at both edges, 1 at the midpoint
 }
 
-export function calcEngineRpm({ t, groundSpeedFtS, s2time, s3time }) {
+export function calcEngineRpm({ t, groundSpeedFtS, s1time, s2time, s3time, s1pct, s2pct, s3pct, priorSlipPct }) {
   const riseFrac = Math.min(1, t / RISE_DURATION);
   const plateau = STAGING_RPM + (LAUNCH_RPM - STAGING_RPM) * riseFrac;
   const drift = DRIFT_RPM_PER_FTS * groundSpeedFtS;
-  const dip = PULLDOWN_DEPTH_RPM * pulldownBump(t, s2time, s3time);
-  return plateau + drift - dip;
+  const dip1 = PULLDOWN_RPM_PER_LOCKUP_FRAC * Math.max(0, s2pct - s1pct) * pulldownBump(t, s1time, s2time);
+  const dip2 = PULLDOWN_RPM_PER_LOCKUP_FRAC * Math.max(0, s3pct - s2pct) * pulldownBump(t, s2time, s3time);
+  const flare = FLARE_RPM_PER_SLIP_PCT * Math.max(0, priorSlipPct || 0);
+  return plateau + drift - dip1 - dip2 + flare;
 }
 
 // Fuel flow: a nitro fuel pump is a positive-displacement gear pump driven
@@ -143,7 +160,7 @@ export function calcFuelFlowGpm(rpm, fuelVolFactor) {
 // spike - that transient isn't a mixture problem, just the motor coming up
 // to speed.
 export function calcIdealFuelPct(rpm, referenceFuelPct) {
-  const rpmFloor = LAUNCH_RPM - PULLDOWN_DEPTH_RPM;
+  const rpmFloor = LAUNCH_RPM - PULLDOWN_RPM_PER_LOCKUP_FRAC;
   return referenceFuelPct * (LAUNCH_RPM / Math.max(rpm, rpmFloor));
 }
 

@@ -171,8 +171,8 @@ function drawChart(trace, splits) {
   $("traceChart").innerHTML = svg;
 }
 
-function drawEngineChart(trace) {
-  const W = 640, H = 200, padL = 48, padR = 66, padT = 10, padB = 22;
+function drawEngineChart(trace, splits) {
+  const W = 640, H = 200, padL = 48, padR = 66, padT = 10, padB = 34;
   const maxT = trace[trace.length - 1].t;
   function xs(t) { return padL + (t / maxT) * (W - padL - padR); }
 
@@ -205,9 +205,19 @@ function drawEngineChart(trace) {
     gridLines += `<text x="${W - padR + 34}" y="${yy + 4}" text-anchor="start" font-size="9" fill="#5ec8d8" font-family="ui-monospace,monospace">${gpmVal}</text>`;
   }
 
+  let splitLines = "";
+  (splits || []).forEach(s => {
+    if (s.t == null) return;
+    const sx = xs(Math.min(s.t, maxT));
+    splitLines += `<line x1="${sx.toFixed(1)}" y1="${padT}" x2="${sx.toFixed(1)}" y2="${H - padB}" stroke="#5f5e5a" stroke-width="1" stroke-dasharray="3,3"/>`;
+    splitLines += `<text x="${sx.toFixed(1)}" y="${H - padB + 13}" text-anchor="middle" font-size="9" fill="#8b939b" font-family="ui-monospace,monospace">${s.label}</text>`;
+    splitLines += `<text x="${sx.toFixed(1)}" y="${H - padB + 25}" text-anchor="middle" font-size="9" fill="#5f5e5a" font-family="ui-monospace,monospace">${s.t.toFixed(2)}s</text>`;
+  });
+
   const svg = `
     ${gridLines}
     <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#2c333b" stroke-width="1"/>
+    ${splitLines}
     <line x1="${armX.toFixed(1)}" y1="${padT}" x2="${armX.toFixed(1)}" y2="${H - padB}" stroke="#e0b34a" stroke-width="1" stroke-dasharray="3,3"/>
     <text x="${armX.toFixed(1)}" y="${padT + 9}" font-size="9" fill="#e0b34a" font-family="ui-monospace,monospace">retarder armed</text>
     <path d="${gpmPath}" fill="none" stroke="#5ec8d8" stroke-width="1.5" opacity="0.85"/>
@@ -263,13 +273,14 @@ $("runBtn").addEventListener("click", () => {
   $("r-et").style.color = r.finished ? "var(--text)" : "var(--red)";
   $("r-mph").textContent = r.mph.toFixed(1) + " mph";
 
-  drawChart(r.trace, [
+  const splits = [
     { label: "60'", t: r.et60 },
     { label: "330'", t: r.et330 },
     { label: "660'", t: r.et660 },
     { label: r.finished ? "1000'" : null, t: r.finished ? r.et : null },
-  ]);
-  drawEngineChart(r.trace);
+  ];
+  drawChart(r.trace, splits);
+  drawEngineChart(r.trace, splits);
 
   const spinFlag = $("spinFlag");
   let flags = "";
