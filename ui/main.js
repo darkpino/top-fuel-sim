@@ -1,12 +1,12 @@
 import { calcDensityAltitude, calcPowerMult, calcGripCoeff } from "../sim-core/environment.js";
-import { calcEngineFactors, calcMult, calcRecommendedNitro } from "../sim-core/engine.js";
+import { calcEngineFactors, calcMult, calcRecommendedNitro, calcIgnEff, IGNITION_CURVE_TIMES, IGNITION_RETARD_ARM_TIME, IGNITION_REDLINE_RPM } from "../sim-core/engine.js";
 import { calcClutchReach } from "../sim-core/clutch.js";
 import { calcOptimalPsi, calcPsiPenalty } from "../sim-core/tires.js";
 import { runSimulation } from "../sim-core/run-simulator.js";
 
 function $(id) { return document.getElementById(id); }
 
-const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "fuel2", "fuel3", "gasket", "ign", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "fw", "tpsi", "wing", "aggro", "shutoff"];
+const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "fuel2", "fuel3", "gasket", "ign1", "ign2", "ign3", "ign4", "ign5", "ign6", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "fw", "tpsi", "wing", "aggro", "shutoff"];
 
 function fmt(id, val) {
   switch (id) {
@@ -19,7 +19,7 @@ function fmt(id, val) {
     case "fuel": return val + "%";
     case "fuel1": case "fuel2": case "fuel3": return val + "%";
     case "gasket": return (val / 1000).toFixed(3) + '"';
-    case "ign": return val + "°";
+    case "ign1": case "ign2": case "ign3": case "ign4": case "ign5": case "ign6": return val + "°";
     case "s1t": return (val / 100).toFixed(2) + "s";
     case "s1p": return val + "%";
     case "s2t": return (val / 100).toFixed(2) + "s";
@@ -81,14 +81,14 @@ function updateEngineHints() {
   const fuelPct = +$("fuel").value;
   const fuel1Pct = +$("fuel1").value;
   const gasketThou = +$("gasket").value;
-  const ignition = +$("ign").value;
+  const ignition = +$("ign1").value; // launch-point ignition, for this one-off "at launch" estimate
   const tirePsi = +$("tpsi").value / 10;
 
   const da = calcDensityAltitude(airtempC, humidity, baroInHg);
   const powerMultNow = calcPowerMult(da);
-  const { fuelFactor, blowerFactor, ignEff, compressionFactor } = calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition });
-  const { mult } = calcMult({ fuelFactor, fuelVolPct: fuel1Pct, blowerFactor, ignEff, compressionFactor, powerMult: powerMultNow });
-  $("power-hint").textContent = `Geschat piekvermogen bij launch: ${Math.round(12000 * mult).toLocaleString("nl-NL")} pk (basis 12.000 pk bij standaard lucht, voor eigen koppeling/grip-verlies; verandert tijdens de run met de brandstofcurve)`;
+  const { fuelFactor, blowerFactor, compressionFactor } = calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition });
+  const { mult } = calcMult({ fuelFactor, fuelVolPct: fuel1Pct, blowerFactor, ignEff: calcIgnEff(ignition), compressionFactor, powerMult: powerMultNow });
+  $("power-hint").textContent = `Geschat piekvermogen bij launch: ${Math.round(12000 * mult).toLocaleString("nl-NL")} pk (basis 12.000 pk bij standaard lucht, voor eigen koppeling/grip-verlies; verandert tijdens de run met de brandstof- en ontstekingscurve)`;
 
   const recommendedNitro = calcRecommendedNitro(powerMultNow);
   const hint = $("nitro-hint");
@@ -121,7 +121,7 @@ function updateEngineHints() {
   const gripKN = Math.round(2600 + Math.max(0, Math.min(1, (gripEstimate - 0.6) / 6.0)) * 800);
   gripHint.textContent = `Effectieve grip: ${gripKN} kN (${tempQuality})`;
 }
-["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "gasket", "ign", "tpsi"].forEach(id => {
+["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1", "gasket", "ign1", "tpsi"].forEach(id => {
   $(id).addEventListener("input", updateEngineHints);
 });
 updateEngineHints();
@@ -228,6 +228,39 @@ function drawRpmChart(trace) {
   $("rpmChart").innerHTML = svg;
 }
 
+function drawIgnitionChart(trace) {
+  const W = 640, H = 140, padL = 42, padR = 12, padT = 10, padB = 22;
+  const vals = trace.flatMap(p => [p.ignition_set, p.ignition_effective]);
+  const minV = Math.min(...vals) - 2;
+  const maxV = Math.max(...vals) + 2;
+  const maxT = trace[trace.length - 1].t;
+  function xs(t) { return padL + (t / maxT) * (W - padL - padR); }
+  function ys(v) { return H - padB - ((v - minV) / (maxV - minV)) * (H - padT - padB); }
+
+  const setPath = "M " + trace.map(p => `${xs(p.t).toFixed(1)},${ys(p.ignition_set).toFixed(1)}`).join(" L ");
+  const effPath = "M " + trace.map(p => `${xs(p.t).toFixed(1)},${ys(p.ignition_effective).toFixed(1)}`).join(" L ");
+  const armX = xs(Math.min(IGNITION_RETARD_ARM_TIME, maxT));
+
+  let gridLines = "";
+  for (let i = 0; i <= 2; i++) {
+    const yy = padT + i * (H - padT - padB) / 2;
+    const val = Math.round(maxV - i * (maxV - minV) / 2);
+    gridLines += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="#2c333b" stroke-width="1"/>`;
+    gridLines += `<text x="${padL - 6}" y="${yy + 4}" text-anchor="end" font-size="10" fill="#8b939b" font-family="ui-monospace,monospace">${val}°</text>`;
+  }
+
+  const svg = `
+    ${gridLines}
+    <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#2c333b" stroke-width="1"/>
+    <line x1="${armX.toFixed(1)}" y1="${padT}" x2="${armX.toFixed(1)}" y2="${H - padB}" stroke="#e0b34a" stroke-width="1" stroke-dasharray="3,3"/>
+    <text x="${armX.toFixed(1)}" y="${padT + 9}" font-size="9" fill="#e0b34a" font-family="ui-monospace,monospace">retarder armed</text>
+    <path d="${setPath}" fill="none" stroke="#7a8fae" stroke-width="2" stroke-dasharray="4,3"/>
+    <path d="${effPath}" fill="none" stroke="#e0704a" stroke-width="2"/>
+  `;
+  $("ignitionChart").setAttribute("viewBox", `0 0 ${W} ${H}`);
+  $("ignitionChart").innerHTML = svg;
+}
+
 function statusClass(val, warnAt, badAt) {
   if (val >= badAt) return "bad";
   if (val >= warnAt) return "warn";
@@ -247,7 +280,7 @@ function readSettings() {
     fuel2Pct: +$("fuel2").value,
     fuel3Pct: +$("fuel3").value,
     gasketThou: +$("gasket").value,
-    ignition: +$("ign").value,
+    ignitionCurve: ["ign1", "ign2", "ign3", "ign4", "ign5", "ign6"].map(id => +$(id).value),
     ...readClutchStages(),
     fingerWeight: +$("fw").value,
     tirePsi: +$("tpsi").value / 10,
@@ -280,6 +313,7 @@ $("runBtn").addEventListener("click", () => {
   ]);
   drawFuelChart(r.trace);
   drawRpmChart(r.trace);
+  drawIgnitionChart(r.trace);
 
   const spinFlag = $("spinFlag");
   let flags = "";
@@ -301,6 +335,7 @@ $("runBtn").addEventListener("click", () => {
     else flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% liep te heet. Bij aanhouden loopt dit uit op motorschade.</div>`;
   }
   if (r.tireShakeRisk) flags += `<div class="flag">Tire shake-risico: de bandenspanning past niet goed bij deze baan terwijl de launch wel zwaar belast wordt — de band groeit niet goed in, wat in het echt een harde trilling geeft in plaats van een schone hook-up. Stel de bandenspanning bij richting de richtwaarde.</div>`;
+  if (r.peakIgnitionRetard > 15) flags += `<div class="flag">De retarder heeft flink ingegrepen (tot ${r.peakIgnitionRetard.toFixed(0)}° teruggetrokken) — het toerental zat ruim boven de 7.900 rpm-grens na 2,75s. Dat kost vermogen precies wanneer je het nodig hebt; zet de ontsteking in de latere punten wat conservatiever of werk aan wat het toerental daar zo hoog houdt.</div>`;
   if (r.nitroIllegal) flags += `<div class="flag">Deze run gebruikt meer dan 90% nitro — buiten het reglement, alleen geldig als testrun.</div>`;
   if (r.anySpin && !r.engineFailed) flags += `<div class="flag">Wielenspin gedetecteerd tijdens de run — motorvermogen overschreed de beschikbare grip.</div>`;
   if (r.detonationRisk && !r.engineFailed) flags += `<div class="flag">Detonatierisico: hoge compressie + hoog nitropercentage + veel voorontsteking is een gevaarlijke combinatie.</div>`;
@@ -360,4 +395,8 @@ $("runBtn").addEventListener("click", () => {
   else { cylTxt = "alle vuren"; cylCls = "ok"; }
   $("i-cyl").textContent = cylTxt;
   $("i-cyl").className = "status " + cylCls;
+
+  const retardCls = statusClass(r.peakIgnitionRetard, 8, 15);
+  $("i-retard").textContent = r.peakIgnitionRetard > 0.1 ? `${r.peakIgnitionRetard.toFixed(1)}° teruggetrokken` : "niet geactiveerd";
+  $("i-retard").className = "status " + (r.peakIgnitionRetard > 0.1 ? retardCls : "ok");
 });

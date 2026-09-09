@@ -5,6 +5,7 @@ import { calcDensityAltitude, calcPowerMult, calcGripCoeff } from "./environment
 import {
   calcEngineFactors, calcMult, calcEngineRpm, calcFuelFlowGpm,
   calcIdealFuelPct, calcMixtureRichness, activeFuelPct,
+  calcIgnEff, activeIgnition, calcIgnitionRetard,
 } from "./engine.js";
 import { activeSetpoint, activeSpeed, calcFingerDesired, calcWornFingerDesired, stepBearingPos } from "./clutch.js";
 import { calcOptimalPsi, calcPsiPenalty, calcTireWear } from "./tires.js";
@@ -101,7 +102,7 @@ const CYLINDER_DROP_FORCE_PENALTY = 0.85; // one or more cylinders misfiring
 export function runSimulation(settings) {
   const {
     airtempC, humidity, baroInHg, trackTempC, gripSliderPct,
-    blowerOD, fuelPct, gasketThou, ignition,
+    blowerOD, fuelPct, gasketThou, ignitionCurve,
     s1time, s1pct, s1speed, s2time, s2pct, s2speed, s3time, s3pct, s3speed,
     fuel1Pct, fuel2Pct, fuel3Pct,
     fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt, driverShutoffFt,
@@ -110,8 +111,10 @@ export function runSimulation(settings) {
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
   const powerMult = calcPowerMult(densityAltitude);
 
-  const { fuelFactor, blowerFactor, compressionFactor, ignEff, heatRisk, detonationRisk, nitroIllegal } =
-    calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition });
+  // ignition: 40 is a throwaway - ignEff is no longer static, it's sampled
+  // from ignitionCurve (and the retard system) fresh every timestep below.
+  const { fuelFactor, blowerFactor, compressionFactor, heatRisk, detonationRisk, nitroIllegal } =
+    calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition: 40 });
 
   const optimalPsi = calcOptimalPsi(trackTempC);
   const psiPenalty = calcPsiPenalty(tirePsi, optimalPsi);
@@ -169,6 +172,8 @@ export function runSimulation(settings) {
   let peakWornGain = 0;
   let earlyLoadSum = 0;
   let earlyLoadCount = 0;
+  let peakIgnitionRetard = 0;
+  let ignEffIntegral = 0;
 
   while (x < 1000 && t < MAX_T) {
     const target = activeSetpoint(t, stages);
@@ -188,6 +193,15 @@ export function runSimulation(settings) {
 
     const rpm = calcEngineRpm({ t, groundSpeedFtS: v, s2time, s3time });
     const fuelVolPctNow = activeFuelPct(t, fuelStages);
+    // Ignition is a curve too now, and the retard system (real safety
+    // equipment on cars like these, not a driver-tunable knob) can pull
+    // timing further out on top of it once armed - see engine.js for both.
+    const ignitionSet = activeIgnition(t, ignitionCurve);
+    const ignitionRetardDeg = calcIgnitionRetard(t, rpm);
+    const ignitionEffective = ignitionSet - ignitionRetardDeg;
+    const ignEff = calcIgnEff(ignitionEffective);
+    peakIgnitionRetard = Math.max(peakIgnitionRetard, ignitionRetardDeg);
+    ignEffIntegral += ignEff * DT;
     const { fuelVolFactor, mult } = calcMult({ fuelFactor, fuelVolPct: fuelVolPctNow, blowerFactor, ignEff, compressionFactor, powerMult });
     const idealFuelPct = calcIdealFuelPct(rpm, fuel1Pct);
     const richness = calcMixtureRichness(fuelVolPctNow, idealFuelPct);
@@ -300,7 +314,7 @@ export function runSimulation(settings) {
     if (et60 === null && x >= 60) et60 = t;
     if (et330 === null && x >= 330) et330 = t;
     if (et660 === null && x >= 660) { et660 = t; mph660 = v / 1.4667; }
-    trace.push({ t, x, v_mph: v / 1.4667, wheel_mph: wheelV / 1.4667, slip: slipPct, clutch_pos: bearingPos * 100, effective_lockup: Math.min(1, lf) * 100, fuel_gpm: fuelGpm, rpm });
+    trace.push({ t, x, v_mph: v / 1.4667, wheel_mph: wheelV / 1.4667, slip: slipPct, clutch_pos: bearingPos * 100, effective_lockup: Math.min(1, lf) * 100, fuel_gpm: fuelGpm, rpm, ignition_set: ignitionSet, ignition_retard: ignitionRetardDeg, ignition_effective: ignitionEffective });
     t += DT;
   }
 
@@ -318,7 +332,8 @@ export function runSimulation(settings) {
   // a hotter motor burns fuel more completely, reading slightly leaner for
   // the same delivered mixture.
   const avgRichness = richnessIntegral / Math.max(et, 0.001);
-  const plugBalance = avgRichness + (compressionFactor - 1) * 0.3 - (ignEff - 1) * 0.5;
+  const avgIgnEff = ignEffIntegral / Math.max(et, 0.001);
+  const plugBalance = avgRichness + (compressionFactor - 1) * 0.3 - (avgIgnEff - 1) * 0.5;
   // Bearing wear now tracks the same clutchDamage clock that drives
   // failure risk AND the widening finger-to-bearing gap (see
   // calcWornFingerDesired) - it's the direct readout of how much extra
@@ -342,6 +357,7 @@ export function runSimulation(settings) {
     clutchFailed, clutchFailTime,
     driverLifted: driverState.lifted, driverLiftTime: driverState.liftTime, driverLiftReason: driverState.liftReason, pedalCount: driverState.pedalCount,
     clutchWearLockupGainPct: peakWornGain * 100,
+    peakIgnitionRetard,
     anySpin: trace.some(p => p.slip > 5),
   };
 }

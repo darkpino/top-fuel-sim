@@ -19,11 +19,22 @@
 // more nitro WOULD do, but anything past 90% is flagged illegal rather
 // than silently treated as a normal tuning knob.
 const LEGAL_NITRO_MAX = 90;
+
+// Ignition efficiency peaks at 40deg (the reference "optimal" advance) and
+// falls off symmetrically either side - too little advance leaves power on
+// the table, too much risks detonation (see heatRisk below, which doesn't
+// yet fold ignition in - a static per-run number wasn't worth it, but see
+// activeIgnition()/calcIgnitionRetard() for why this is now evaluated per
+// instant instead of once for the whole run).
+export function calcIgnEff(ignitionDeg) {
+  return 1 - Math.abs(ignitionDeg - 40) / 40 * 0.30;
+}
+
 export function calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition }) {
   const fuelFactor = 0.60 + (fuelPct - 75) / 15 * 0.40;
   const blowerNorm = Math.max(0, (blowerOD - 20) / 50);
   const blowerFactor = 0.85 + Math.sqrt(blowerNorm) * 0.27;
-  const ignEff = 1 - Math.abs(ignition - 40) / 40 * 0.30;
+  const ignEff = calcIgnEff(ignition);
   const compressionFactor = 0.85 + (60 - gasketThou) / 35 * 0.27;
   const nitroIllegal = fuelPct > LEGAL_NITRO_MAX;
 
@@ -132,4 +143,60 @@ export function activeFuelPct(t, fuelStages) {
   if (t < s2time) return fuel1Pct;
   if (t < s3time) return fuel2Pct;
   return fuel3Pct;
+}
+
+// Generic breakpoint-curve sampler: points is an array of {t, v} sorted by
+// t. Linearly interpolates between the two bracketing points; clamps to the
+// first/last value outside the covered range. Shared by any curve that's
+// dialed in as a handful of (time, value) points rather than a formula.
+export function sampleCurve(t, points) {
+  if (t <= points[0].t) return points[0].v;
+  for (let i = 1; i < points.length; i++) {
+    if (t <= points[i].t) {
+      const a = points[i - 1], b = points[i];
+      const frac = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
+      return a.v + (b.v - a.v) * frac;
+    }
+  }
+  return points[points.length - 1].v;
+}
+
+// Ontsteking is now a 6-point curve like the fuel/clutch timers, sampled at
+// fixed checkpoints through the run rather than one static number for the
+// whole pass - real ignition boxes (MSD Power Grid and similar) step timing
+// through several programmed points, not just launch-vs-cruise. 2.75s is
+// deliberately one of the checkpoints: that's also where the retard system
+// below arms itself, so a crew chief can see and shape exactly what the
+// curve is doing right as the safety system comes online.
+export const IGNITION_CURVE_TIMES = [0, 0.5, 1.0, 1.5, 2.75, 4.0];
+
+export function activeIgnition(t, ignitionCurve) {
+  const points = IGNITION_CURVE_TIMES.map((ct, i) => ({ t: ct, v: ignitionCurve[i] }));
+  return sampleCurve(t, points);
+}
+
+// Real Top Fuel ignition boxes (e.g. MSD's Power Grid) carry a built-in
+// overspeed protection: time-blocked for the first couple seconds so it
+// can't interfere with normal launch wheelspin, then arms itself and pulls
+// timing out (dynamically, up to a hard cap) any time RPM creeps past the
+// class redline. This is NOT a tuning knob the driver dials in - it's
+// safety equipment that kicks in on top of whatever ignition curve was
+// set, same as it does in the real car.
+export const IGNITION_RETARD_ARM_TIME = 2.75; // s - blocked before this
+export const IGNITION_REDLINE_RPM = 7900; // NHRA Top Fuel max
+export const IGNITION_MAX_RETARD_DEG = 30; // hard cap on pull-out
+// Our RPM channel's own plateau (see LAUNCH_RPM below) already sits a few
+// hundred rpm above this redline by design (it's an indicative "how hard
+// is it spinning" channel, not literally redline-limited on its own) - so
+// a steep gain would slam to max retard the instant the system arms, on
+// every run, which isn't what "safety net for an aggressive tune" means.
+// This gain keeps a normal run's steady-state overshoot in a modest,
+// single-digit-degrees range and only climbs toward the 30deg cap for a
+// real excursion on top of that.
+const IGNITION_RETARD_GAIN = 30 / 2500; // deg per rpm over redline
+
+export function calcIgnitionRetard(t, rpm) {
+  if (t < IGNITION_RETARD_ARM_TIME) return 0;
+  const over = Math.max(0, rpm - IGNITION_REDLINE_RPM);
+  return Math.min(IGNITION_MAX_RETARD_DEG, over * IGNITION_RETARD_GAIN);
 }
