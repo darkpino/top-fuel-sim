@@ -944,6 +944,20 @@ function populateGarageSelects() {
 }
 populateGarageSelects();
 
+// Klikken op een onderdeel in de dragster-tekening springt naar (en licht
+// even op) de bijbehorende sectie in het Auto bouwen-paneel.
+document.querySelectorAll("#dragster-diagram .diagram-part").forEach(el => {
+  el.addEventListener("click", () => {
+    const section = $(el.dataset.target);
+    if (!section) return;
+    section.scrollIntoView({ behavior: "smooth", block: "center" });
+    section.classList.remove("flash");
+    void section.offsetWidth; // force reflow so a repeated click re-triggers the animation
+    section.classList.add("flash");
+    setTimeout(() => section.classList.remove("flash"), 1200);
+  });
+});
+
 function applyGarageConfigToForm() {
   $("g-engine-brand").value = garageConfig.engineBrandId;
   $("g-engine-secondhand").checked = garageConfig.engineSecondhand;

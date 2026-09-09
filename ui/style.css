@@ -65,3 +65,9 @@ svg{width:100%; height:auto; display:block; margin-top:10px;}
 .event-table tbody tr.future td{color:var(--muted); opacity:0.55;}
 button.secondary{width:100%; background:var(--panel-alt); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:10px; font-family:var(--disp); font-weight:800; font-size:14px; letter-spacing:0.5px; cursor:pointer; margin-top:8px;}
 input[type=text]{width:100%; background:var(--panel-alt); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:8px; font-size:13px; font-family:inherit;}
+.dragster-diagram{width:100%; height:auto; display:block; margin:10px 0 16px;}
+.dragster-diagram .diagram-part{cursor:pointer;}
+.dragster-diagram .diagram-part path, .dragster-diagram .diagram-part rect{transition:fill 0.15s, stroke 0.15s;}
+.dragster-diagram .diagram-part:hover path, .dragster-diagram .diagram-part:hover rect{fill:var(--amber-dim);}
+.garage-section{border-radius:6px; transition:background-color 0.3s;}
+.garage-section.flash{background-color:rgba(242,167,27,0.16);}

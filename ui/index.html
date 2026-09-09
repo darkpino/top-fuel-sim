@@ -113,19 +113,92 @@
     <div class="sec-title">Auto bouwen</div>
     <p class="note" style="margin-top:0;">Onderdelen en chassiskeuzes die worden opgeslagen en meegenomen naar elke run (test en evenement). Duurdere merken maken meer vermogen én zijn betrouwbaarder (de motor gaat minder snel kapot); tweedehands is goedkoper maar minder betrouwbaar zonder aan vermogen in te leveren. Zie "Vermogen" en "Betrouwbaarheid" hieronder voor het effect van je huidige bouw.</p>
 
+    <p class="note" style="margin-top:0;">Klik op een onderdeel in de tekening om direct naar de bijbehorende instellingen te springen.</p>
+    <svg class="dragster-diagram" id="dragster-diagram" viewBox="0 0 960 240" role="img" aria-label="Zijaanzicht van de dragster - klik op een onderdeel om naar de instellingen te springen">
+      <!-- Grond -->
+      <line x1="0" y1="207" x2="960" y2="207" stroke="var(--border)" stroke-width="1"></line>
+
+      <!-- Chassis / body (vangt klikken op wat niet specifieker is: bodywork, wielen, vleugels, wheeliebar) -->
+      <g class="diagram-part" data-target="garage-sec-chassis">
+        <title>Koppeling &amp; chassis</title>
+        <path d="M70,150 C110,120 190,108 300,108 L560,108 C610,108 650,118 680,140 L680,160 L120,160 C95,160 78,156 70,150 Z" fill="var(--panel-alt)" stroke="var(--amber)"></path>
+        <!-- Cockpit bubble -->
+        <path d="M175,108 C185,84 240,78 290,80 C320,82 335,96 335,108 Z" fill="var(--panel-alt)" stroke="var(--amber)"></path>
+        <!-- Voorvleugel -->
+        <rect x="20" y="192" width="70" height="8" rx="2" fill="var(--panel-alt)" stroke="var(--border)"></rect>
+        <!-- Wheeliebar -->
+        <path d="M760,168 L900,192 L900,200 L888,200 L756,175 Z" fill="var(--panel-alt)" stroke="var(--border)"></path>
+        <!-- Achtervleugel steunen + vleugel -->
+        <line x1="700" y1="150" x2="740" y2="70" stroke="var(--border)" stroke-width="4"></line>
+        <line x1="740" y1="150" x2="775" y2="70" stroke="var(--border)" stroke-width="4"></line>
+        <rect x="700" y="55" width="110" height="16" rx="3" fill="var(--panel-alt)" stroke="var(--border)"></rect>
+      </g>
+
+      <!-- Voorwiel (decoratief, geen eigen instelling) -->
+      <g pointer-events="none">
+        <circle cx="120" cy="185" r="22" fill="var(--panel)" stroke="var(--muted)" stroke-width="3"></circle>
+        <circle cx="120" cy="185" r="6" fill="var(--muted)"></circle>
+      </g>
+
+      <!-- Brandstoftank -->
+      <g class="diagram-part" data-target="garage-sec-tank">
+        <title>Brandstoftank</title>
+        <rect x="345" y="118" width="65" height="38" rx="10" fill="var(--panel-alt)" stroke="var(--amber)"></rect>
+      </g>
+
+      <!-- Motorblok -->
+      <g class="diagram-part" data-target="garage-sec-engine">
+        <title>Motor</title>
+        <path d="M460,118 L610,118 L630,160 L440,160 Z" fill="var(--panel-alt)" stroke="var(--amber)"></path>
+        <!-- Uitlaatpijpen -->
+        <path d="M600,150 L640,175 M612,155 L654,178 M624,158 L666,180" stroke="var(--amber-dim)" stroke-width="5" fill="none" stroke-linecap="round" pointer-events="none"></path>
+      </g>
+
+      <!-- Cilinderkoppen (dunne strook boven het blok) -->
+      <g class="diagram-part" data-target="garage-sec-heads">
+        <title>Cilinderkoppen</title>
+        <rect x="460" y="106" width="150" height="14" rx="3" fill="var(--panel-alt)" stroke="var(--amber)"></rect>
+      </g>
+
+      <!-- Blower + injector hat -->
+      <g class="diagram-part" data-target="garage-sec-blower">
+        <title>Blower</title>
+        <rect x="495" y="55" width="80" height="52" rx="4" fill="var(--panel-alt)" stroke="var(--amber)"></rect>
+        <path d="M515,55 L555,55 L548,38 L522,38 Z" fill="var(--panel-alt)" stroke="var(--amber)"></path>
+        <line x1="535" y1="107" x2="535" y2="122" stroke="var(--border)" stroke-width="4" pointer-events="none"></line>
+      </g>
+
+      <!-- Koppeling / bellhousing -->
+      <g class="diagram-part" data-target="garage-sec-chassis">
+        <title>Koppeling</title>
+        <rect x="630" y="128" width="42" height="32" rx="6" fill="var(--panel-alt)" stroke="var(--amber)"></rect>
+      </g>
+
+      <!-- Achterwiel (decoratief, geen eigen instelling) -->
+      <g pointer-events="none">
+        <circle cx="760" cy="175" r="48" fill="var(--panel)" stroke="var(--muted)" stroke-width="5"></circle>
+        <circle cx="760" cy="175" r="12" fill="var(--muted)"></circle>
+      </g>
+    </svg>
+
+    <div class="garage-section" id="garage-sec-engine">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Motor</div>
     <div class="row"><label>Merk</label><select id="g-engine-brand"></select></div>
     <div class="row"><label><input type="checkbox" id="g-engine-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
     <div class="row"><label>Reserve motorblokken <span class="val" id="v-g-engine-spares">1</span></label>
       <button class="secondary" id="g-buy-engine-spare" type="button">Extra motorblok kopen</button></div>
     <p class="note">Een reservemotorblok wordt gratis gemonteerd als je motor het tijdens een evenement begeeft - zonder reserve moet je 'm ter plekke repareren, wat geld kost.</p>
+    </div>
 
+    <div class="garage-section" id="garage-sec-heads">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Cilinderkoppen</div>
     <div class="row"><label>Merk</label><select id="g-head-brand"></select></div>
     <div class="row"><label><input type="checkbox" id="g-head-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
     <div class="row"><label>Reserve cilinderkoppen <span class="val" id="v-g-head-spares">1</span></label>
       <button class="secondary" id="g-buy-head-spare" type="button">Extra set koppen kopen</button></div>
+    </div>
 
+    <div class="garage-section" id="garage-sec-blower">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Blower</div>
     <div class="row"><label>Merk</label><select id="g-blower-brand"></select></div>
     <div class="row"><label><input type="checkbox" id="g-blower-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
@@ -137,7 +210,9 @@
     </div>
     <div class="row"><label>Reserve blowers <span class="val" id="v-g-blower-spares">1</span></label>
       <button class="secondary" id="g-buy-blower-spare" type="button">Extra blower kopen</button></div>
+    </div>
 
+    <div class="garage-section" id="garage-sec-chassis">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Koppeling &amp; chassis</div>
     <div class="row"><label>Aantal koppelingsplaten</label>
       <select id="g-clutch-plates">
@@ -157,7 +232,9 @@
     <div class="row"><label>Motorpositie (setback) <span class="val" id="v-g-engine-position">0</span></label>
       <input type="range" id="g-engine-position" min="-3" max="3" value="0" step="1"></div>
     <p class="note" style="margin-top:0;">Motor naar voren (negatief) legt meer gewicht op de neus (minder wheelie-risico), naar achteren (positief) juist minder - net als bij ballast, maar dan zonder het gewicht zelf toe te voegen.</p>
+    </div>
 
+    <div class="garage-section" id="garage-sec-tank">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Brandstoftank</div>
     <div class="row"><label>Tankgrootte <span class="val" id="v-g-tank-size">55 gal</span></label>
       <input type="range" id="g-tank-size" min="45" max="75" value="55" step="1"></div>
@@ -167,6 +244,7 @@
         <option value="neutral" selected>Midden</option>
         <option value="rearward">Achteraan</option>
       </select>
+    </div>
     </div>
 
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Overzicht</div>
