@@ -2,7 +2,7 @@ import { calcDensityAltitude, calcPowerMult, calcGripCoeff } from "../sim-core/e
 import { calcEngineFactors, calcMult, calcRecommendedNitro, calcIgnEff, IGNITION_CURVE_TIMES, IGNITION_RETARD_ARM_TIME, IGNITION_REDLINE_RPM } from "../sim-core/engine.js";
 import { calcClutchReach } from "../sim-core/clutch.js";
 import { calcOptimalPsi, calcPsiPenalty } from "../sim-core/tires.js";
-import { runSimulation } from "../sim-core/run-simulator.js";
+import { runSimulation, WEIGHT_LB as WEIGHT_LB_MIN } from "../sim-core/run-simulator.js";
 import { buildRoundDefs, generateEventConditions } from "../sim-core/event.js";
 import {
   generateAiField, deriveRunningOrder, runQualifyingAttempt, computeQualifyingLadder,
@@ -11,7 +11,7 @@ import {
 } from "../sim-core/ladder.js";
 import {
   ENGINE_BRANDS, HEAD_BRANDS, BLOWER_BRANDS, defaultGarageConfig, computeGarageEffects,
-  totalBuildValue, equippedPartPrice, spareLabel,
+  totalBuildValue, equippedPartPrice, spareLabel, computeWeightDistribution,
 } from "../sim-core/garage.js";
 import {
   ENTRY_FEE, defaultFinancesState, addTransaction, chargeEntryFee, chargeRunCost,
@@ -336,6 +336,7 @@ function renderRunResult(r) {
   if (r.frontWingHuntRisk) flags += `<div class="flag">De voorvleugel staat agressief genoeg, en de auto is snel genoeg, dat de besturing bij topsnelheid kan gaan "zoeken" (lichtjes heen en weer) in plaats van strak recht te lopen. Zet de voorvleugel iets terug.</div>`;
   if (r.peakIgnitionRetard > 15) flags += `<div class="flag">De retarder heeft flink ingegrepen (tot ${r.peakIgnitionRetard.toFixed(0)}° teruggetrokken) — het toerental zat ruim boven de 7.900 rpm-grens na 2,75s. Dat kost vermogen precies wanneer je het nodig hebt; zet de ontsteking in de latere punten wat conservatiever of werk aan wat het toerental daar zo hoog houdt.</div>`;
   if (r.nitroIllegal) flags += `<div class="flag">Deze run gebruikt meer dan 90% nitro — buiten het reglement, alleen geldig als testrun.</div>`;
+  if (r.weightIllegal) flags += `<div class="flag">Ondergewicht: ${Math.round(r.weightLb)} lbs, het minimum is ${WEIGHT_LB_MIN} lbs — DQ. Deze tijd telt niet mee voor de kwalificatie, en in een eliminatieronde verlies je 'm automatisch. Compenseer met ballast of kies zwaardere onderdelen.</div>`;
   if (r.anySpin && !r.engineFailed) flags += `<div class="flag">Wielenspin gedetecteerd tijdens de run — motorvermogen overschreed de beschikbare grip.</div>`;
   if (r.detonationRisk && !r.engineFailed) flags += `<div class="flag">Detonatierisico: hoge compressie + hoog nitropercentage + veel voorontsteking is een gevaarlijke combinatie.</div>`;
   spinFlag.innerHTML = flags;
@@ -835,7 +836,7 @@ function runPlayerQualifying(skip) {
   if (!skip) {
     const r = runSimulation(readSettings());
     player.quals[sessionIndex] = r;
-    if (r.finished && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
+    if (r.finished && !r.weightIllegal && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
     ladderState.playerHistory[ladderState.roundIndex] = { result: r };
     fatalEngineFailure = chargePlayerRun(r);
     renderRunResult(r);
@@ -946,9 +947,12 @@ function runPlayerElimination() {
     const engineNote = fatalEngineFailure
       ? ` Je motor ging bovendien kapot zonder reservemotorblok — die moet voor het volgende evenement vervangen worden.`
       : "";
+    const dqNote = rPlayer.weightIllegal
+      ? ` Je auto woog ${Math.round(rPlayer.weightLb)} lbs, onder het minimum van ${WEIGHT_LB_MIN} lbs — automatisch verlies ongeacht de tijd.`
+      : "";
     finishEvent(
       { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber },
-      `Uitgeschakeld in ${roundDef.label.toLowerCase()} door ${opponent.name} (${opponent.team}).${engineNote}`
+      `Uitgeschakeld in ${roundDef.label.toLowerCase()} door ${opponent.name} (${opponent.team}).${dqNote}${engineNote}`
     );
   }
 }
@@ -1078,6 +1082,18 @@ function renderGarageSummary() {
   $("g-weight-delta").textContent = (wd > 0 ? "+" : "") + wd + " lb";
   $("g-power-mult").textContent = Math.round(effects.garagePowerMult * 100) + "%";
   $("g-reliability-mult").textContent = Math.round((1 / effects.garageEngineDamageMult) * 100) + "%";
+
+  const ballastFrontLb = +$("ballfront").value;
+  const ballastRearLb = +$("ballrear").value;
+  const totalWeightLb = WEIGHT_LB_MIN + effects.garageWeightDeltaLb + ballastFrontLb + ballastRearLb;
+  const dist = computeWeightDistribution(totalWeightLb, ballastFrontLb, ballastRearLb, garageConfig.enginePositionIn);
+  $("g-total-weight").textContent = Math.round(totalWeightLb) + " lb";
+  $("g-total-weight").style.color = totalWeightLb < WEIGHT_LB_MIN ? "var(--red)" : "var(--text)";
+  $("g-front-weight").textContent = Math.round(dist.frontLb) + ` lb (${dist.frontPct.toFixed(0)}%)`;
+  $("g-rear-weight").textContent = Math.round(dist.rearLb) + ` lb (${dist.rearPct.toFixed(0)}%)`;
+  $("g-weight-legal-note").innerHTML = totalWeightLb < WEIGHT_LB_MIN
+    ? `<span style="color:var(--red)">Ondergewicht: ${Math.round(WEIGHT_LB_MIN - totalWeightLb)} lb onder het minimum van ${WEIGHT_LB_MIN} lb — dit is een DQ tenzij je bijlegt met ballast of zwaardere onderdelen.</span>`
+    : `Zit ${Math.round(totalWeightLb - WEIGHT_LB_MIN)} lb boven het minimumgewicht van ${WEIGHT_LB_MIN} lb (NHRA-reglement).`;
 }
 
 function renderGaragePanel() {
@@ -1097,6 +1113,11 @@ GARAGE_FORM_IDS.forEach(id => {
     saveGarageConfig();
     renderGarageSummary();
   });
+});
+// Ballast lives on the Chassis/setup tune panel, not the garage form, but
+// the weight-per-band readout above needs to react to it too.
+["ballfront", "ballrear"].forEach(id => {
+  $(id).addEventListener("input", renderGarageSummary);
 });
 
 function buySpare(part) {

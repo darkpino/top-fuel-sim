@@ -12,7 +12,10 @@ import { activeSetpoint, activeSpeed, calcFingerDesired, calcWornFingerDesired, 
 import { calcOptimalPsi, calcPsiPenalty, calcTireWear } from "./tires.js";
 import { createDriverState, stepDriver } from "./driver.js";
 
-const WEIGHT_LB = 2320;
+// Also the NHRA-mandated minimum: a Top Fuel car (with driver) has to
+// weigh at least this much at the scale. Real cars that build lighter
+// than this just carry ballast to make it up - see weightIllegal below.
+export const WEIGHT_LB = 2320;
 const V_FLOOR = 30;
 const CDA = 9.0;
 const RHO_REF = 0.00237;
@@ -138,6 +141,13 @@ export function runSimulation(settings) {
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg);
   const powerMult = calcPowerMult(densityAltitude);
   const weightLb = WEIGHT_LB + ballastFrontLb + ballastRearLb + garageWeightDeltaLb;
+  // Under minimum weight is illegal outright, not just a disadvantage that
+  // balances itself out - real NHRA cars are weighed after every run, so
+  // there's no way to actually race light and get away with it. The run
+  // still executes at the car's true (lighter, faster) weight below, same
+  // as an over-nitro run still executes at its true (also illegal) power -
+  // it's the result that gets thrown out, not the physics.
+  const weightIllegal = weightLb < WEIGHT_LB;
 
   // ignition: 40 is a throwaway - ignEff is no longer static, it's sampled
   // from ignitionCurve (and the retard system) fresh every timestep below.
@@ -433,6 +443,6 @@ export function runSimulation(settings) {
     clutchWearLockupGainPct: peakWornGain * 100,
     peakIgnitionRetard,
     anySpin: trace.some(p => p.slip > 5),
-    weightLb, wheelieRisk, frontWingHuntRisk,
+    weightLb, weightIllegal, wheelieRisk, frontWingHuntRisk,
   };
 }

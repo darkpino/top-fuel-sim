@@ -192,7 +192,7 @@ export function runQualifyingAttempt(entrant, sessionIndex, conditions, skip) {
   const settings = { ...entrant.tune, ...conditions };
   const result = runSimulation(settings);
   entrant.quals[sessionIndex] = result;
-  if (result.finished && (entrant.bestEt === null || result.et < entrant.bestEt)) {
+  if (result.finished && !result.weightIllegal && (entrant.bestEt === null || result.et < entrant.bestEt)) {
     entrant.bestEt = result.et;
     entrant.bestMph = result.mph;
   }
@@ -283,16 +283,24 @@ export function calcReactionTime(driverAggressiveness, rng) {
 // Determines the winner of a head-to-head pass. A red light (negative
 // reaction) is an automatic loss regardless of ET - the real NHRA rule -
 // unless both drivers red light, in which case whoever left LESS early
-// still takes it. Otherwise it's reaction + ET ("package time") from the
-// green light, the actual thing a finish-line win light is judging. A car
-// that doesn't finish loses to one that does; if neither finishes,
-// whoever covered more distance wins.
+// still takes it. An underweight car is the same kind of automatic loss,
+// just caught after the run instead of at the tree - checked second so a
+// red light (which ends the race before the run even happens) still takes
+// priority over a scale DQ discovered afterward. Otherwise it's reaction +
+// ET ("package time") from the green light, the actual thing a
+// finish-line win light is judging. A car that doesn't finish loses to
+// one that does; if neither finishes, whoever covered more distance wins.
 export function resolveHeadToHead(reactionA, resultA, reactionB, resultB) {
   const foulA = reactionA < 0;
   const foulB = reactionB < 0;
   if (foulA && foulB) return reactionA > reactionB ? "A" : "B";
   if (foulA) return "B";
   if (foulB) return "A";
+  // Only a lone DQ is an automatic loss - if both cars are underweight,
+  // neither gets the "opponent DQ'd" freebie and it falls through to the
+  // normal comparison below, same as a real double-DQ pass.
+  if (resultA.weightIllegal && !resultB.weightIllegal) return "B";
+  if (resultB.weightIllegal && !resultA.weightIllegal) return "A";
   if (resultA.finished && resultB.finished) {
     return reactionA + resultA.et <= reactionB + resultB.et ? "A" : "B";
   }

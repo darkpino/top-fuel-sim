@@ -25,25 +25,33 @@
 export const SECONDHAND_PRICE_MULT = 0.55;
 export const SECONDHAND_RELIABILITY_MULT = 0.9;
 
+// weightDeltaLb follows the same "middle tier is the neutral baseline"
+// shape as powerMult/reliabilityMult: the default brand (tier index 1,
+// see defaultGarageConfig) sits at 0 so an untouched build still weighs
+// exactly WEIGHT_LB. Cheaper parts are cast/heavier-duty and run positive
+// (adds weight on top of the minimum); pricier billet/CNC parts trim
+// material and run negative (helps claw back toward the minimum after
+// other choices push a build over it) - the direct ask: worse parts make
+// for a heavier car, not just a weaker/less reliable one.
 export const ENGINE_BRANDS = [
-  { id: "ironclad", name: "Ironclad Racing", priceNew: 16000, powerMult: 0.98, reliabilityMult: 0.95 },
-  { id: "nitroforge", name: "NitroForge", priceNew: 24000, powerMult: 1.00, reliabilityMult: 1.00 },
-  { id: "apex", name: "Apex Billet", priceNew: 34000, powerMult: 1.02, reliabilityMult: 1.05 },
-  { id: "vortan", name: "Vortan Dynamics", priceNew: 46000, powerMult: 1.04, reliabilityMult: 1.10 },
+  { id: "ironclad", name: "Ironclad Racing", priceNew: 16000, powerMult: 0.98, reliabilityMult: 0.95, weightDeltaLb: 45 },
+  { id: "nitroforge", name: "NitroForge", priceNew: 24000, powerMult: 1.00, reliabilityMult: 1.00, weightDeltaLb: 0 },
+  { id: "apex", name: "Apex Billet", priceNew: 34000, powerMult: 1.02, reliabilityMult: 1.05, weightDeltaLb: -15 },
+  { id: "vortan", name: "Vortan Dynamics", priceNew: 46000, powerMult: 1.04, reliabilityMult: 1.10, weightDeltaLb: -25 },
 ];
 
 export const HEAD_BRANDS = [
-  { id: "trailblazer", name: "Trailblazer Heads", priceNew: 9000, powerMult: 0.97, reliabilityMult: 0.97 },
-  { id: "redlineflow", name: "Redline Flow", priceNew: 13000, powerMult: 1.00, reliabilityMult: 1.00 },
-  { id: "apexheads", name: "Apex Billet Heads", priceNew: 18000, powerMult: 1.03, reliabilityMult: 1.03 },
-  { id: "vortanheads", name: "Vortan CNC", priceNew: 24000, powerMult: 1.06, reliabilityMult: 1.06 },
+  { id: "trailblazer", name: "Trailblazer Heads", priceNew: 9000, powerMult: 0.97, reliabilityMult: 0.97, weightDeltaLb: 25 },
+  { id: "redlineflow", name: "Redline Flow", priceNew: 13000, powerMult: 1.00, reliabilityMult: 1.00, weightDeltaLb: 0 },
+  { id: "apexheads", name: "Apex Billet Heads", priceNew: 18000, powerMult: 1.03, reliabilityMult: 1.03, weightDeltaLb: -10 },
+  { id: "vortanheads", name: "Vortan CNC", priceNew: 24000, powerMult: 1.06, reliabilityMult: 1.06, weightDeltaLb: -18 },
 ];
 
 export const BLOWER_BRANDS = [
-  { id: "duneblast", name: "Duneblast Superchargers", priceNew: 11000, powerMult: 0.97, reliabilityMult: 0.97 },
-  { id: "hurricane", name: "Hurricane Blower Co", priceNew: 15000, powerMult: 1.00, reliabilityMult: 1.00 },
-  { id: "apexblower", name: "Apex Billet Blower", priceNew: 19000, powerMult: 1.03, reliabilityMult: 1.03 },
-  { id: "vortanblower", name: "Vortan Rootstype", priceNew: 23000, powerMult: 1.06, reliabilityMult: 1.06 },
+  { id: "duneblast", name: "Duneblast Superchargers", priceNew: 11000, powerMult: 0.97, reliabilityMult: 0.97, weightDeltaLb: 20 },
+  { id: "hurricane", name: "Hurricane Blower Co", priceNew: 15000, powerMult: 1.00, reliabilityMult: 1.00, weightDeltaLb: 0 },
+  { id: "apexblower", name: "Apex Billet Blower", priceNew: 19000, powerMult: 1.03, reliabilityMult: 1.03, weightDeltaLb: -8 },
+  { id: "vortanblower", name: "Vortan Rootstype", priceNew: 23000, powerMult: 1.06, reliabilityMult: 1.06, weightDeltaLb: -15 },
 ];
 
 export const BODY_MATERIALS = {
@@ -151,12 +159,16 @@ export function computeEngineReliabilityMult(config) {
 // run-simulator.js accepts, all defaulting to a neutral no-op so the
 // baseline build reproduces exactly the pre-garage physics.
 export function computeGarageEffects(config) {
+  const engine = findBrand(ENGINE_BRANDS, config.engineBrandId);
+  const head = findBrand(HEAD_BRANDS, config.headBrandId);
+  const blower = findBrand(BLOWER_BRANDS, config.blowerBrandId);
   const body = BODY_MATERIALS[config.bodyMaterial];
   const plates = CLUTCH_PLATE_OPTIONS[config.clutchPlates];
   const blowerType = BLOWER_TYPES[config.blowerType];
   const tankPos = TANK_POSITIONS[config.tankPosition];
 
   const weightDeltaLb = body.weightDeltaLb
+    + engine.weightDeltaLb + head.weightDeltaLb + blower.weightDeltaLb
     + (config.chassisLengthIn - CHASSIS_LENGTH_BASELINE_IN) * CHASSIS_WEIGHT_PER_IN_LB
     + (config.tankSizeGal - TANK_SIZE_BASELINE_GAL) * TANK_WEIGHT_PER_GAL_LB;
 
@@ -200,4 +212,33 @@ export function equippedPartPrice(config, part) {
 
 export function spareLabel(part) {
   return part === "engine" ? "motorblok" : part === "head" ? "cilinderkop" : "blower";
+}
+
+// Static front/rear split for the per-axle weight readout. A rear-engine
+// dragster carries very little of its static weight up front (long
+// chassis, engine/blower/driver all sitting well aft of center) - this is
+// the bare-chassis baseline before ballast and engine-position choices
+// shift it. Ballast lands 100% on whichever axle it's mounted at,
+// straight from ballastFrontLb/ballastRearLb; the engine itself moving
+// fore/aft (enginePositionIn, same signed convention as the wheelie-risk
+// ballast-equivalent above - positive is rearward) shifts a slice of its
+// own mass across axles too, on top of the ballast the player dials in
+// directly. Purely a display breakdown for the garage UI - the actual
+// launch physics already account for ballast/engine position through
+// weightLb and the wheelie-risk ballast-equivalent; this doesn't feed
+// back into run-simulator.js.
+const BASE_FRONT_WEIGHT_FRACTION = 0.17;
+const ENGINE_POSITION_WEIGHT_SHIFT_PER_IN = 12;
+
+export function computeWeightDistribution(totalWeightLb, ballastFrontLb, ballastRearLb, enginePositionIn) {
+  const bareWeightLb = totalWeightLb - ballastFrontLb - ballastRearLb;
+  const frontLb = bareWeightLb * BASE_FRONT_WEIGHT_FRACTION
+    - enginePositionIn * ENGINE_POSITION_WEIGHT_SHIFT_PER_IN
+    + ballastFrontLb;
+  const rearLb = totalWeightLb - frontLb;
+  return {
+    frontLb, rearLb,
+    frontPct: (frontLb / totalWeightLb) * 100,
+    rearPct: (rearLb / totalWeightLb) * 100,
+  };
 }
