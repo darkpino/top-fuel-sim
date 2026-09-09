@@ -3,7 +3,11 @@ import { calcEngineFactors, calcMult, calcRecommendedNitro, calcIgnEff, IGNITION
 import { calcClutchReach } from "../sim-core/clutch.js";
 import { calcOptimalPsi, calcPsiPenalty } from "../sim-core/tires.js";
 import { runSimulation } from "../sim-core/run-simulator.js";
-import { generateEventConditions } from "../sim-core/event.js";
+import { buildRoundDefs, generateEventConditions } from "../sim-core/event.js";
+import {
+  generateAiField, deriveRunningOrder, runQualifyingAttempt, computeQualifyingLadder,
+  deriveBracketSize, pairBracketRound, calcReactionTime, resolveHeadToHead, mulberry32,
+} from "../sim-core/ladder.js";
 
 function $(id) { return document.getElementById(id); }
 
@@ -385,20 +389,19 @@ $("runBtn").addEventListener("click", () => {
   renderRunResult(runSimulation(readSettings()));
 });
 
-// ---- Evenement: 4 kwalificatie- + 4 eliminatierondes, elk met eigen
-// gegenereerde omstandigheden. Geen tegenstander/AI-tijden, ladder of
-// bracket-koppeling nog - zie sim-core/event.js voor waarom dat een latere
-// laag bovenop deze rondestructuur wordt, niet een herbouw ervan. ----
+// ---- Evenement: 4 kwalificatierondes tegen een AI-veld (sim-core/ladder.js),
+// gevolgd door een eliminatiebracket geseed op de kwalificatieladder. Elke
+// ronde heeft eigen gegenereerde omstandigheden (sim-core/event.js) - die
+// raken iedereen in het veld gelijk, dus een hete of gladde ronde is voor
+// AI en speler hetzelfde probleem. ----
 
 const envSliderIds = ["airtemp", "hum", "baro", "track", "grip"];
 let currentMode = "test";
-let eventRounds = null; // array from generateEventConditions(), or null when no event is active
-let eventRoundIndex = 0; // index of the round that's next up / active
-let eventResults = []; // parallel array; eventResults[i] set once round i has been run
-const EVENT_IDLE_STATUS = "Nog geen evenement gestart. 4 kwalificatierondes, daarna 4 eliminatierondes, elk met eigen (gesimuleerde) weersomstandigheden — jij tunet elke ronde opnieuw. Nog geen tegenstander/AI-tijden, kwalificatieladder of bracket-koppeling: dat komt later boven op deze rondestructuur.";
+let ladderState = null; // null when no event is active
+const EVENT_IDLE_STATUS = "Nog geen evenement gestart. Kies het aantal auto's en start: 4 kwalificatierondes bepalen de ladder, het bovenste deel (macht van 2) gaat door naar de eliminatie. Elke ronde heeft eigen gesimuleerde omstandigheden - het hele veld rijdt onder dezelfde condities als jij.";
 
 function eventInProgress() {
-  return eventRounds !== null && eventRoundIndex < eventRounds.length;
+  return ladderState !== null && ladderState.playerOutcome === null;
 }
 
 function updateEnvLock() {
@@ -414,7 +417,7 @@ function setMode(mode) {
   $("eventPanel").style.display = mode === "event" ? "block" : "none";
   $("runBtn").style.display = mode === "event" ? "none" : "block";
   updateEnvLock();
-  if (mode === "event" && eventInProgress()) activateRound();
+  if (mode === "event" && eventInProgress()) refreshLadderView();
 }
 $("tabTest").addEventListener("click", () => setMode("test"));
 $("tabEvent").addEventListener("click", () => setMode("event"));
@@ -435,85 +438,231 @@ function roundResultText(result) {
   if (result.clutchFailed) return "koppeling kapot";
   return "DNF";
 }
-
-// The table is the point of this feature: past rounds' weather sits right
-// next to their times, and the active round's own weather is highlighted
-// in the same columns, so a comparison is just reading across a row -
-// this is what lets a re-tune between rounds actually be informed instead
-// of guesswork. Future rounds' weather stays hidden (a crew chief doesn't
-// know it in advance either), even though it's already generated.
-function renderEventTable() {
-  $("event-table-body").innerHTML = eventRounds.map((round, i) => {
-    const result = eventResults[i];
-    const isCurrent = i === eventRoundIndex && !result;
-    const isFuture = i > eventRoundIndex;
-    const cls = result ? "done" : (isCurrent ? "current" : "future");
-    const c = round.conditions;
-    const condCells = isFuture
-      ? `<td colspan="5" style="text-align:center;">nog onbekend</td>`
-      : `<td>${c.airtempC}°C</td><td>${c.humidity}%</td><td>${c.baroInHg.toFixed(2)}</td><td>${c.trackTempC}°C</td><td>${c.gripSliderPct}%</td>`;
-    const et60Txt = result && result.et60 ? result.et60.toFixed(3) : "--";
-    const etTxt = result && result.finished ? result.et.toFixed(3) : "--";
-    const mphTxt = result ? result.mph.toFixed(1) : "--";
-    const statusTxt = result ? roundResultText(result) : (isCurrent ? "actief" : "--");
-    return `<tr class="${cls}"><td>${round.id}</td>${condCells}<td>${et60Txt}</td><td>${etTxt}</td><td>${mphTxt}</td><td>${statusTxt}</td></tr>`;
-  }).join("");
-}
-
-function activateRound() {
-  const round = eventRounds[eventRoundIndex];
-  $("event-round-label").style.display = "block";
-  $("event-round-label").textContent = `Actieve ronde: ${round.id} — ${round.label}. Vergelijk de tabel hierboven met eerdere rondes om je tune bij te stellen.`;
-  applyConditions(round.conditions);
-  renderEventTable();
-}
+function entrantLabel(e) { return escapeHtml(e.name) + (e.isPlayer ? " (jij)" : ""); }
 
 $("startEventBtn").addEventListener("click", () => {
-  eventRounds = generateEventConditions();
-  eventResults = [];
-  eventRoundIndex = 0;
-  $("event-status").textContent = "Evenement bezig — tune je auto voor elke ronde en druk op \"Run deze ronde\".";
-  $("event-table").style.display = "table";
+  const totalEntries = +$("fieldSizeSelect").value;
+  const bracketSize = deriveBracketSize(totalEntries, 32);
+  const seed = Math.floor(Math.random() * 1e9);
+  const roundDefs = buildRoundDefs(bracketSize);
+  const player = {
+    id: "player", name: "Jij", team: "Jouw team", isPlayer: true,
+    quals: [null, null, null, null], bestEt: null, bestMph: null,
+    qualPosition: null, qualified: false, eliminated: false, eliminatedRound: null,
+  };
+  ladderState = {
+    bracketSize, totalEntries, seed,
+    rounds: generateEventConditions(roundDefs, seed),
+    roundIndex: 0,
+    field: [player, ...generateAiField(totalEntries - 1, seed + 1)],
+    rng: mulberry32(seed + 777),
+    qOrder: null, bracketPool: null, bracketPairs: null, bracketResults: null,
+    playerPairIndex: null, playerOpponent: null, playerOutcome: null,
+  };
+  $("event-setup").style.display = "none";
+  $("event-active").style.display = "block";
+  $("event-result").style.display = "none";
   $("startEventBtn").style.display = "none";
-  $("runRoundBtn").style.display = "block";
   $("newEventBtn").style.display = "block";
-  activateRound();
+  $("runRoundBtn").style.display = "block";
+  $("skipQualBtn").style.display = "block";
+  activateLadderRound();
   updateEnvLock();
-});
-
-$("runRoundBtn").addEventListener("click", () => {
-  if (!eventRounds || eventRoundIndex >= eventRounds.length) return;
-  applyConditions(eventRounds[eventRoundIndex].conditions);
-  const r = runSimulation(readSettings());
-  eventResults[eventRoundIndex] = r;
-  renderRunResult(r);
-  eventRoundIndex++;
-  if (eventRoundIndex >= eventRounds.length) {
-    renderEventTable();
-    $("event-status").textContent = "Evenement compleet — alle 4 kwalificatie- en 4 eliminatierondes gereden.";
-    $("event-round-label").style.display = "none";
-    $("runRoundBtn").style.display = "none";
-    updateEnvLock();
-  } else {
-    $("event-status").textContent = eventRoundIndex === 4
-      ? "Kwalificatie compleet — eliminaties beginnen."
-      : "Volgende ronde klaar om getuned te worden.";
-    activateRound();
-  }
 });
 
 $("newEventBtn").addEventListener("click", () => {
-  eventRounds = null;
-  eventResults = [];
-  eventRoundIndex = 0;
+  ladderState = null;
   $("event-status").textContent = EVENT_IDLE_STATUS;
-  $("event-table").style.display = "none";
-  $("event-round-label").style.display = "none";
+  $("event-setup").style.display = "block";
+  $("event-active").style.display = "none";
+  $("event-result").style.display = "none";
   $("startEventBtn").style.display = "block";
-  $("runRoundBtn").style.display = "none";
   $("newEventBtn").style.display = "none";
   updateEnvLock();
 });
+
+// Enters a new round: applies its weather, and for qualifying pre-runs
+// every AI entrant scheduled ahead of the player this session (see
+// deriveRunningOrder), or for elimination resolves every pair that
+// doesn't involve the player - the player's own pass is the only one
+// deferred to a button click.
+function activateLadderRound() {
+  const roundDef = ladderState.rounds[ladderState.roundIndex];
+  applyConditions(roundDef.conditions);
+  const player = ladderState.field.find(e => e.isPlayer);
+
+  if (roundDef.phase === "qualifying") {
+    const sessionIndex = roundDef.roundNumber - 1;
+    const order = deriveRunningOrder(ladderState.field, sessionIndex, ladderState.seed + 100 + ladderState.roundIndex);
+    ladderState.qOrder = order;
+    const playerIdx = order.findIndex(e => e.isPlayer);
+    for (let i = 0; i < playerIdx; i++) runQualifyingAttempt(order[i], sessionIndex, roundDef.conditions, false);
+  } else {
+    const survivors = ladderState.bracketPool.filter(e => !e.eliminated);
+    const pairs = pairBracketRound(survivors);
+    ladderState.bracketPairs = pairs;
+    ladderState.bracketResults = new Array(pairs.length).fill(null);
+    pairs.forEach(([a, b], i) => {
+      if (a === player || b === player) {
+        ladderState.playerPairIndex = i;
+        ladderState.playerOpponent = a === player ? b : a;
+        return;
+      }
+      const resultA = runSimulation({ ...a.tune, ...roundDef.conditions });
+      const resultB = runSimulation({ ...b.tune, ...roundDef.conditions });
+      const reactA = calcReactionTime(a.tune.driverAggressiveness, ladderState.rng);
+      const reactB = calcReactionTime(b.tune.driverAggressiveness, ladderState.rng);
+      const winner = resolveHeadToHead(reactA, resultA, reactB, resultB) === "A" ? a : b;
+      const loser = winner === a ? b : a;
+      loser.eliminated = true;
+      loser.eliminatedRound = roundDef.roundNumber;
+      ladderState.bracketResults[i] = { a, b, resultA, resultB, reactA, reactB, winner };
+    });
+  }
+  renderLadderRoundUi();
+}
+
+// Pure re-display of the current round's state - safe to call repeatedly
+// (e.g. switching back to the Evenement tab) since it runs no simulations.
+function refreshLadderView() {
+  const roundDef = ladderState.rounds[ladderState.roundIndex];
+  applyConditions(roundDef.conditions);
+  renderLadderRoundUi();
+}
+
+function renderLadderRoundUi() {
+  const roundDef = ladderState.rounds[ladderState.roundIndex];
+  $("event-round-label").style.display = "block";
+  $("event-round-label").textContent = `Actieve ronde: ${roundDef.id} — ${roundDef.label}`;
+  const isQuali = roundDef.phase === "qualifying";
+  $("quali-block").style.display = isQuali ? "block" : "none";
+  $("elim-block").style.display = isQuali ? "none" : "block";
+  $("skipQualBtn").style.display = isQuali && ladderState.playerOutcome === null ? "block" : "none";
+  if (isQuali) renderQualiTable(roundDef);
+  else renderBracketTable(roundDef);
+}
+
+function renderQualiTable(roundDef) {
+  const sessionIndex = roundDef.roundNumber - 1;
+  const ranked = computeQualifyingLadder(ladderState.field, ladderState.bracketSize);
+  $("quali-table-body").innerHTML = ranked.map(e => {
+    const sessionResult = e.quals[sessionIndex];
+    const sessionTxt = sessionResult ? roundResultText(sessionResult) : (e.isPlayer ? "aan jou" : "--");
+    const statusTxt = e.bestEt === null ? "geen tijd" : (e.qualified ? "gekwalificeerd" : "buiten de bump");
+    const cls = e.isPlayer ? "current" : (e.qualified ? "done" : "future");
+    return `<tr class="${cls}"><td>${e.qualPosition ?? "--"}</td><td>${entrantLabel(e)}</td><td>${escapeHtml(e.team)}</td><td>${sessionTxt}</td><td>${e.bestEt ? e.bestEt.toFixed(3) : "--"}</td><td>${e.bestMph ? e.bestMph.toFixed(1) : "--"}</td><td>${statusTxt}</td></tr>`;
+  }).join("");
+}
+
+function renderBracketTable(roundDef) {
+  const player = ladderState.field.find(e => e.isPlayer);
+  if (ladderState.playerOpponent) {
+    $("opponent-info").textContent = `Ronde ${roundDef.roundNumber}: jij (seed ${player.qualPosition}) vs ${ladderState.playerOpponent.name} — ${ladderState.playerOpponent.team} (seed ${ladderState.playerOpponent.qualPosition}, kwaltijd ${ladderState.playerOpponent.bestEt.toFixed(3)}s, "${ladderState.playerOpponent.archetype}")`;
+  }
+  $("bracket-table-body").innerHTML = ladderState.bracketPairs.map(([a, b], i) => {
+    const res = ladderState.bracketResults[i];
+    const involvesPlayer = a === player || b === player;
+    const label = `${entrantLabel(a)} — ${entrantLabel(b)}`;
+    const resultTxt = res ? `${entrantLabel(res.winner)} wint` : (involvesPlayer ? "aan jou" : "--");
+    const cls = involvesPlayer ? "current" : (res ? "done" : "future");
+    return `<tr class="${cls}"><td>${label}</td><td>${resultTxt}</td></tr>`;
+  }).join("");
+}
+
+function totalElimRoundsFor(bracketSize) {
+  return Math.round(Math.log2(bracketSize));
+}
+
+function advanceLadderRound() {
+  const finishedRoundDef = ladderState.rounds[ladderState.roundIndex];
+  if (finishedRoundDef.phase === "qualifying" && finishedRoundDef.roundNumber === 4) {
+    const ranked = computeQualifyingLadder(ladderState.field, ladderState.bracketSize);
+    const player = ranked.find(e => e.isPlayer);
+    if (!player.qualified) {
+      ladderState.playerOutcome = "dnq";
+      renderFinalResult(`Niet gekwalificeerd — je eindigde als P${player.qualPosition} van de ${ladderState.field.length}, de eliminatie ging tot en met P${ladderState.bracketSize}.`);
+      return;
+    }
+    ladderState.bracketPool = ranked.filter(e => e.qualified).slice(0, ladderState.bracketSize);
+  }
+  ladderState.roundIndex++;
+  activateLadderRound();
+}
+
+function renderFinalResult(text) {
+  $("runRoundBtn").style.display = "none";
+  $("skipQualBtn").style.display = "none";
+  $("event-status").textContent = "Evenement afgerond.";
+  $("event-result").style.display = "block";
+  $("event-final-result").textContent = text;
+  updateEnvLock();
+}
+
+function runPlayerQualifying(skip) {
+  const roundDef = ladderState.rounds[ladderState.roundIndex];
+  const sessionIndex = roundDef.roundNumber - 1;
+  const player = ladderState.field.find(e => e.isPlayer);
+  applyConditions(roundDef.conditions);
+  if (!skip) {
+    const r = runSimulation(readSettings());
+    player.quals[sessionIndex] = r;
+    if (r.finished && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
+    renderRunResult(r);
+  } else {
+    player.quals[sessionIndex] = null;
+  }
+  const order = ladderState.qOrder;
+  const playerIdx = order.findIndex(e => e.isPlayer);
+  for (let i = playerIdx + 1; i < order.length; i++) runQualifyingAttempt(order[i], sessionIndex, roundDef.conditions, false);
+  renderQualiTable(roundDef);
+  advanceLadderRound();
+}
+
+function runPlayerElimination() {
+  const roundDef = ladderState.rounds[ladderState.roundIndex];
+  applyConditions(roundDef.conditions);
+  const [a, b] = ladderState.bracketPairs[ladderState.playerPairIndex];
+  const player = ladderState.field.find(e => e.isPlayer);
+  const playerIsA = a === player;
+  const opponent = ladderState.playerOpponent;
+
+  const rPlayer = runSimulation(readSettings());
+  const rOpponent = runSimulation({ ...opponent.tune, ...roundDef.conditions });
+  const reactPlayer = calcReactionTime(+$("aggro").value, ladderState.rng);
+  const reactOpponent = calcReactionTime(opponent.tune.driverAggressiveness, ladderState.rng);
+
+  const resultA = playerIsA ? rPlayer : rOpponent;
+  const resultB = playerIsA ? rOpponent : rPlayer;
+  const reactA = playerIsA ? reactPlayer : reactOpponent;
+  const reactB = playerIsA ? reactOpponent : reactPlayer;
+  const winner = resolveHeadToHead(reactA, resultA, reactB, resultB) === "A" ? a : b;
+  const loser = winner === a ? b : a;
+  loser.eliminated = true;
+  loser.eliminatedRound = roundDef.roundNumber;
+  ladderState.bracketResults[ladderState.playerPairIndex] = { a, b, resultA, resultB, reactA, reactB, winner };
+
+  renderRunResult(rPlayer);
+  renderBracketTable(roundDef);
+
+  if (winner.isPlayer) {
+    if (roundDef.roundNumber === totalElimRoundsFor(ladderState.bracketSize)) {
+      ladderState.playerOutcome = "champion";
+      renderFinalResult(`Kampioen! Je won de finale van dit evenement (${ladderState.totalEntries} auto's).`);
+    } else {
+      advanceLadderRound();
+    }
+  } else {
+    ladderState.playerOutcome = "eliminated";
+    renderFinalResult(`Uitgeschakeld in ${roundDef.label.toLowerCase()} door ${opponent.name} (${opponent.team}).`);
+  }
+}
+
+$("runRoundBtn").addEventListener("click", () => {
+  const roundDef = ladderState.rounds[ladderState.roundIndex];
+  if (roundDef.phase === "qualifying") runPlayerQualifying(false);
+  else runPlayerElimination();
+});
+$("skipQualBtn").addEventListener("click", () => runPlayerQualifying(true));
 
 setMode("test");
 

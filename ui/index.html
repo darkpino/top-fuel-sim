@@ -18,16 +18,56 @@
 
   <div class="panel" id="eventPanel" style="display:none;">
     <div class="sec-title">Evenement</div>
-    <p class="note" style="margin-top:0;" id="event-status">Nog geen evenement gestart. 4 kwalificatierondes, daarna 4 eliminatierondes, elk met eigen (gesimuleerde) weersomstandigheden — jij tunet elke ronde opnieuw. Nog geen tegenstander/AI-tijden, kwalificatieladder of bracket-koppeling: dat komt later boven op deze rondestructuur.</p>
-    <p class="note" style="margin-top:0; display:none;" id="event-round-label">--</p>
-    <div style="overflow-x:auto;">
-      <table class="event-table" id="event-table" style="display:none;">
-        <thead><tr><th>Ronde</th><th>Lucht</th><th>Vocht</th><th>Druk</th><th>Baan</th><th>VHT</th><th>60ft</th><th>ET</th><th>mph</th><th>Status</th></tr></thead>
-        <tbody id="event-table-body"></tbody>
-      </table>
+    <p class="note" style="margin-top:0;" id="event-status">Nog geen evenement gestart. Kies het aantal auto's en start: 4 kwalificatierondes bepalen de ladder, het bovenste deel (macht van 2) gaat door naar de eliminatie. Elke ronde heeft eigen gesimuleerde omstandigheden - het hele veld rijdt onder dezelfde condities als jij.</p>
+
+    <div id="event-setup">
+      <div class="row">
+        <label>Aantal auto's (incl. jij)</label>
+        <select id="fieldSizeSelect">
+          <option value="8">8</option>
+          <option value="12">12</option>
+          <option value="16" selected>16</option>
+          <option value="20">20</option>
+          <option value="24">24</option>
+          <option value="32">32</option>
+        </select>
+      </div>
     </div>
+
+    <div id="event-active" style="display:none;">
+      <p class="note" style="margin-top:0; display:none;" id="event-round-label">--</p>
+
+      <div id="quali-block" style="display:none;">
+        <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:0;">Kwalificatiestand</div>
+        <p class="note" style="margin-top:0;">"Tijd deze sessie" laat zien wie er onder de huidige omstandigheden al voor je is gegaan - gebruik dat voor last-minute aanpassingen (koppeling, ontsteking) voor je zelf rijdt.</p>
+        <div style="overflow-x:auto;">
+          <table class="event-table" id="quali-table">
+            <thead><tr><th>Pos</th><th>Naam</th><th>Team</th><th>Tijd deze sessie</th><th>Beste ET</th><th>mph</th><th>Status</th></tr></thead>
+            <tbody id="quali-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="elim-block" style="display:none;">
+        <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:0;">Bracket dit rondje</div>
+        <p class="note" style="margin-top:0;" id="opponent-info">--</p>
+        <div style="overflow-x:auto;">
+          <table class="event-table" id="bracket-table">
+            <thead><tr><th>Duel</th><th>Resultaat</th></tr></thead>
+            <tbody id="bracket-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <button class="run" id="runRoundBtn" style="display:none;">Run deze ronde</button>
+      <button class="secondary" id="skipQualBtn" style="display:none;">Sla deze kwalificatieronde over</button>
+    </div>
+
+    <div id="event-result" style="display:none;">
+      <p class="note" style="margin-top:0; font-weight:700;" id="event-final-result">--</p>
+    </div>
+
     <button class="run" id="startEventBtn">Start evenement</button>
-    <button class="run" id="runRoundBtn" style="display:none;">Run deze ronde</button>
     <button class="secondary" id="newEventBtn" style="display:none;">Nieuw evenement</button>
   </div>
 

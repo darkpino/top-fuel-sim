@@ -1,25 +1,35 @@
 // Event module: sequences a full NHRA-style event day - 4 qualifying
-// rounds, then 4 elimination rounds - each with its own generated weather,
-// so a crew chief has to re-tune between rounds instead of running the
-// same conditions eight times. Pure data/functions, no DOM access.
+// rounds, then an elimination bracket - each round with its own generated
+// weather, so a crew chief has to re-tune between rounds instead of
+// running the same conditions every time. Pure data/functions, no DOM
+// access. The actual field (AI opponents, the qualifying ladder, bracket
+// pairing, reaction times) lives in sim-core/ladder.js - this module only
+// owns the round SCHEDULE and its weather.
 //
-// What this does NOT do yet, on purpose: no opponent/AI times, no
-// qualifying ladder (ranking by best Q run), no elimination bracket
-// pairing. Those all need a "field" of other cars to be meaningful, which
-// doesn't exist yet. The round metadata below (phase, roundNumber)
-// already carries what that will need, so adding it later is layering on
-// top of this, not reshaping it.
+// Elimination round count is derived from bracketSize (log2 of it) rather
+// than fixed at 4, since the ladder module lets the event field - and so
+// the bracket - be smaller or larger than the classic 16 cars.
 
-export const ROUND_DEFS = [
-  { id: "Q1", label: "Kwalificatie 1", phase: "qualifying", roundNumber: 1 },
-  { id: "Q2", label: "Kwalificatie 2", phase: "qualifying", roundNumber: 2 },
-  { id: "Q3", label: "Kwalificatie 3", phase: "qualifying", roundNumber: 3 },
-  { id: "Q4", label: "Kwalificatie 4", phase: "qualifying", roundNumber: 4 },
-  { id: "E1", label: "Eliminatie 1 (16 auto's)", phase: "elimination", roundNumber: 1 },
-  { id: "E2", label: "Eliminatie 2 (kwartfinale)", phase: "elimination", roundNumber: 2 },
-  { id: "E3", label: "Eliminatie 3 (halve finale)", phase: "elimination", roundNumber: 3 },
-  { id: "E4", label: "Eliminatie 4 (finale)", phase: "elimination", roundNumber: 4 },
-];
+function elimRoundLabel(roundIndex, totalElimRounds, bracketSize) {
+  const remaining = totalElimRounds - roundIndex + 1;
+  if (remaining === 1) return `Eliminatie ${roundIndex} (finale)`;
+  if (remaining === 2) return `Eliminatie ${roundIndex} (halve finale)`;
+  if (remaining === 3) return `Eliminatie ${roundIndex} (kwartfinale)`;
+  const carsThisRound = bracketSize / Math.pow(2, roundIndex - 1);
+  return `Eliminatie ${roundIndex} (${carsThisRound} auto's)`;
+}
+
+export function buildRoundDefs(bracketSize) {
+  const totalElimRounds = Math.round(Math.log2(bracketSize));
+  const defs = [];
+  for (let i = 1; i <= 4; i++) {
+    defs.push({ id: `Q${i}`, label: `Kwalificatie ${i}`, phase: "qualifying", roundNumber: i });
+  }
+  for (let i = 1; i <= totalElimRounds; i++) {
+    defs.push({ id: `E${i}`, label: elimRoundLabel(i, totalElimRounds, bracketSize), phase: "elimination", roundNumber: i });
+  }
+  return defs;
+}
 
 // mulberry32: small, fast, seedable PRNG - deterministic for a given seed
 // so a specific event day can be reproduced (useful for debugging a
@@ -61,12 +71,21 @@ function conditionsForDayFrac(rng, dayFrac) {
   return { airtempC, humidity, trackTempC, baroInHg, gripSliderPct };
 }
 
-// Generates the full 8-round condition set for one event. Pass a seed to
-// reproduce a specific day; omit it for a fresh random event.
-export function generateEventConditions(seed = Math.floor(Math.random() * 1e9)) {
+// Generates the condition set for one event's rounds. Pass a seed to
+// reproduce a specific day; omit it for a fresh random event. Qualifying
+// (always 4 rounds) and elimination (however many buildRoundDefs gave it)
+// each walk their OWN day arc, using their own round count as the divisor -
+// they're independent days, not one long one, and elimination's arc
+// shouldn't assume 4 rounds just because qualifying always does.
+export function generateEventConditions(roundDefs, seed = Math.floor(Math.random() * 1e9)) {
   const rng = mulberry32(seed);
-  return ROUND_DEFS.map((round) => {
-    const dayFrac = (round.roundNumber - 1) / (ROUND_DEFS.length / 2 - 1);
+  const maxRoundByPhase = {
+    qualifying: 4,
+    elimination: Math.max(...roundDefs.filter((r) => r.phase === "elimination").map((r) => r.roundNumber)),
+  };
+  return roundDefs.map((round) => {
+    const maxRound = maxRoundByPhase[round.phase];
+    const dayFrac = maxRound > 1 ? (round.roundNumber - 1) / (maxRound - 1) : 0;
     return { ...round, conditions: conditionsForDayFrac(rng, dayFrac) };
   });
 }
