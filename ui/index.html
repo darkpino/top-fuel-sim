@@ -43,15 +43,15 @@
         <div class="row"><label>Stage 1 tijd <span class="val" id="v-s1t">0.85s</span></label><input type="range" id="s1t" min="0" max="100" value="85" step="5"></div>
         <div class="row"><label>Stage 1 max lockup <span class="val" id="v-s1p">78%</span></label><input type="range" id="s1p" min="10" max="90" value="78" step="1"></div>
         <div class="row"><label>Stage 1 lager snelheid <span class="val" id="v-s1speed">700%/s</span></label><input type="range" id="s1speed" min="20" max="800" value="700" step="5"></div>
-        <div class="row"><label>Stage 2 tijd <span class="val" id="v-s2t">1.05s</span></label><input type="range" id="s2t" min="100" max="200" value="105" step="5"></div>
-        <div class="row"><label>Stage 2 max lockup <span class="val" id="v-s2p">65%</span></label><input type="range" id="s2p" min="30" max="90" value="65" step="1"></div>
+        <div class="row"><label>Stage 2 tijd <span class="val" id="v-s2t">2.20s</span></label><input type="range" id="s2t" min="100" max="300" value="220" step="5"></div>
+        <div class="row"><label>Stage 2 max lockup <span class="val" id="v-s2p">40%</span></label><input type="range" id="s2p" min="30" max="90" value="40" step="1"></div>
         <div class="row"><label>Stage 2 lager snelheid <span class="val" id="v-s2speed">200%/s</span></label><input type="range" id="s2speed" min="20" max="800" value="200" step="5"></div>
-        <div class="row"><label>Stage 3 tijd <span class="val" id="v-s3t">2.15s</span></label><input type="range" id="s3t" min="200" max="350" value="215" step="5"></div>
+        <div class="row"><label>Stage 3 tijd <span class="val" id="v-s3t">2.50s</span></label><input type="range" id="s3t" min="200" max="350" value="250" step="5"></div>
         <div class="row"><label>Stage 3 max lockup <span class="val" id="v-s3p">100%</span></label><input type="range" id="s3p" min="10" max="100" value="100" step="1"></div>
-        <div class="row"><label>Stage 3 lager snelheid <span class="val" id="v-s3speed">200%/s</span></label><input type="range" id="s3speed" min="20" max="800" value="200" step="5"></div>
+        <div class="row"><label>Stage 3 lager snelheid <span class="val" id="v-s3speed">800%/s</span></label><input type="range" id="s3speed" min="20" max="800" value="800" step="5"></div>
         <div class="row"><label>Vingergewicht (gewenste lockup) <span class="val" id="v-fw">100</span></label><input type="range" id="fw" min="0" max="100" value="100" step="1"></div>
         <p class="note" id="clutch-reach-hint">Haalbare lockup per stage: --</p>
-        <p class="note">Elke stage heeft zijn eigen lager snelheid (hydraulische bleed rate) - de koppeling beweegt dus rustig naar elk setpoint toe in plaats van te springen. Stage 3 is het plafond voor de rest van de run (géén automatische sprong naar 100% erna): op 100% geeft dat moment in echte telemetrie de piek-G, niet de launch. Zet het lager om de koppeling bewust te laten blijven slippen wanneer de baan geen volledige lockup aankan - dat beschermt de banden, maar de koppeling zelf betaalt de rekening (oververhit en uiteindelijk kapot als je het te lang of te ver volhoudt). Stage-percentages hoeven niet oplopend te zijn: een lichte dip tussen stage 1 en 2 is normaal.</p>
+        <p class="note">Elke stage heeft zijn eigen lager snelheid (hydraulische bleed rate) - de koppeling beweegt dus rustig naar elk setpoint toe in plaats van te springen. Stage 3 is het plafond voor de rest van de run (géén automatische sprong naar 100% erna): op 100% geeft dat moment in echte telemetrie de piek-G, niet de launch. Zet het lager om de koppeling bewust te laten blijven slippen wanneer de baan geen volledige lockup aankan - dat beschermt de banden, maar de koppeling zelf betaalt de rekening (oververhit en uiteindelijk kapot als je het te lang of te ver volhoudt). Stage-percentages hoeven niet oplopend te zijn: een duidelijke terugval en langere hold in stage 2 na de eerste hit is normaal en zelfs nodig - dat is wat de 60ft-tijd los houdt van de rest van de run in plaats van de hele baan even hard te maken.</p>
       </div>
 
       <div class="panel">

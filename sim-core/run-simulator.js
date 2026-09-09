@@ -52,7 +52,14 @@ const ENGINE_BRAKE_COEFF = 12;
 // regardless of how much grip is on offer, so this bonus has zero further
 // effect there - see TIRE_GROWTH_RATE below for the wheelspeed/shake side
 // of the same phenomenon).
-const TIRE_PEAK_GRIP_BONUS = 0.15;
+// Calibrated against real NHRA time slips (see docs/nhra-reference-times.md)
+// rather than a single ET target: matching a solid full-split example
+// (0.828/2.156/3.089@274/3.853) needed more than just a bigger bonus - the
+// old value only fixed the 0-60ft window and left 60-660ft compressed well
+// past what any real split shows, however this constant was tuned. 0.40
+// pairs with the widened stage-2 hold below to get the WHOLE early-to-mid
+// shape in the right neighborhood, not just the launch number.
+const TIRE_PEAK_GRIP_BONUS = 0.4;
 // How much wheelspeed-over-groundspeed a healthy, well-matched tire builds
 // as it grows under load (loadRatio = engineForce/maxTraction) - this is
 // the margin real data-logger traces show even on a clean, non-smoking
@@ -186,12 +193,15 @@ export function runSimulation(settings) {
     const richness = calcMixtureRichness(fuelVolPctNow, idealFuelPct);
     richnessIntegral += richness * DT;
 
-    // Base HP/force scaled up from the original 6500/13000 baseline so that
-    // re-anchoring fuelFactor to hit 1.0 at the 90% legal nitro max (was
-    // ~1.12 at 90% under the old formula) reproduces the exact same power
-    // at 90% as before - the reference point moved, not the calibration.
-    const LAUNCH_CAP = 14583 * mult;
-    const POWER_HP = 7291 * mult;
+    // LAUNCH_CAP raised from the original 6500/13000 baseline (already
+    // adjusted once for the 90%-nitro fuelFactor re-anchor) again here,
+    // against real time slips this time (see docs/nhra-reference-times.md)
+    // rather than a single ET number - a strong enough torque ceiling to
+    // get 60ft into the real 0.80-0.86s range needs pairing with the wider
+    // stage-2 hold below, or it just drags 330-660ft faster right along
+    // with it instead of reproducing the real segment shape.
+    const LAUNCH_CAP = 20000 * mult;
+    const POWER_HP = 7300 * mult;
 
     const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, driverShutoffFt, DT);
     const powerForce = (POWER_HP * lf * 550) / Math.max(v, V_FLOOR);
