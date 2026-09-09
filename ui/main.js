@@ -413,7 +413,7 @@ function setMode(mode) {
   $("eventPanel").style.display = mode === "event" ? "block" : "none";
   $("runBtn").style.display = mode === "event" ? "none" : "block";
   updateEnvLock();
-  if (mode === "event" && eventInProgress()) renderCurrentRoundInfo();
+  if (mode === "event" && eventInProgress()) activateRound();
 }
 $("tabTest").addEventListener("click", () => setMode("test"));
 $("tabEvent").addEventListener("click", () => setMode("event"));
@@ -435,28 +435,36 @@ function roundResultText(result) {
   return "DNF";
 }
 
-function renderRoundLadder() {
-  $("round-ladder").innerHTML = eventRounds.map((round, i) => {
+// The table is the point of this feature: past rounds' weather sits right
+// next to their times, and the active round's own weather is highlighted
+// in the same columns, so a comparison is just reading across a row -
+// this is what lets a re-tune between rounds actually be informed instead
+// of guesswork. Future rounds' weather stays hidden (a crew chief doesn't
+// know it in advance either), even though it's already generated.
+function renderEventTable() {
+  $("event-table-body").innerHTML = eventRounds.map((round, i) => {
     const result = eventResults[i];
-    const cls = result ? "done" : (i === eventRoundIndex ? "current" : "");
-    const resultTxt = result ? roundResultText(result) : (i === eventRoundIndex ? "actief" : "--");
-    return `<div class="round-row ${cls}"><span><span class="rlabel">${round.id}</span><span class="rphase">${round.label}</span></span><span class="rresult">${resultTxt}</span></div>`;
+    const isCurrent = i === eventRoundIndex && !result;
+    const isFuture = i > eventRoundIndex;
+    const cls = result ? "done" : (isCurrent ? "current" : "future");
+    const c = round.conditions;
+    const condCells = isFuture
+      ? `<td colspan="5" style="text-align:center;">nog onbekend</td>`
+      : `<td>${c.airtempC}°C</td><td>${c.humidity}%</td><td>${c.baroInHg.toFixed(2)}</td><td>${c.trackTempC}°C</td><td>${c.gripSliderPct}%</td>`;
+    const et60Txt = result && result.et60 ? result.et60.toFixed(3) : "--";
+    const etTxt = result && result.finished ? result.et.toFixed(3) : "--";
+    const mphTxt = result ? result.mph.toFixed(1) : "--";
+    const statusTxt = result ? roundResultText(result) : (isCurrent ? "actief" : "--");
+    return `<tr class="${cls}"><td>${round.id}</td>${condCells}<td>${et60Txt}</td><td>${etTxt}</td><td>${mphTxt}</td><td>${statusTxt}</td></tr>`;
   }).join("");
 }
 
-function renderCurrentRoundInfo() {
+function activateRound() {
   const round = eventRounds[eventRoundIndex];
-  $("event-current").style.display = "block";
-  $("event-round-label").textContent = `Actieve ronde: ${round.id} — ${round.label}`;
-  const c = round.conditions;
-  $("event-conditions").innerHTML = `
-    <div class="cond"><div class="lbl">Lucht</div><div class="num">${c.airtempC}°C</div></div>
-    <div class="cond"><div class="lbl">Vocht</div><div class="num">${c.humidity}%</div></div>
-    <div class="cond"><div class="lbl">Luchtdruk</div><div class="num">${c.baroInHg.toFixed(2)} inHg</div></div>
-    <div class="cond"><div class="lbl">Baan</div><div class="num">${c.trackTempC}°C</div></div>
-    <div class="cond"><div class="lbl">VHT/prep</div><div class="num">${c.gripSliderPct}%</div></div>
-  `;
-  applyConditions(c);
+  $("event-round-label").style.display = "block";
+  $("event-round-label").textContent = `Actieve ronde: ${round.id} — ${round.label}. Vergelijk de tabel hierboven met eerdere rondes om je tune bij te stellen.`;
+  applyConditions(round.conditions);
+  renderEventTable();
 }
 
 $("startEventBtn").addEventListener("click", () => {
@@ -464,11 +472,11 @@ $("startEventBtn").addEventListener("click", () => {
   eventResults = [];
   eventRoundIndex = 0;
   $("event-status").textContent = "Evenement bezig — tune je auto voor elke ronde en druk op \"Run deze ronde\".";
+  $("event-table").style.display = "table";
   $("startEventBtn").style.display = "none";
   $("runRoundBtn").style.display = "block";
   $("newEventBtn").style.display = "block";
-  renderRoundLadder();
-  renderCurrentRoundInfo();
+  activateRound();
   updateEnvLock();
 });
 
@@ -479,17 +487,17 @@ $("runRoundBtn").addEventListener("click", () => {
   eventResults[eventRoundIndex] = r;
   renderRunResult(r);
   eventRoundIndex++;
-  renderRoundLadder();
   if (eventRoundIndex >= eventRounds.length) {
+    renderEventTable();
     $("event-status").textContent = "Evenement compleet — alle 4 kwalificatie- en 4 eliminatierondes gereden.";
+    $("event-round-label").style.display = "none";
     $("runRoundBtn").style.display = "none";
-    $("event-current").style.display = "none";
     updateEnvLock();
   } else {
     $("event-status").textContent = eventRoundIndex === 4
       ? "Kwalificatie compleet — eliminaties beginnen."
       : "Volgende ronde klaar om getuned te worden.";
-    renderCurrentRoundInfo();
+    activateRound();
   }
 });
 
@@ -498,12 +506,86 @@ $("newEventBtn").addEventListener("click", () => {
   eventResults = [];
   eventRoundIndex = 0;
   $("event-status").textContent = EVENT_IDLE_STATUS;
+  $("event-table").style.display = "none";
+  $("event-round-label").style.display = "none";
   $("startEventBtn").style.display = "block";
   $("runRoundBtn").style.display = "none";
   $("newEventBtn").style.display = "none";
-  $("round-ladder").innerHTML = "";
-  $("event-current").style.display = "none";
   updateEnvLock();
 });
 
 setMode("test");
+
+// ---- Setup opslaan/laden: bewaart motor/koppeling/chassis/rijder (niet de
+// omgevingscondities) lokaal in de browser onder een zelfgekozen naam. ----
+
+const SETUPS_KEY = "topfuel-setups";
+const SETUP_SLIDER_IDS = sliders.filter(id => !envSliderIds.includes(id));
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function loadSetupsStore() {
+  try { return JSON.parse(localStorage.getItem(SETUPS_KEY) || "{}"); } catch { return {}; }
+}
+function saveSetupsStore(store) {
+  try { localStorage.setItem(SETUPS_KEY, JSON.stringify(store)); } catch { /* private mode, storage full, etc - saving just silently no-ops */ }
+}
+
+function collectSetup() {
+  const setup = {};
+  SETUP_SLIDER_IDS.forEach(id => { setup[id] = $(id).value; });
+  setup.watchft = $("watchft").value;
+  return setup;
+}
+function applySetup(setup) {
+  SETUP_SLIDER_IDS.forEach(id => {
+    if (setup[id] === undefined) return;
+    $(id).value = setup[id];
+    $(id).dispatchEvent(new Event("input"));
+  });
+  if (setup.watchft !== undefined) $("watchft").value = setup.watchft;
+}
+
+function refreshSetupSelect() {
+  const store = loadSetupsStore();
+  const names = Object.keys(store).sort();
+  const select = $("setupSelect");
+  const current = select.value;
+  select.innerHTML = '<option value="">— kies een setup —</option>' + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+  if (names.includes(current)) select.value = current;
+}
+
+$("saveSetupBtn").addEventListener("click", () => {
+  const name = $("setupName").value.trim();
+  if (!name) { $("setup-status").textContent = "Geef eerst een naam op voor je zet opslaat."; return; }
+  const store = loadSetupsStore();
+  store[name] = collectSetup();
+  saveSetupsStore(store);
+  refreshSetupSelect();
+  $("setupSelect").value = name;
+  $("setupName").value = "";
+  $("setup-status").textContent = `Setup "${name}" opgeslagen.`;
+});
+
+$("loadSetupBtn").addEventListener("click", () => {
+  const name = $("setupSelect").value;
+  if (!name) { $("setup-status").textContent = "Kies eerst een setup uit de lijst."; return; }
+  const store = loadSetupsStore();
+  if (!store[name]) return;
+  applySetup(store[name]);
+  $("setup-status").textContent = `Setup "${name}" geladen.`;
+});
+
+$("deleteSetupBtn").addEventListener("click", () => {
+  const name = $("setupSelect").value;
+  if (!name) { $("setup-status").textContent = "Kies eerst een setup uit de lijst."; return; }
+  const store = loadSetupsStore();
+  delete store[name];
+  saveSetupsStore(store);
+  refreshSetupSelect();
+  $("setup-status").textContent = `Setup "${name}" verwijderd.`;
+});
+
+refreshSetupSelect();

@@ -223,18 +223,28 @@ export function activeIgnition(t, ignitionCurve) {
 export const IGNITION_RETARD_ARM_TIME = 2.75; // s - blocked before this
 export const IGNITION_REDLINE_RPM = 7900; // NHRA Top Fuel max
 export const IGNITION_MAX_RETARD_DEG = 30; // hard cap on pull-out
-// Our RPM channel's own plateau (see LAUNCH_RPM below) already sits a few
-// hundred rpm above this redline by design (it's an indicative "how hard
-// is it spinning" channel, not literally redline-limited on its own) - so
-// a steep gain would slam to max retard the instant the system arms, on
-// every run, which isn't what "safety net for an aggressive tune" means.
-// This gain keeps a normal run's steady-state overshoot in a modest,
-// single-digit-degrees range and only climbs toward the 30deg cap for a
-// real excursion on top of that.
-const IGNITION_RETARD_GAIN = 30 / 2500; // deg per rpm over redline
+// This is a RAMP, not a lookup: retard builds up over time rather than
+// jumping straight to whatever a stateless "current rpm overage" formula
+// would say the instant the system arms - a car already well over redline
+// right at 2.75s should NOT see the full corresponding retard slam in
+// within one timestep, it should see the pull start right away and build.
+// IGNITION_RETARD_BASE_RATE is that starting pull the moment rpm first
+// crosses redline (so it engages EARLY, right at the threshold, not only
+// once a large overage has built up); IGNITION_RETARD_RATE_GAIN then adds
+// to that rate the further over redline rpm actually is, so a run that
+// keeps climbing despite the initial pull gets pulled out faster, not at
+// the same flat rate - the corrective action escalates with the problem.
+// Dropping back under redline releases the ramp immediately (no lag on
+// the way down); how fast the ACTUAL ignition timing can then climb back
+// out is still capped by IGNITION_MAX_ADVANCE_RATE above, so there's no
+// separate "sudden full advance back" risk to guard against here.
+const IGNITION_RETARD_BASE_RATE = 4; // deg/s, right at the 7900 threshold
+const IGNITION_RETARD_RATE_GAIN = 0.011; // additional deg/s per rpm over redline
 
-export function calcIgnitionRetard(t, rpm) {
+export function calcIgnitionRetard(t, rpm, priorRetardDeg, dt) {
   if (t < IGNITION_RETARD_ARM_TIME) return 0;
   const over = Math.max(0, rpm - IGNITION_REDLINE_RPM);
-  return Math.min(IGNITION_MAX_RETARD_DEG, over * IGNITION_RETARD_GAIN);
+  if (over <= 0) return 0;
+  const pullRate = IGNITION_RETARD_BASE_RATE + over * IGNITION_RETARD_RATE_GAIN;
+  return Math.min(IGNITION_MAX_RETARD_DEG, priorRetardDeg + pullRate * dt);
 }

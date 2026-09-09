@@ -198,6 +198,7 @@ export function runSimulation(settings) {
   let earlyLoadSum = 0;
   let earlyLoadCount = 0;
   let peakIgnitionRetard = 0;
+  let ignitionRetardState = 0;
   let ignitionActual = ignitionCurve[0];
   let ignEffIntegral = 0;
 
@@ -223,7 +224,8 @@ export function runSimulation(settings) {
     // equipment on cars like these, not a driver-tunable knob) can pull
     // timing further out on top of it once armed - see engine.js for both.
     const ignitionSet = activeIgnition(t, ignitionCurve);
-    const ignitionRetardDeg = calcIgnitionRetard(t, rpm);
+    const ignitionRetardDeg = calcIgnitionRetard(t, rpm, ignitionRetardState, DT);
+    ignitionRetardState = ignitionRetardDeg;
     const ignitionTarget = ignitionSet - ignitionRetardDeg;
     // Timing can drop (retard, or the curve itself calling for less) as
     // fast as it needs to, but climbing back toward more advance is rate-

@@ -16,19 +16,37 @@
     <button class="tab" id="tabEvent">Evenement</button>
   </div>
 
+  <div class="panel" id="eventPanel" style="display:none;">
+    <div class="sec-title">Evenement</div>
+    <p class="note" style="margin-top:0;" id="event-status">Nog geen evenement gestart. 4 kwalificatierondes, daarna 4 eliminatierondes, elk met eigen (gesimuleerde) weersomstandigheden — jij tunet elke ronde opnieuw. Nog geen tegenstander/AI-tijden, kwalificatieladder of bracket-koppeling: dat komt later boven op deze rondestructuur.</p>
+    <p class="note" style="margin-top:0; display:none;" id="event-round-label">--</p>
+    <div style="overflow-x:auto;">
+      <table class="event-table" id="event-table" style="display:none;">
+        <thead><tr><th>Ronde</th><th>Lucht</th><th>Vocht</th><th>Druk</th><th>Baan</th><th>VHT</th><th>60ft</th><th>ET</th><th>mph</th><th>Status</th></tr></thead>
+        <tbody id="event-table-body"></tbody>
+      </table>
+    </div>
+    <button class="run" id="startEventBtn">Start evenement</button>
+    <button class="run" id="runRoundBtn" style="display:none;">Run deze ronde</button>
+    <button class="secondary" id="newEventBtn" style="display:none;">Nieuw evenement</button>
+  </div>
+
   <div class="grid">
     <div>
-      <div class="panel" id="eventPanel" style="display:none;">
-        <div class="sec-title">Evenement</div>
-        <p class="note" style="margin-top:0;" id="event-status">Nog geen evenement gestart. 4 kwalificatierondes, daarna 4 eliminatierondes, elk met eigen (gesimuleerde) weersomstandigheden — jij tunet elke ronde opnieuw. Nog geen tegenstander/AI-tijden, kwalificatieladder of bracket-koppeling: dat komt later boven op deze rondestructuur.</p>
-        <div class="round-ladder" id="round-ladder"></div>
-        <div id="event-current" style="display:none;">
-          <p class="note" style="margin-top:0;" id="event-round-label">--</p>
-          <div class="cond-grid" id="event-conditions"></div>
+      <div class="panel" id="setupPanel">
+        <div class="sec-title">Setup</div>
+        <div class="row">
+          <label>Opgeslagen setups</label>
+          <select id="setupSelect"><option value="">— kies een setup —</option></select>
         </div>
-        <button class="run" id="startEventBtn">Start evenement</button>
-        <button class="run" id="runRoundBtn" style="display:none;">Run deze ronde</button>
-        <button class="secondary" id="newEventBtn" style="display:none;">Nieuw evenement</button>
+        <button class="secondary" id="loadSetupBtn">Laden</button>
+        <button class="secondary" id="deleteSetupBtn">Verwijderen</button>
+        <div class="row" style="margin-top:14px;">
+          <label>Naam voor nieuwe setup</label>
+          <input type="text" id="setupName" placeholder="bijv. Denver hete middag">
+        </div>
+        <button class="run" id="saveSetupBtn">Setup opslaan</button>
+        <p class="note" id="setup-status">Setups worden lokaal in je browser bewaard (niet gesynchroniseerd tussen apparaten of gedeeld). Omvat motor, koppeling, chassis en rijder - niet de omgevingscondities (die stel je apart in, of komen uit de actieve evenement-ronde).</p>
       </div>
 
       <div class="panel">
@@ -59,7 +77,7 @@
         <div class="row"><label>Ontsteking @1.5s <span class="val" id="v-ign4">46°</span></label><input type="range" id="ign4" min="20" max="75" value="46" step="1"></div>
         <div class="row"><label>Ontsteking @2.75s <span class="val" id="v-ign5">42°</span></label><input type="range" id="ign5" min="20" max="75" value="42" step="1"></div>
         <div class="row"><label>Ontsteking @4.0s <span class="val" id="v-ign6">38°</span></label><input type="range" id="ign6" min="20" max="75" value="38" step="1"></div>
-        <p class="note">Ontsteking is een curve met 6 punten, zoals brandstof en koppeling. Nitro's trage verbranding vraagt véél meer voorontsteking dan benzine - op de launch 60-65° om het vermogen op te bouwen (MSD), daarna trekt de crew chief 'm terug naarmate de koppeling verder aankomt. Boven 65° levert meer graden geen extra vermogen meer op, alleen extra hitterisico. Vanaf 2,75s bewaakt een ingebouwde retarder het toerental: boven 7.900 rpm trekt de box zelf tot 30° terug (max 15°/s terug omhoog), los van wat jij hier instelt - veiligheidsapparatuur, geen tuning-knop. Blijft de effectieve ontsteking ook ná die terugtrekking te hoog, dan loopt de motor alsnog heet risico.</p>
+        <p class="note">Ontsteking is een curve met 6 punten, zoals brandstof en koppeling. Nitro's trage verbranding vraagt véél meer voorontsteking dan benzine - op de launch 60-65° om het vermogen op te bouwen (MSD), daarna trekt de crew chief 'm terug naarmate de koppeling verder aankomt. Boven 65° levert meer graden geen extra vermogen meer op, alleen extra hitterisico. Vanaf 2,75s bewaakt een ingebouwde retarder het toerental: zodra het boven 7.900 rpm komt begint de box direct (maar geleidelijk) terug te trekken, en hoe verder het toerental daarboven blijft klimmen, hoe sneller hij verder terugtrekt - tot een plafond van 30° (max 15°/s terug omhoog), los van wat jij hier instelt - veiligheidsapparatuur, geen tuning-knop. Blijft de effectieve ontsteking ook ná die terugtrekking te hoog, dan loopt de motor alsnog heet risico.</p>
         <p class="note" id="power-hint">Geschat piekvermogen: -- pk</p>
       </div>
 
