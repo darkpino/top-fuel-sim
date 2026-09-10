@@ -120,20 +120,18 @@ const CLUTCH_FAILURE_THRESHOLD = 0.15;
 // costs cylinders, but on its own it never escalates to a full failure the
 // way running lean under load does.
 // FOUL_DAMAGE_RATE deliberately sits well below LEAN_DAMAGE_RATE, not just
-// a bit under it: a fuel curve that opens up ahead of an anticipated RPM
-// pulldown (see activeFuelPct/the "brandstofpomp" note above) is supposed
-// to run rich for a real stretch of a normal pass - that's the safety
-// margin against going lean during the pulldown, not a tuning mistake. At
-// the old 0.4 (nearly as aggressive as LEAN_DAMAGE_RATE's 0.5) that
-// deliberate margin alone was enough to trip a cylinder drop on almost
-// every run, calibrated tune or not - confirmed by tracing a stock default
-// pass, which reads exactly this shape (rich from ~0.8s to ~2.6s, before
-// any tune choice makes it worse). Rich staying the lesser of the two
-// mixture failure modes (it costs a cylinder, never the full engine the
-// way lean does) is the design intent CYLINDER_DROP_THRESHOLD assumed;
-// this just makes the rate match that intent instead of undermining it.
+// a bit under it: rich staying the lesser of the two mixture failure modes
+// (it costs a cylinder, never the full engine the way lean does) is the
+// design intent CYLINDER_DROP_THRESHOLD assumed, and at the old 0.4
+// (nearly as aggressive as LEAN_DAMAGE_RATE's 0.5) that intent wasn't
+// being honored. Now that activeFuelPct only actually delivers a later
+// stage's richer setting once the clutch has genuinely started locking up
+// (see engine.js), a stock default pass stays close to a clean 0 for most
+// of the run instead of running rich the moment the clock reaches a later
+// stage - 0.15 leaves that pass a comfortable margin under
+// CYLINDER_DROP_THRESHOLD while still catching a genuinely over-rich tune.
 const LEAN_DAMAGE_RATE = 0.5;
-const FOUL_DAMAGE_RATE = 0.08;
+const FOUL_DAMAGE_RATE = 0.15;
 const CYLINDER_DROP_THRESHOLD = 0.075;
 const ENGINE_FAILURE_THRESHOLD = 0.15;
 const CYLINDER_DROP_FORCE_PENALTY = 0.85; // one or more cylinders misfiring
@@ -290,7 +288,7 @@ export function runSimulation(settings) {
 
     engineRpmState = stepEngineRpm(engineRpmState, { t, wheelSpeedFtS: wheelV, lf, priorSlipPct: lastSlipPct, throttle }, DT);
     const rpm = engineRpmState;
-    const fuelVolPctNow = activeFuelPct(t, fuelStages);
+    const fuelVolPctNow = activeFuelPct(t, fuelStages, lf);
     // Ignition is a curve too now, and the retard system (real safety
     // equipment on cars like these, not a driver-tunable knob) can pull
     // timing further out on top of it once armed - see engine.js for both.

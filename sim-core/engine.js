@@ -249,11 +249,26 @@ export function calcMixtureRichness(actualFuelPct, idealFuelPct) {
 // 3-stage version, just with more points to shape the curve.
 const FUEL_STAGE_NUMBERS = [1, 2, 3, 4, 5, 6];
 
-export function activeFuelPct(t, fuelStages) {
+// The 6 fuelNtime sliders are still a plan on the clock (a crew chief
+// still schedules them in seconds, same UI, same saved setups) - but the
+// REASON later stages open richer is to cover the pulldown (see the note
+// above calcIdealFuelPct), and the pulldown itself is a clutch-lockup
+// event, not a clock event: it happens whenever lf actually crosses
+// LOCK_ENGAGE_START, which can be earlier or later than the time-based
+// plan expected depending on the tune. Blending the planned stage value
+// toward fuel1pct by how far short of real lockup the clutch still is
+// (reusing stepEngineRpm's own lockFrac - the same 0-1 number that
+// already governs when RPM itself actually starts sagging) means a later
+// stage's richer setting only fully lands once the pulldown it was meant
+// for has actually started, instead of firing early off the clock and
+// running rich for no reason while the motor is still free-revving.
+export function activeFuelPct(t, fuelStages, lf = 1) {
+  let planned = fuelStages.fuel6pct;
   for (const n of FUEL_STAGE_NUMBERS) {
-    if (t < fuelStages[`fuel${n}time`]) return fuelStages[`fuel${n}pct`];
+    if (t < fuelStages[`fuel${n}time`]) { planned = fuelStages[`fuel${n}pct`]; break; }
   }
-  return fuelStages.fuel6pct;
+  const lockFrac = Math.max(0, Math.min(1, (lf - LOCK_ENGAGE_START) / (1 - LOCK_ENGAGE_START)));
+  return fuelStages.fuel1pct + (planned - fuelStages.fuel1pct) * lockFrac;
 }
 
 // Generic breakpoint-curve sampler: points is an array of {t, v} sorted by
