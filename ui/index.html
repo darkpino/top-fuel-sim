@@ -200,20 +200,24 @@
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Motor</div>
     <p class="note" style="margin-top:0;" id="g-engine-equipped">Geen motorblok gemonteerd.</p>
     <div id="g-engine-inventory-list"></div>
-    <div class="row"><label>Merk</label><select id="g-engine-spare-brand"></select></div>
-    <div class="row"><label><input type="checkbox" id="g-engine-spare-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <div class="row"><label>Merk (nieuw)</label><select id="g-engine-spare-brand"></select></div>
     <button class="secondary" id="g-buy-engine-spare" type="button">Motorblok kopen</button>
     <p class="note">Motorschade tijdens een evenement raakt niet altijd het blok zelf - een te hete run kan net zo goed de blower laten klappen, een te mager mengsel juist een cilinderkop, en soms allebei tegelijk (zie ook Cilinderkoppen en Blower hieronder). Heb je een reserve voor het geraakte onderdeel, dan monteert de crew 'm meteen (tegen montagekosten - niet meer gratis); zonder reserve wordt het gerepareerd voor het volgende evenement, maar is dit evenement voorbij. Bij een heftige klapper is de schade soms te groot voor zelfs een reserve om aan de baan te redden - dat onderdeel is dan total loss en moet sowieso vervangen worden, en dit evenement is voorbij ongeacht wat er in de trailer ligt.</p>
+    <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
+    <p class="note" style="margin-top:0;">Wisselend aanbod, per merk een eigen leeftijd - hoe ouder, hoe goedkoper maar ook hoe minder betrouwbaar. Ververst bij elk nieuw evenement.</p>
+    <div id="g-engine-market-list"></div>
     </div>
 
     <div class="garage-section" id="garage-sec-heads">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Cilinderkoppen</div>
     <p class="note" style="margin-top:0;" id="g-head-equipped">Geen cilinderkoppen gemonteerd.</p>
     <div id="g-head-inventory-list"></div>
-    <div class="row"><label>Merk</label><select id="g-head-spare-brand"></select></div>
-    <div class="row"><label><input type="checkbox" id="g-head-spare-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <div class="row"><label>Merk (nieuw)</label><select id="g-head-spare-brand"></select></div>
     <button class="secondary" id="g-buy-head-spare" type="button">Cilinderkoppen kopen</button>
     <p class="note">Kan ook geraakt worden door motorschade elders (zie Motor hierboven) - vooral bij een te mager mengsel, niet alleen door eigen slijtage.</p>
+    <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
+    <p class="note" style="margin-top:0;">Wisselend aanbod, per merk een eigen leeftijd - hoe ouder, hoe goedkoper maar ook hoe minder betrouwbaar. Ververst bij elk nieuw evenement.</p>
+    <div id="g-head-market-list"></div>
     </div>
 
     <div class="garage-section" id="garage-sec-blower">
@@ -226,10 +230,12 @@
       </select>
     </div>
     <div id="g-blower-inventory-list"></div>
-    <div class="row"><label>Merk</label><select id="g-blower-spare-brand"></select></div>
-    <div class="row"><label><input type="checkbox" id="g-blower-spare-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <div class="row"><label>Merk (nieuw)</label><select id="g-blower-spare-brand"></select></div>
     <button class="secondary" id="g-buy-blower-spare" type="button">Blower kopen</button>
     <p class="note">Kan ook geraakt worden door motorschade elders (zie Motor hierboven) - vooral bij een te hete run, niet alleen door eigen slijtage.</p>
+    <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
+    <p class="note" style="margin-top:0;">Wisselend aanbod, per merk een eigen leeftijd - hoe ouder, hoe goedkoper maar ook hoe minder betrouwbaar. Ververst bij elk nieuw evenement.</p>
+    <div id="g-blower-market-list"></div>
     </div>
 
     <div class="garage-section" id="garage-sec-clutch">
@@ -237,10 +243,12 @@
     <p class="note" style="margin-top:0;" id="g-clutch-equipped">Geen koppeling gemonteerd.</p>
     <p class="note" style="margin-top:0;">Plaatenaantal en warmteopbouw tijdens slippen zitten in het merk gebakken - een goedkope 5-plaats wordt heter tijdens slippen (minder tolerant), duurdere 6-plaats-modellen koeler en betrouwbaarder. Elk merk heeft ook een eigen grens aan hoeveel vermogen het pakket kan vasthouden: maakt de motor meer dan die koppeling aankan, dan rijdt hij er letterlijk doorheen - hij blijft slippen, ook bij volledige lockup - en kookt zichzelf op tot hij vastloopt. Een goedkopere koppeling bij een fors vermogen is dus een reëel risico, niet alleen een betrouwbaarheidscijfer op papier.</p>
     <div id="g-clutch-inventory-list"></div>
-    <div class="row"><label>Merk</label><select id="g-clutch-spare-brand"></select></div>
-    <div class="row"><label><input type="checkbox" id="g-clutch-spare-secondhand"> Tweedehands (55% van nieuwprijs, minder betrouwbaar)</label></div>
+    <div class="row"><label>Merk (nieuw)</label><select id="g-clutch-spare-brand"></select></div>
     <button class="secondary" id="g-buy-clutch-spare" type="button">Koppeling kopen</button>
     <p class="note">Met reserve monteert de crew 'm bij koppelingsschade (tegen montagekosten - niet meer gratis); zonder reserve is je evenement voorbij (reparatiekosten voor het volgende evenement). Bij een heftige klapper is de koppeling soms total loss, ook mét reserve op de trailer - dan moet 'm alsnog vervangen worden en is dit evenement sowieso voorbij.</p>
+    <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
+    <p class="note" style="margin-top:0;">Wisselend aanbod, per merk een eigen leeftijd - hoe ouder, hoe goedkoper maar ook hoe minder betrouwbaar. Ververst bij elk nieuw evenement.</p>
+    <div id="g-clutch-market-list"></div>
     </div>
 
     <div class="garage-section" id="garage-sec-trailer">

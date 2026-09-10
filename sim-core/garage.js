@@ -10,20 +10,65 @@
 // more power) and a reliabilityMult (better parts tolerate more abuse
 // before the engine lets go) alongside its price - the explicit
 // "expensive parts are better AND more reliable, cheap parts are
-// cheaper" tradeoff. Secondhand knocks reliability down further
-// (SECONDHAND_RELIABILITY_MULT) without touching power - a used part
-// still makes the power it always did, it's just closer to the end of
-// its life.
+// cheaper" tradeoff. A used unit knocks reliability down further based
+// on how old it actually is (usedReliabilityMult) without touching power
+// - a used part still makes the power it always did, it's just closer to
+// the end of its life. Age is carried on the unit itself (ageMonths, 0 =
+// bought new) rather than a flat secondhand flag, and used units come
+// from a rotating market (generateUsedMarket) instead of a checkbox next
+// to every brand - see USED_LISTINGS_PER_PART below.
 
 // Reliability tiers are deliberately gentle (see garageEngineDamageMult
 // below): the engine failure model is calibrated tight around the
 // default tune (the whole point of that calibration - a real Top Fuel
 // motor lives on a knife edge), so even a modest multiplier on the
 // damage rate compounds fast over a run. A worst-case budget-everything-
-// secondhand build lands around 1.5x damage (survivable, but punishing
-// and worth retuning conservatively for), not an unrecoverable 3-4x.
-export const SECONDHAND_PRICE_MULT = 0.55;
-export const SECONDHAND_RELIABILITY_MULT = 0.9;
+// oldest-available-used build lands around 1.5x damage (survivable, but
+// punishing and worth retuning conservatively for), not an unrecoverable
+// 3-4x.
+export const USED_AGE_MIN_MONTHS = 3;
+export const USED_AGE_MAX_MONTHS = 60;
+const USED_PRICE_MULT_AT_MIN_AGE = 0.90;
+const USED_PRICE_MULT_FLOOR = 0.30;
+const USED_RELIABILITY_MULT_AT_MIN_AGE = 0.97;
+const USED_RELIABILITY_MULT_FLOOR = 0.80;
+
+function usedAgeFraction(ageMonths) {
+  return Math.max(0, Math.min(1, (ageMonths - USED_AGE_MIN_MONTHS) / (USED_AGE_MAX_MONTHS - USED_AGE_MIN_MONTHS)));
+}
+// A barely-used listing (near USED_AGE_MIN_MONTHS) is only a little
+// cheaper than new; a well-worn one (near USED_AGE_MAX_MONTHS) is deeply
+// discounted - real used-equipment depreciation, not a flat 55%-of-new
+// regardless of condition.
+export function usedPriceMult(ageMonths) {
+  const f = usedAgeFraction(ageMonths);
+  return USED_PRICE_MULT_AT_MIN_AGE + (USED_PRICE_MULT_FLOOR - USED_PRICE_MULT_AT_MIN_AGE) * f;
+}
+export function usedReliabilityMult(ageMonths) {
+  const f = usedAgeFraction(ageMonths);
+  return USED_RELIABILITY_MULT_AT_MIN_AGE + (USED_RELIABILITY_MULT_FLOOR - USED_RELIABILITY_MULT_AT_MIN_AGE) * f;
+}
+
+// The used-parts market: a handful of currently-available listings per
+// ownable part, each a specific brand at a specific age (so two listings
+// of the "same" brand can be very different buys). Regenerated wholesale
+// by the caller (main.js, on every event start - see MARKET_KEY there) so
+// the available stock actually turns over between events, not a fixed
+// catalog sitting there forever.
+export const USED_LISTINGS_PER_PART = 4;
+
+export function generateUsedMarket(rng = Math.random) {
+  const market = {};
+  Object.keys(PARTS).forEach((part) => {
+    const brands = PARTS[part].brands;
+    market[part] = Array.from({ length: USED_LISTINGS_PER_PART }, (_, i) => {
+      const brand = brands[Math.floor(rng() * brands.length)];
+      const ageMonths = Math.round(USED_AGE_MIN_MONTHS + rng() * (USED_AGE_MAX_MONTHS - USED_AGE_MIN_MONTHS));
+      return { id: `${part}-${Date.now()}-${i}-${Math.floor(rng() * 1e6)}`, brandId: brand.id, ageMonths };
+    });
+  });
+  return market;
+}
 
 // weightDeltaLb follows the same "middle tier is the neutral baseline"
 // shape as powerMult/reliabilityMult: the default brand (tier index 1,
@@ -148,8 +193,8 @@ export const TRAILER_TYPES = [
   { id: "semi", name: "Semi-oplegger (volledige pitopstelling)", priceNew: 55000, spareCapacity: 12 },
 ];
 
-export function partPrice(brand, secondhand) {
-  return Math.round(brand.priceNew * (secondhand ? SECONDHAND_PRICE_MULT : 1));
+export function partPrice(brand, ageMonths = 0) {
+  return Math.round(brand.priceNew * (ageMonths > 0 ? usedPriceMult(ageMonths) : 1));
 }
 
 export function findBrand(list, id) {
@@ -157,9 +202,9 @@ export function findBrand(list, id) {
 }
 
 // The four ownable, brand-tiered parts, each with an "equipped" unit
-// (config.<part>BrandId / config.<part>Secondhand) plus an inventory of
-// spares (config.<part>Inventory - an array of { brandId, secondhand }
-// units, each possibly a DIFFERENT brand/condition than the one currently
+// (config.<part>BrandId / config.<part>AgeMonths) plus an inventory of
+// spares (config.<part>Inventory - an array of { brandId, ageMonths }
+// units, each possibly a DIFFERENT brand/age than the one currently
 // mounted, or than each other). PARTS drives the generic inventory
 // helpers below instead of writing near-identical per-part code four times.
 export const PARTS = {
@@ -178,11 +223,11 @@ export const PARTS = {
 // isCarRaceReady for the actual gate on running/racing.
 export function defaultGarageConfig() {
   return {
-    engineBrandId: null, engineSecondhand: false,
-    headBrandId: null, headSecondhand: false,
-    blowerBrandId: null, blowerSecondhand: false,
+    engineBrandId: null, engineAgeMonths: 0,
+    headBrandId: null, headAgeMonths: 0,
+    blowerBrandId: null, blowerAgeMonths: 0,
     blowerType: "conventional",
-    clutchBrandId: null, clutchSecondhand: false,
+    clutchBrandId: null, clutchAgeMonths: 0,
     bodyMaterial: "aluminium",
     chassisLengthIn: CHASSIS_LENGTH_BASELINE_IN,
     tankSizeGal: TANK_SIZE_BASELINE_GAL,
@@ -195,6 +240,34 @@ export function defaultGarageConfig() {
     blowerInventory: [],
     clutchInventory: [],
   };
+}
+
+// Migrates an older saved config (from before the used-parts market) onto
+// the current shape: a flat engineSecondhand/headSecondhand/etc. boolean
+// becomes an engineAgeMonths/headAgeMonths/etc. number (a representative
+// mid-range age for "true", 0 for "false"/unset), and any inventory
+// entries carrying the old { brandId, secondhand } shape get the same
+// treatment. A no-op on an already-current config (nothing to migrate).
+const LEGACY_SECONDHAND_AGE_MONTHS = Math.round((USED_AGE_MIN_MONTHS + USED_AGE_MAX_MONTHS) / 2);
+
+function migrateUnit(unit) {
+  if (!unit || unit.ageMonths !== undefined) return unit;
+  const { secondhand, ...rest } = unit;
+  return { ...rest, ageMonths: secondhand ? LEGACY_SECONDHAND_AGE_MONTHS : 0 };
+}
+
+export function migrateGarageConfig(config) {
+  Object.keys(PARTS).forEach((part) => {
+    const secondhandKey = part + "Secondhand";
+    const ageKey = part + "AgeMonths";
+    if (config[ageKey] === undefined && config[secondhandKey] !== undefined) {
+      config[ageKey] = config[secondhandKey] ? LEGACY_SECONDHAND_AGE_MONTHS : 0;
+    }
+    delete config[secondhandKey];
+    const invKey = part + "Inventory";
+    if (Array.isArray(config[invKey])) config[invKey] = config[invKey].map(migrateUnit);
+  });
+  return config;
 }
 
 export function isPartOwned(config, part) {
@@ -221,16 +294,16 @@ export function isCarRaceReady(config) {
 }
 
 export function equippedUnit(config, part) {
-  return { brandId: config[part + "BrandId"], secondhand: config[part + "Secondhand"] };
+  return { brandId: config[part + "BrandId"], ageMonths: config[part + "AgeMonths"] };
 }
 
 function setEquippedUnit(config, part, unit) {
   config[part + "BrandId"] = unit.brandId;
-  config[part + "Secondhand"] = unit.secondhand;
+  config[part + "AgeMonths"] = unit.ageMonths;
 }
 
 export function unitPrice(part, unit) {
-  return partPrice(findBrand(PARTS[part].brands, unit.brandId), unit.secondhand);
+  return partPrice(findBrand(PARTS[part].brands, unit.brandId), unit.ageMonths);
 }
 
 // Player-initiated swap: mount inventory[index] and return whatever was
@@ -261,7 +334,7 @@ export function consumeSpareOnFailure(config, part) {
 // touches inventory: any spare stays put, ready to be mounted by hand
 // (installUnit) before the next event, but not this one.
 export function unequipPart(config, part) {
-  setEquippedUnit(config, part, { brandId: null, secondhand: false });
+  setEquippedUnit(config, part, { brandId: null, ageMonths: 0 });
 }
 
 // A purchase of a part the team doesn't have yet becomes the equipped
@@ -281,10 +354,11 @@ export function buyUnit(config, part, unit) {
   return "spare";
 }
 
-// A part's own reliability tier, knocked down further if it's secondhand
-// - a used part still makes full power, it's just more fragile.
-function partReliabilityMult(brand, secondhand) {
-  return brand.reliabilityMult * (secondhand ? SECONDHAND_RELIABILITY_MULT : 1);
+// A part's own reliability tier, knocked down further by how old it is if
+// it's a used unit - a used part still makes full power, it's just more
+// fragile (and the older it is, the more so - see usedReliabilityMult).
+function partReliabilityMult(brand, ageMonths = 0) {
+  return brand.reliabilityMult * (ageMonths > 0 ? usedReliabilityMult(ageMonths) : 1);
 }
 
 // Combined power and reliability across the three parts that make up
@@ -304,18 +378,18 @@ export function computeEngineReliabilityMult(config) {
   const head = findBrand(HEAD_BRANDS, config.headBrandId);
   const blower = findBrand(BLOWER_BRANDS, config.blowerBrandId);
   const blowerType = BLOWER_TYPES[config.blowerType];
-  return partReliabilityMult(engine, config.engineSecondhand)
-    * partReliabilityMult(head, config.headSecondhand)
-    * partReliabilityMult(blower, config.blowerSecondhand)
+  return partReliabilityMult(engine, config.engineAgeMonths)
+    * partReliabilityMult(head, config.headAgeMonths)
+    * partReliabilityMult(blower, config.blowerAgeMonths)
     * blowerType.reliabilityMult;
 }
 
 // The clutch's own reliability tier - tracked separately from the engine's
 // (it fails on its own heat-damage clock, see CLUTCH_DAMAGE_RATE in
-// run-simulator.js), same secondhand knock-down as the other three parts.
+// run-simulator.js), same age-based knock-down as the other three parts.
 export function computeClutchReliabilityMult(config) {
   const clutch = findBrand(CLUTCH_BRANDS, config.clutchBrandId);
-  return partReliabilityMult(clutch, config.clutchSecondhand);
+  return partReliabilityMult(clutch, config.clutchAgeMonths);
 }
 
 // Turns a build config into the handful of physics modifiers
@@ -369,7 +443,7 @@ export function computeGarageEffects(config) {
 export function totalBuildValue(config) {
   const partsTotal = Object.keys(PARTS).reduce((sum, part) => {
     if (!isPartOwned(config, part)) return sum;
-    return sum + partPrice(findBrand(PARTS[part].brands, config[part + "BrandId"]), config[part + "Secondhand"]);
+    return sum + partPrice(findBrand(PARTS[part].brands, config[part + "BrandId"]), config[part + "AgeMonths"]);
   }, 0);
   const trailerTotal = config.trailerId ? findBrand(TRAILER_TYPES, config.trailerId).priceNew : 0;
   return partsTotal
@@ -379,10 +453,10 @@ export function totalBuildValue(config) {
 }
 
 export function equippedPartPrice(config, part) {
-  if (part === "engine") return partPrice(findBrand(ENGINE_BRANDS, config.engineBrandId), config.engineSecondhand);
-  if (part === "head") return partPrice(findBrand(HEAD_BRANDS, config.headBrandId), config.headSecondhand);
-  if (part === "blower") return partPrice(findBrand(BLOWER_BRANDS, config.blowerBrandId), config.blowerSecondhand) + BLOWER_TYPES[config.blowerType].priceDelta;
-  if (part === "clutch") return partPrice(findBrand(CLUTCH_BRANDS, config.clutchBrandId), config.clutchSecondhand);
+  if (part === "engine") return partPrice(findBrand(ENGINE_BRANDS, config.engineBrandId), config.engineAgeMonths);
+  if (part === "head") return partPrice(findBrand(HEAD_BRANDS, config.headBrandId), config.headAgeMonths);
+  if (part === "blower") return partPrice(findBrand(BLOWER_BRANDS, config.blowerBrandId), config.blowerAgeMonths) + BLOWER_TYPES[config.blowerType].priceDelta;
+  if (part === "clutch") return partPrice(findBrand(CLUTCH_BRANDS, config.clutchBrandId), config.clutchAgeMonths);
   return 0;
 }
 

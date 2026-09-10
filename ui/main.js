@@ -15,6 +15,7 @@ import {
   totalBuildValue, spareLabel, computeWeightDistribution,
   equippedUnit, installUnit, unitPrice, computeClutchReliabilityMult,
   isPartOwned, isCarRaceReady, totalSpareCount, trailerSpareCapacity, buyUnit,
+  migrateGarageConfig, generateUsedMarket, usedPriceMult, usedReliabilityMult,
 } from "../sim-core/garage.js";
 import {
   ENTRY_FEE, defaultFinancesState, addTransaction, chargeEntryFee, chargeRunCost, chargeTeamWages,
@@ -494,11 +495,28 @@ function saveFinancesState() {
 function loadGarageConfig() {
   try {
     const raw = localStorage.getItem(GARAGE_KEY);
-    return raw ? { ...defaultGarageConfig(), ...JSON.parse(raw) } : defaultGarageConfig();
+    if (!raw) return defaultGarageConfig();
+    // migrateGarageConfig needs to see the RAW saved shape (an absent
+    // engineAgeMonths key means "never migrated," a real signal) - merging
+    // with defaultGarageConfig() first would mask that, since the default
+    // already supplies engineAgeMonths: 0 for every key the old save
+    // doesn't have.
+    return { ...defaultGarageConfig(), ...migrateGarageConfig(JSON.parse(raw)) };
   } catch { return defaultGarageConfig(); }
 }
 function saveGarageConfig() {
   try { localStorage.setItem(GARAGE_KEY, JSON.stringify(garageConfig)); } catch { /* private mode, storage full, etc - silently no-ops */ }
+}
+
+const MARKET_KEY = "topfuel-market";
+function loadMarketState() {
+  try {
+    const raw = localStorage.getItem(MARKET_KEY);
+    return raw ? JSON.parse(raw) : generateUsedMarket(Math.random);
+  } catch { return generateUsedMarket(Math.random); }
+}
+function saveMarketState() {
+  try { localStorage.setItem(MARKET_KEY, JSON.stringify(marketState)); } catch { /* private mode, storage full, etc - silently no-ops */ }
 }
 
 const TEAM_KEY = "topfuel-team";
@@ -515,6 +533,7 @@ function saveTeamConfig() {
 let financesState = loadFinancesState();
 let garageConfig = loadGarageConfig();
 let teamConfig = loadTeamConfig();
+let marketState = loadMarketState();
 
 // ---- Evenement opslaan: ladderState (actieve kwalificatie/eliminatie-
 // ladder) leeft normaal alleen in het geheugen - zonder dit zou een
@@ -727,6 +746,12 @@ $("startEventBtn").addEventListener("click", () => {
   chargeTeamWages(financesState, wagesPerEvent);
   saveFinancesState();
   renderFinancePanel();
+  // The used-parts market turns over between events - fresh stock every
+  // time a new one starts, same "time has passed" checkpoint the rest of
+  // the economy (wages, sponsor offers) already keys off.
+  marketState = generateUsedMarket(Math.random);
+  saveMarketState();
+  if (currentMode === "garage") renderGarageSummary();
   const totalEntries = +$("fieldSizeSelect").value;
   const bracketSize = deriveBracketSize(totalEntries, 32);
   const seed = Math.floor(Math.random() * 1e9);
@@ -1320,11 +1345,22 @@ function readGarageConfigFromForm() {
   garageConfig.enginePositionIn = +$("g-engine-position").value;
 }
 
-// Renders one part's spare inventory as a small table: brand, condition,
-// and a "Monteer" button to swap it in for whatever's currently equipped
-// (which goes back into the inventory slot it came from, not discarded -
-// see installUnit in garage.js). Visibility into "what do I actually own"
-// is the direct ask: the equipped select above only ever shows ONE unit,
+// "3 mnd oud" / "2 jr 4 mnd oud" / "Nieuw" for ageMonths: 0 - shared by
+// every place a unit's age needs to be shown to the player (equipped
+// line, inventory table, market listings).
+function formatAgeMonths(ageMonths) {
+  if (!ageMonths) return "nieuw";
+  if (ageMonths < 12) return `${ageMonths} mnd oud`;
+  const years = Math.floor(ageMonths / 12);
+  const months = ageMonths % 12;
+  return months ? `${years} jr ${months} mnd oud` : `${years} jr oud`;
+}
+
+// Renders one part's spare inventory as a small table: brand, age, and a
+// "Monteer" button to swap it in for whatever's currently equipped (which
+// goes back into the inventory slot it came from, not discarded - see
+// installUnit in garage.js). Visibility into "what do I actually own" is
+// the direct ask: the equipped select above only ever shows ONE unit,
 // this shows the rest, brand and all.
 function renderPartInventoryList(part) {
   const inv = garageConfig[part + "Inventory"];
@@ -1335,10 +1371,33 @@ function renderPartInventoryList(part) {
   }
   const rows = inv.map((unit, i) => {
     const brand = findBrand(PARTS[part].brands, unit.brandId);
-    return `<tr><td>${escapeHtml(brand.name)}</td><td>${unit.secondhand ? "Tweedehands" : "Nieuw"}</td><td>€${unitPrice(part, unit).toLocaleString("nl-NL")}</td>` +
+    return `<tr><td>${escapeHtml(brand.name)}</td><td>${formatAgeMonths(unit.ageMonths)}</td><td>€${unitPrice(part, unit).toLocaleString("nl-NL")}</td>` +
       `<td><button class="secondary mini-btn" type="button" data-install-part="${part}" data-install-idx="${i}">Monteer</button></td></tr>`;
   }).join("");
-  container.innerHTML = `<table class="event-table"><thead><tr><th>Merk (reserve)</th><th>Staat</th><th>Waarde</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  container.innerHTML = `<table class="event-table"><thead><tr><th>Merk (reserve)</th><th>Leeftijd</th><th>Waarde</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// The used-parts market for this one part: whatever's currently listed
+// (see garage.js's generateUsedMarket), each a specific brand at a
+// specific age with its own price and reliability derived from that age -
+// not a flat "tweedehands" checkbox next to the brand picker. A bought
+// listing disappears from the table (see buyUsedListing) until the next
+// event start refreshes the stock.
+function renderPartMarketList(part) {
+  const listings = marketState[part] || [];
+  const container = $(`g-${part}-market-list`);
+  if (!listings.length) {
+    container.innerHTML = `<p class="note" style="margin-top:0;">Geen tweedehands aanbod op dit moment - de markt ververst bij het volgende evenement.</p>`;
+    return;
+  }
+  const rows = listings.map(listing => {
+    const brand = findBrand(PARTS[part].brands, listing.brandId);
+    const price = unitPrice(part, listing);
+    const relPct = Math.round(brand.reliabilityMult * usedReliabilityMult(listing.ageMonths) * 100);
+    return `<tr><td>${escapeHtml(brand.name)}</td><td>${formatAgeMonths(listing.ageMonths)}</td><td>€${price.toLocaleString("nl-NL")}</td><td>${relPct}%</td>` +
+      `<td><button class="secondary mini-btn" type="button" data-buy-listing-part="${part}" data-buy-listing-id="${escapeHtml(listing.id)}">Kopen</button></td></tr>`;
+  }).join("");
+  container.innerHTML = `<table class="event-table"><thead><tr><th>Merk</th><th>Leeftijd</th><th>Prijs</th><th>Betrouwbaarheid</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 // Per-part readonly "what's mounted" line, plus the buy button's label -
@@ -1352,18 +1411,18 @@ function renderPartEquippedStatus(part) {
   if (owned) {
     const unit = equippedUnit(garageConfig, part);
     const brand = findBrand(PARTS[part].brands, unit.brandId);
-    $(`g-${part}-equipped`).textContent = `Gemonteerd: ${brand.name}${unit.secondhand ? " (tweedehands)" : ""}.`;
+    $(`g-${part}-equipped`).textContent = `Gemonteerd: ${brand.name} (${formatAgeMonths(unit.ageMonths)}).`;
   } else {
     $(`g-${part}-equipped`).textContent = `Geen ${label} gemonteerd.`;
   }
-  $(`g-buy-${part}-spare`).textContent = owned ? `Reserve ${label} kopen` : `${capLabel} kopen`;
+  $(`g-buy-${part}-spare`).textContent = owned ? `Reserve ${label} kopen (nieuw)` : `${capLabel} kopen (nieuw)`;
 }
 
 function renderGarageSummary() {
   $("v-g-chassis-length").textContent = garageConfig.chassisLengthIn + '"';
   $("v-g-tank-size").textContent = garageConfig.tankSizeGal + " gal";
   $("v-g-engine-position").textContent = garageConfig.enginePositionIn;
-  PART_LIST.forEach(part => { renderPartEquippedStatus(part); renderPartInventoryList(part); });
+  PART_LIST.forEach(part => { renderPartEquippedStatus(part); renderPartInventoryList(part); renderPartMarketList(part); });
 
   if (garageConfig.trailerId) {
     const trailer = findBrand(TRAILER_TYPES, garageConfig.trailerId);
@@ -1427,29 +1486,36 @@ GARAGE_FORM_IDS.forEach(id => {
   $(id).addEventListener("input", renderGarageSummary);
 });
 
-// "Monteer" buttons in a part's inventory table are re-rendered on every
-// summary refresh, so delegate the click from a stable ancestor instead of
-// binding per-button.
+// "Monteer" and market "Kopen" buttons are both re-rendered on every
+// summary refresh, so delegate their clicks from a stable ancestor
+// instead of binding per-button.
 $("garagePanel").addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-install-part]");
-  if (!btn) return;
-  const part = btn.dataset.installPart;
-  const idx = +btn.dataset.installIdx;
-  installUnit(garageConfig, part, idx);
-  saveGarageConfig();
-  applyGarageConfigToForm();
-  renderGarageSummary();
-  const label = spareLabel(part);
-  $("garage-status").textContent = `${label[0].toUpperCase()}${label.slice(1)} gewisseld.`;
+  const installBtn = e.target.closest("[data-install-part]");
+  if (installBtn) {
+    const part = installBtn.dataset.installPart;
+    const idx = +installBtn.dataset.installIdx;
+    installUnit(garageConfig, part, idx);
+    saveGarageConfig();
+    applyGarageConfigToForm();
+    renderGarageSummary();
+    const label = spareLabel(part);
+    $("garage-status").textContent = `${label[0].toUpperCase()}${label.slice(1)} gewisseld.`;
+    return;
+  }
+  const buyListingBtn = e.target.closest("[data-buy-listing-part]");
+  if (buyListingBtn) buyUsedListing(buyListingBtn.dataset.buyListingPart, buyListingBtn.dataset.buyListingId);
 });
 
-// Buys whatever brand/condition is picked in that part's mini-form. A
-// team that doesn't own this part yet gets it mounted directly (a first
-// engine isn't a "spare" of nothing); otherwise it's a spare, capped by
-// the trailer's capacity - see buyUnit in garage.js for which case
-// applies and why.
+// Buys a brand-new unit of whatever brand is picked in that part's
+// mini-form - always ageMonths: 0, full price, full reliability. A team
+// that doesn't own this part yet gets it mounted directly (a first engine
+// isn't a "spare" of nothing); otherwise it's a spare, capped by the
+// trailer's capacity - see buyUnit in garage.js for which case applies
+// and why. Buying a USED unit instead goes through the market listings
+// below (buyUsedListing) - a used unit is a specific age the player picks
+// from what's currently available, not a checkbox next to any brand.
 function buyPart(part) {
-  const unit = { brandId: $(`g-${part}-spare-brand`).value, secondhand: $(`g-${part}-spare-secondhand`).checked };
+  const unit = { brandId: $(`g-${part}-spare-brand`).value, ageMonths: 0 };
   const price = unitPrice(part, unit);
   const wasOwned = isPartOwned(garageConfig, part);
   if (wasOwned && totalSpareCount(garageConfig) >= trailerSpareCapacity(garageConfig)) {
@@ -1465,16 +1531,56 @@ function buyPart(part) {
   const brandName = findBrand(PARTS[part].brands, unit.brandId).name;
   const outcome = buyUnit(garageConfig, part, unit);
   const label = spareLabel(part);
-  addTransaction(financesState, `${wasOwned ? "Reserve " : ""}${label} gekocht (${brandName})`, -price);
+  addTransaction(financesState, `${wasOwned ? "Reserve " : ""}${label} gekocht (${brandName}, nieuw)`, -price);
   saveFinancesState();
   saveGarageConfig();
   renderGarageSummary();
   renderFinancePanel();
   $("garage-status").textContent = outcome === "equipped"
-    ? `${label[0].toUpperCase()}${label.slice(1)} (${brandName}) gekocht en gemonteerd voor €${price.toLocaleString("nl-NL")}.`
-    : `Reserve ${label} (${brandName}) gekocht voor €${price.toLocaleString("nl-NL")}.`;
+    ? `${label[0].toUpperCase()}${label.slice(1)} (${brandName}, nieuw) gekocht en gemonteerd voor €${price.toLocaleString("nl-NL")}.`
+    : `Reserve ${label} (${brandName}, nieuw) gekocht voor €${price.toLocaleString("nl-NL")}.`;
 }
 PART_LIST.forEach(part => $(`g-buy-${part}-spare`).addEventListener("click", () => buyPart(part)));
+
+// Buys a specific used listing off the market (see garage.js's
+// generateUsedMarket) - same budget/capacity gates as a new purchase, but
+// the unit's price and reliability come from its actual listed age
+// (unitPrice/usedReliabilityMult), not a flat secondhand discount. The
+// listing is removed from the market on purchase (it's sold, not an
+// infinitely-repeatable offer) - the stock only comes back at the next
+// event start (see the startEventBtn handler).
+function buyUsedListing(part, listingId) {
+  const listings = marketState[part] || [];
+  const idx = listings.findIndex(l => l.id === listingId);
+  if (idx === -1) return;
+  const listing = listings[idx];
+  const price = unitPrice(part, listing);
+  const wasOwned = isPartOwned(garageConfig, part);
+  if (wasOwned && totalSpareCount(garageConfig) >= trailerSpareCapacity(garageConfig)) {
+    $("garage-status").textContent = trailerSpareCapacity(garageConfig) === 0
+      ? `Geen trailer — koop er eerst een voor je reserve-onderdelen kunt meenemen.`
+      : `Trailer vol (${totalSpareCount(garageConfig)}/${trailerSpareCapacity(garageConfig)} reserve-onderdelen) — koop een grotere trailer voor meer ruimte.`;
+    return;
+  }
+  if (financesState.budget < price) {
+    $("garage-status").textContent = `Onvoldoende budget (€${price.toLocaleString("nl-NL")} nodig, €${financesState.budget.toLocaleString("nl-NL")} beschikbaar).`;
+    return;
+  }
+  const brandName = findBrand(PARTS[part].brands, listing.brandId).name;
+  const ageTxt = formatAgeMonths(listing.ageMonths);
+  const outcome = buyUnit(garageConfig, part, { brandId: listing.brandId, ageMonths: listing.ageMonths });
+  const label = spareLabel(part);
+  addTransaction(financesState, `${wasOwned ? "Reserve " : ""}${label} gekocht (${brandName}, tweedehands, ${ageTxt})`, -price);
+  listings.splice(idx, 1);
+  saveFinancesState();
+  saveGarageConfig();
+  saveMarketState();
+  renderGarageSummary();
+  renderFinancePanel();
+  $("garage-status").textContent = outcome === "equipped"
+    ? `${label[0].toUpperCase()}${label.slice(1)} (${brandName}, tweedehands, ${ageTxt}) gekocht en gemonteerd voor €${price.toLocaleString("nl-NL")}.`
+    : `Reserve ${label} (${brandName}, tweedehands, ${ageTxt}) gekocht voor €${price.toLocaleString("nl-NL")}.`;
+}
 
 $("g-buy-trailer").addEventListener("click", () => {
   const trailerId = $("g-trailer-select").value;
@@ -1602,6 +1708,7 @@ function collectFullSaveState() {
     finances: financesState,
     garage: garageConfig,
     team: teamConfig,
+    market: marketState,
     event: serializeLadderState(ladderState),
     setups: loadSetupsStore(),
   };
@@ -1609,13 +1716,15 @@ function collectFullSaveState() {
 
 function applyFullSaveState(data) {
   financesState = { ...defaultFinancesState(), ...(data.finances || {}) };
-  garageConfig = { ...defaultGarageConfig(), ...(data.garage || {}) };
+  garageConfig = { ...defaultGarageConfig(), ...migrateGarageConfig(data.garage || {}) };
   teamConfig = { ...defaultTeamConfig(), ...(data.team || {}) };
+  marketState = data.market || generateUsedMarket(Math.random);
   ladderState = data.event ? deserializeLadderState(data.event) : null;
   if (data.setups) saveSetupsStore(data.setups);
   saveFinancesState();
   saveGarageConfig();
   saveTeamConfig();
+  saveMarketState();
   saveEventState();
 }
 
