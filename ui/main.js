@@ -1780,6 +1780,29 @@ $("importGameFile").addEventListener("change", (e) => {
   e.target.value = "";
 });
 
+// A fresh start: wipes budget, garage, team, market and any active event
+// back to their defaults - not the saved tune setups (SETUPS_KEY), which
+// are just dial experiments a player built up, not part of the "team"
+// fiction, so there's no reason to lose them on a new game. Confirm()
+// (rather than the app's usual inline status text) is deliberate here -
+// this is the one genuinely destructive, unrecoverable action in the
+// whole UI, and a native blocking dialog is the right weight for that,
+// unlike the export/import flow's routine status messages.
+$("newGameBtn").addEventListener("click", () => {
+  if (!confirm("Nieuw spel starten? Budget, garage, team, tweedehandsmarkt en een lopend evenement worden gewist en je begint weer bij een lege garage met het startbudget. Opgeslagen setups blijven bewaard. Dit kan niet ongedaan gemaakt worden - exporteer eerst (zie hierboven) als je dit spel later terug wilt kunnen halen.")) return;
+  financesState = defaultFinancesState();
+  garageConfig = defaultGarageConfig();
+  teamConfig = defaultTeamConfig();
+  marketState = generateUsedMarket(Math.random);
+  ladderState = null;
+  saveFinancesState();
+  saveGarageConfig();
+  saveTeamConfig();
+  saveMarketState();
+  saveEventState();
+  location.reload();
+});
+
 // A restored event (see loadEventState above) needs the same "active event"
 // panel state a freshly started one gets, plus the final-result banner if
 // it had already concluded before the page was left/refreshed.
