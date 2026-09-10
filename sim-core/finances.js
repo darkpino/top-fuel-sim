@@ -73,18 +73,23 @@ export function chargeTeamWages(state, totalWagesPerEvent) {
 // over-driven blower running hot can let go on its own or take the short
 // block with it; a lean burn-down just as often shows up as a holed
 // piston or a burnt head as "the engine" in the abstract. cause comes
-// straight from run-simulator.js's engineFailCause ("heat" or "lean") -
-// heat-side failures skew toward the blower, lean-side skew toward the
-// heads, and either can (SECONDARY_FAILURE_CHANCE) take a second part
-// with it. Returns 1 or 2 part names from {engine, head, blower}; the
-// actual charge for each happens separately via chargePartFailure so a
-// spare (or lack of one) is checked per part, independently.
+// straight from run-simulator.js's engineFailCause ("heat", "lean", or
+// "hydrolock") - heat-side failures skew toward the blower, lean-side
+// skew toward the heads, hydrolock is overwhelmingly a bent-rod/short-
+// block event (a liquid-locked cylinder hits the crank and rod, not the
+// heads or the blower), and any of the three can (SECONDARY_FAILURE_CHANCE)
+// take a second part with it. Returns 1 or 2 part names from {engine,
+// head, blower}; the actual charge for each happens separately via
+// chargePartFailure so a spare (or lack of one) is checked per part,
+// independently.
 const ENGINE_SIDE_PARTS = ["engine", "head", "blower"];
 const SECONDARY_FAILURE_CHANCE = 0.25;
 
 export function rollEnginePartsFailed(cause, rng = Math.random) {
   const primary = cause === "heat"
     ? (rng() < 0.6 ? "blower" : "engine")
+    : cause === "hydrolock"
+    ? (rng() < 0.85 ? "engine" : "head")
     : (rng() < 0.55 ? "head" : "engine");
   const parts = [primary];
   if (rng() < SECONDARY_FAILURE_CHANCE) {

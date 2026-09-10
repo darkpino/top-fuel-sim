@@ -357,6 +357,8 @@ function renderRunResult(r) {
   if (r.engineFailed) {
     flags += r.fuelStarved
       ? `<div class="flag">Motor explodeert na ${r.engineFailTime.toFixed(2)}s — de tank liep leeg midden in de run, de motor viel in één klap kurkdroog en compleet mager. Zet een grotere tank, of stem de brandstofcurve zuiniger af.</div>`
+      : r.engineFailCause === "hydrolock"
+      ? `<div class="flag">Hydraulic lock na ${r.engineFailTime.toFixed(2)}s — veel te veel brandstof in de cilinder, kon niet op tijd verbranden of verdampen. Vloeistof comprimeert niet: de zuiger kon de slag niet voltooien en de motor is direct kapot. Zet de brandstofcurve fors terug.</div>`
       : r.engineFailCause === "lean"
       ? `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Zet stage 2 (lockup) verder open.</div>`
       : `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% was te heet om vol te houden.</div>`;
@@ -1092,8 +1094,12 @@ function chargePlayerRun(r) {
   const fatalParts = [];
   if (r.engineFailed) {
     const parts = rollEnginePartsFailed(r.engineFailCause, ladderState.rng);
+    // A liquid-locked cylinder bending a rod is almost never something a
+    // trackside crew repairs - it's overwhelmingly a write-off, on top of
+    // whatever the car chief's own catastrophicMult already says.
+    const engineCatastrophicMult = catastrophicMult * (r.engineFailCause === "hydrolock" ? 2.5 : 1);
     parts.forEach((part) => {
-      if (chargePartFailure(financesState, garageConfig, part, ladderState.rng, catastrophicMult) === "fatal") fatalParts.push(part);
+      if (chargePartFailure(financesState, garageConfig, part, ladderState.rng, engineCatastrophicMult) === "fatal") fatalParts.push(part);
     });
   }
   if (r.clutchFailed) {

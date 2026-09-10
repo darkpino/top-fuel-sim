@@ -134,6 +134,19 @@ const LEAN_DAMAGE_RATE = 0.5;
 const FOUL_DAMAGE_RATE = 0.15;
 const CYLINDER_DROP_THRESHOLD = 0.075;
 const ENGINE_FAILURE_THRESHOLD = 0.15;
+// Hydraulic lock: too much liquid fuel pooling in a cylinder doesn't fully
+// vaporize/burn before the piston reaches it - and liquid doesn't
+// compress, so something mechanical gives (a bent rod, worse) rather than
+// the gradual "loses a cylinder over time" story foulDamage tells above.
+// That makes it a THIS-INSTANT mechanical event tied to the peak richness
+// actually seen, not an accumulated clock - checked directly against
+// richness every tick, independent of heatDamage/leanDamage/foulDamage.
+// Calibrated well above what even a badly-tuned rich curve reaches on its
+// own (a default pass peaks around 0.15, a +25-over-rich curve around
+// 0.4) so this only bites a build that's genuinely flooding the engine,
+// not an ordinary tuning mistake that the existing foul/cylinder-drop
+// path already covers.
+const HYDROLOCK_RICHNESS_THRESHOLD = 0.55;
 const CYLINDER_DROP_FORCE_PENALTY = 0.85; // one or more cylinders misfiring
 // How far (ft) past the commanded shutoff point an undisciplined driver
 // drifts before actually lifting - a pay driver who "doesn't listen," the
@@ -448,6 +461,11 @@ export function runSimulation(settings) {
       engineFailed = true;
       engineFailTime = t;
       engineFailCause = heatDamage >= leanDamage ? "heat" : "lean";
+    }
+    if (!engineFailed && richness > HYDROLOCK_RICHNESS_THRESHOLD) {
+      engineFailed = true;
+      engineFailTime = t;
+      engineFailCause = "hydrolock";
     }
     if (engineFailed || clutchFailed) appliedForce = 0;
     else if (cylindersDropped) appliedForce *= CYLINDER_DROP_FORCE_PENALTY;
