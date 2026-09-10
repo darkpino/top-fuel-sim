@@ -354,6 +354,26 @@ export function buyUnit(config, part, unit) {
   return "spare";
 }
 
+// A used-market purchase (see generateUsedMarket) is a specific listing
+// the player is choosing right now - the natural read is "swap this in,"
+// not "stash it in the trailer" the way a routine "buy new" restock is.
+// So unlike buyUnit, this mounts the bought unit directly even when the
+// part is already owned, returning the previously-equipped unit to
+// inventory (not discarding it - same "parked, not scrapped" idea as
+// installUnit) rather than adding the NEW unit as a spare. Still gated by
+// trailer capacity, since the displaced outgoing unit still needs a slot.
+export function buyAndEquipUnit(config, part, unit) {
+  if (!isPartOwned(config, part)) {
+    setEquippedUnit(config, part, unit);
+    return "equipped";
+  }
+  if (totalSpareCount(config) >= trailerSpareCapacity(config)) return "no-capacity";
+  const outgoing = equippedUnit(config, part);
+  setEquippedUnit(config, part, unit);
+  config[part + "Inventory"].push(outgoing);
+  return "swapped";
+}
+
 // A part's own reliability tier, knocked down further by how old it is if
 // it's a used unit - a used part still makes full power, it's just more
 // fragile (and the older it is, the more so - see usedReliabilityMult).

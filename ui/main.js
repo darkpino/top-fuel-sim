@@ -14,7 +14,7 @@ import {
   PARTS, TRAILER_TYPES, findBrand, defaultGarageConfig, computeGarageEffects,
   totalBuildValue, spareLabel, computeWeightDistribution,
   equippedUnit, installUnit, unitPrice, computeClutchReliabilityMult,
-  isPartOwned, isCarRaceReady, totalSpareCount, trailerSpareCapacity, buyUnit,
+  isPartOwned, isCarRaceReady, totalSpareCount, trailerSpareCapacity, buyUnit, buyAndEquipUnit,
   migrateGarageConfig, generateUsedMarket, usedPriceMult, usedReliabilityMult,
 } from "../sim-core/garage.js";
 import {
@@ -1568,18 +1568,19 @@ function buyUsedListing(part, listingId) {
   }
   const brandName = findBrand(PARTS[part].brands, listing.brandId).name;
   const ageTxt = formatAgeMonths(listing.ageMonths);
-  const outcome = buyUnit(garageConfig, part, { brandId: listing.brandId, ageMonths: listing.ageMonths });
+  const outcome = buyAndEquipUnit(garageConfig, part, { brandId: listing.brandId, ageMonths: listing.ageMonths });
   const label = spareLabel(part);
-  addTransaction(financesState, `${wasOwned ? "Reserve " : ""}${label} gekocht (${brandName}, tweedehands, ${ageTxt})`, -price);
+  addTransaction(financesState, `${label} gekocht (${brandName}, tweedehands, ${ageTxt})${wasOwned ? " - gemonteerd, oude vervangen" : ""}`, -price);
   listings.splice(idx, 1);
   saveFinancesState();
   saveGarageConfig();
   saveMarketState();
+  applyGarageConfigToForm();
   renderGarageSummary();
   renderFinancePanel();
-  $("garage-status").textContent = outcome === "equipped"
-    ? `${label[0].toUpperCase()}${label.slice(1)} (${brandName}, tweedehands, ${ageTxt}) gekocht en gemonteerd voor €${price.toLocaleString("nl-NL")}.`
-    : `Reserve ${label} (${brandName}, tweedehands, ${ageTxt}) gekocht voor €${price.toLocaleString("nl-NL")}.`;
+  $("garage-status").textContent = outcome === "swapped"
+    ? `${label[0].toUpperCase()}${label.slice(1)} (${brandName}, tweedehands, ${ageTxt}) gekocht en gemonteerd voor €${price.toLocaleString("nl-NL")} - het vorige onderdeel ging naar de reservevoorraad.`
+    : `${label[0].toUpperCase()}${label.slice(1)} (${brandName}, tweedehands, ${ageTxt}) gekocht en gemonteerd voor €${price.toLocaleString("nl-NL")}.`;
 }
 
 $("g-buy-trailer").addEventListener("click", () => {
