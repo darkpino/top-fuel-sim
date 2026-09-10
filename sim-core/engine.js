@@ -51,7 +51,7 @@ export function calcIgnitionHeatDamageRate(effectiveIgnitionDeg) {
   return Math.max(0, (effectiveIgnitionDeg - IGNITION_SAFE_DEG) / 30) * IGNITION_HEAT_RATE;
 }
 
-export function calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition }) {
+export function calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition, airDensityRatio = 1 }) {
   const fuelFactor = 0.60 + (fuelPct - 75) / 15 * 0.40;
   const blowerNorm = Math.max(0, (blowerOD - 20) / 50);
   const blowerFactor = 0.85 + Math.sqrt(blowerNorm) * 0.27;
@@ -61,11 +61,43 @@ export function calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition }) {
 
   // Detonation risk is mostly a blower/heat story: the faster the blower
   // spins, the hotter the mixture gets, with compression and nitro% as
-  // amplifying factors.
-  const heatRisk = blowerNorm * 0.65 + Math.max(0, (compressionFactor - 1)) * 1.1 + Math.max(0, (fuelPct - 88)) / 10 * 0.15;
+  // amplifying factors. Denser air (airDensityRatio > 1, i.e. lower
+  // density altitude) packs more oxygen into the same blower/compression
+  // setting, which is also a hotter, more detonation-prone charge - a
+  // small nudge on top of the tune's own three terms, not a dominant one
+  // (real crew chiefs do back off some at altitude partly for this, not
+  // just for the power loss - see calcOxygenMult below for that side).
+  const heatRisk = blowerNorm * 0.65 + Math.max(0, (compressionFactor - 1)) * 1.1 + Math.max(0, (fuelPct - 88)) / 10 * 0.15
+    + Math.max(0, airDensityRatio - 1) * 0.2;
   const detonationRisk = heatRisk > 0.62;
 
   return { fuelFactor, blowerNorm, blowerFactor, ignEff, compressionFactor, heatRisk, detonationRisk, nitroIllegal };
+}
+
+// Reference blower setting calcOxygenMult is centered on - matches the
+// game's baseline archetype tune (ladder.js's Balanced Pro) and the UI
+// default slider value, so a reference build at sea level sees no shift
+// from this term at all.
+const REFERENCE_BLOWER_OD = 48;
+
+// The missing half of "thinner air costs power" (see environment.js's
+// calcAirDensityRatio, which already costs raw power at altitude): a
+// Roots-type blower shoves a roughly fixed VOLUME of air through per
+// revolution (set by the overdrive pulley ratio), so more overdrive pushes
+// more volume regardless of how dense that air actually is - it's the
+// ambient density (airDensityRatio) that decides how much OXYGEN MASS is
+// in that volume. Compression adds a smaller assist on top (more cylinder
+// pressure squeezed out of whatever charge made it in). This doesn't
+// change how much POWER blower/compression make (that's already just a
+// product of factors, so dialing either up already claws back power lost
+// to altitude) - it changes how much OXYGEN is actually present for the
+// fuel curve to match: thin air/low blower/low compression means less
+// oxygen than a reference build sees, so the SAME fuel curve is now
+// feeding too much fuel for what's there (reads rich) unless backed off;
+// dense air/high blower/high compression is the reverse (reads lean).
+export function calcOxygenMult({ blowerOD, compressionFactor, airDensityRatio }) {
+  const blowerRatio = blowerOD / REFERENCE_BLOWER_OD;
+  return airDensityRatio * (0.7 + blowerRatio * 0.3) * compressionFactor;
 }
 
 // The fuelVolPct-dependent half of the power multiplier, computed
@@ -196,8 +228,8 @@ export function calcFuelFlowGpm(rpm, fuelVolFactor) {
 // than blank checks.
 const IDEAL_FUEL_RPM_FLOOR = 7200;
 
-export function calcIdealFuelPct(rpm, referenceFuelPct) {
-  return referenceFuelPct * (LAUNCH_RPM / Math.max(rpm, IDEAL_FUEL_RPM_FLOOR));
+export function calcIdealFuelPct(rpm, referenceFuelPct, oxygenMult = 1) {
+  return referenceFuelPct * (LAUNCH_RPM / Math.max(rpm, IDEAL_FUEL_RPM_FLOOR)) * oxygenMult;
 }
 
 // Deviation between what's actually being fed in and what the RPM at that

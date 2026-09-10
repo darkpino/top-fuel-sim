@@ -4,7 +4,7 @@
 import { calcDensityAltitude, calcPowerMult, calcGripCoeff, calcAirDensityRatio } from "./environment.js";
 import {
   calcEngineFactors, calcMult, stepEngineRpm, calcFuelFlowGpm,
-  calcIdealFuelPct, calcMixtureRichness, activeFuelPct,
+  calcIdealFuelPct, calcMixtureRichness, activeFuelPct, calcOxygenMult,
   calcIgnEff, activeIgnition, calcIgnitionRetard,
   IGNITION_MAX_ADVANCE_RATE, calcIgnitionHeatDamageRate,
 } from "./engine.js";
@@ -170,7 +170,12 @@ export function runSimulation(settings) {
   // ignition: 40 is a throwaway - ignEff is no longer static, it's sampled
   // from ignitionCurve (and the retard system) fresh every timestep below.
   const { fuelFactor, blowerFactor, compressionFactor, heatRisk, detonationRisk, nitroIllegal } =
-    calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition: 40 });
+    calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition: 40, airDensityRatio });
+  // Static for the whole run (blowerOD/gasketThou are fixed tune settings,
+  // airDensityRatio is fixed weather/track) - how much oxygen this build
+  // actually has to work with relative to a reference build at sea level.
+  // See calcOxygenMult in engine.js for what feeds into it.
+  const oxygenMult = calcOxygenMult({ blowerOD, compressionFactor, airDensityRatio });
 
   const optimalPsi = calcOptimalPsi(trackTempC);
   const psiPenalty = calcPsiPenalty(tirePsi, optimalPsi);
@@ -294,9 +299,6 @@ export function runSimulation(settings) {
     peakIgnitionRetard = Math.max(peakIgnitionRetard, ignitionRetardDeg);
     ignEffIntegral += ignEff * DT;
     const { fuelVolFactor, mult } = calcMult({ fuelFactor, fuelVolPct: fuelVolPctNow, blowerFactor, ignEff, compressionFactor, powerMult });
-    const idealFuelPct = calcIdealFuelPct(rpm, fuel1pct);
-    const richness = calcMixtureRichness(fuelVolPctNow, idealFuelPct);
-    richnessIntegral += richness * DT;
 
     // Re-anchored again: the previous 18000/6100 pair had 60ft and the
     // "typical" pace right, but left too little headroom underneath it -
@@ -346,6 +348,32 @@ export function runSimulation(settings) {
     // it's the clutch that pays for it.
     const availableForce = Math.min(powerForce, LAUNCH_CAP) * throttle;
     const clutchSlipLoss = Math.max(0, availableForce - engineForce);
+
+    // How much of the engine's full-lockup potential is actually reaching
+    // the wheel THIS instant - captures both a deliberately held-back
+    // lockup (lf < 1, the clutch curve's own doing) and a clutch pack
+    // genuinely out-powered by the motor (engineForce clipped by
+    // clutchCapacityForce above) as the same thing: less mechanical LOAD
+    // landing on the engine than it's capable of putting out. At the
+    // calibrated default build this sits at (or very near) 1 for almost
+    // the whole run, so this is a near no-op there.
+    const loadFraction = availableForce > 1e-6 ? Math.max(0, Math.min(1, engineForce / availableForce)) : 1;
+    // Less load landing on the motor is less mechanical work extracted per
+    // combustion event - it doesn't have to fight the car, so it runs
+    // cooler (loadHeatMult, used below) but also needs comparatively LESS
+    // fuel to stay correctly fed. A fuel curve tuned for full load now
+    // over-fuels a lightly-loaded motor - reads rich, and if that's not
+    // backed off, floods/fouls cylinders instead of blowing them lean.
+    // Both floor above 0 rather than going all the way there - even a
+    // freely slipping clutch is still turning the motor over under
+    // throttle, not idling - and floor at different depths since heat and
+    // mixture aren't the same size of effect.
+    const loadFuelMult = 0.7 + 0.3 * loadFraction;
+    const loadHeatMult = 0.3 + 0.7 * loadFraction;
+    const idealFuelPct = calcIdealFuelPct(rpm, fuel1pct, oxygenMult * loadFuelMult);
+    const richness = calcMixtureRichness(fuelVolPctNow, idealFuelPct);
+    richnessIntegral += richness * DT;
+
     const wingDownforce = WING_K * v * v;
     const maxTraction = (weightLb + wingDownforce) * baseGripCoeff * (1 + TIRE_PEAK_GRIP_BONUS) * garageTractionMult;
     const loadRatio = engineForce / maxTraction;
@@ -389,7 +417,7 @@ export function runSimulation(settings) {
     // simulated time at the SAME damage rate as full throttle - the tune
     // did nothing wrong, the model just kept counting a stress that had
     // already stopped happening.
-    heatDamage += Math.max(0, heatRisk - 0.62) * garageEngineDamageMult * throttle * DT;
+    heatDamage += Math.max(0, heatRisk - 0.62) * loadHeatMult * garageEngineDamageMult * throttle * DT;
     // The retarder exists specifically to keep this at bay - it only bites
     // if the curve is dialed aggressively enough that even -30deg of
     // retard can't pull effective timing back under a safe line.

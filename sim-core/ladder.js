@@ -156,6 +156,46 @@ const AI_ARCHETYPES = [
   },
 ];
 
+// Reliability, not raw pace: the player's own garage/team choices feed
+// garageEngineDamageMult/garageClutchDamageMult into runSimulation (>1 =
+// damage builds up faster, <1 = slower - see garage.js/team.js), but AI
+// opponents never went through any equivalent of that system at all - they
+// always ran the exact neutral 1.0 default, on every archetype, every car.
+// Combined with the archetype tunes themselves being deliberately mild
+// (see AI_ARCHETYPES above), that's the reason AI opponents essentially
+// never smoke an engine or lose a cylinder: nothing about them ever put
+// real risk on the table in the first place. This gives each archetype a
+// baseline "how well-prepared is this team" reliability profile, then
+// jitters it per car (same pattern as jitterTune below) so two cars on the
+// same archetype aren't equally reliable either. Budget Team runs
+// meaningfully hotter risk than Conservative Veteran, matching what their
+// names already imply about the tunes themselves.
+// spread is deliberately wider than a simple shifted mean would need on
+// its own - a "risky" archetype isn't just uniformly worse every single
+// run, it's more VARIABLE: usually fine, occasionally a real problem. The
+// archetype tunes themselves already run hotter/cooler (Aggressive Gambler
+// and Wildcard Rookie push blower/nitro harder than Conservative Veteran,
+// see AI_ARCHETYPES above), which is why they need less of a reliability
+// swing to ever reach the failure thresholds - this is what actually
+// closes the gap, not the mean alone.
+const AI_RELIABILITY = {
+  "Balanced Pro": { engineDamageMult: 1.4, clutchDamageMult: 1.0, spread: 0.45 },
+  "Aggressive Gambler": { engineDamageMult: 2.4, clutchDamageMult: 1.3, spread: 0.75 },
+  "Conservative Veteran": { engineDamageMult: 1.0, clutchDamageMult: 0.8, spread: 0.25 },
+  "Budget Team": { engineDamageMult: 4.2, clutchDamageMult: 1.5, spread: 0.9 },
+  "Clutch Specialist": { engineDamageMult: 1.4, clutchDamageMult: 0.7, spread: 0.4 },
+  "Wildcard Rookie": { engineDamageMult: 2.35, clutchDamageMult: 1.4, spread: 0.75 },
+};
+
+function jitterReliability(archetypeName, rng) {
+  const base = AI_RELIABILITY[archetypeName] || { engineDamageMult: 1, clutchDamageMult: 1, spread: 0.2 };
+  const jit = (v) => Math.max(0.6, Math.min(6, v * (1 + (rng() * 2 - 1) * base.spread)));
+  return {
+    garageEngineDamageMult: jit(base.engineDamageMult),
+    garageClutchDamageMult: jit(base.clutchDamageMult),
+  };
+}
+
 // Race-day variance, not tuning skill - kept small (was up to 6-8%, now
 // 1.5-2.5%) for the same reason the archetype spread above got pulled
 // in: this model is sensitive enough near the calibration point that
@@ -243,7 +283,7 @@ export function generateAiField(count, seed) {
       name: `${firstNames[i % firstNames.length]} ${lastNames[i % lastNames.length]}`,
       team: teamNames[i % teamNames.length],
       archetype: archetype.name,
-      tune: jitterTune(archetype.tune, rng),
+      tune: { ...jitterTune(archetype.tune, rng), ...jitterReliability(archetype.name, rng) },
       isPlayer: false,
       quals: [null, null, null, null],
       bestEt: null,
