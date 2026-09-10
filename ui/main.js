@@ -390,8 +390,20 @@ function renderRunResult(r) {
     $("i-clutch").className = "status bad";
   } else {
     const chCls = statusClass(ch, 45, 70);
-    $("i-clutch").textContent = ch.toFixed(0) + "/100 " + (chCls === "ok" ? "(optimaal)" : chCls === "warn" ? "(warm)" : "(oververhit)");
-    $("i-clutch").className = "status " + chCls;
+    let chTxt = ch.toFixed(0) + "/100 " + (chCls === "ok" ? "(optimaal)" : chCls === "warn" ? "(warm)" : "(oververhit)");
+    let chFinalCls = chCls;
+    // clutchHeat is the ACCUMULATED total over the whole run - a real but
+    // brief overpower moment (see the flag above) can drive the clutch
+    // through without building up much total heat by the end of a short
+    // run, which otherwise reads as a flat contradiction ("kookt op" next
+    // to a cool number) instead of two true things about different slices
+    // of the same run.
+    if (r.clutchOverpowered && chCls === "ok") {
+      chTxt = ch.toFixed(0) + "/100 (kort doorgereden - zie melding hierboven)";
+      chFinalCls = "warn";
+    }
+    $("i-clutch").textContent = chTxt;
+    $("i-clutch").className = "status " + chFinalCls;
   }
 
   const slipCls = statusClass(r.avgSlipPct, 15, 30);
@@ -402,6 +414,14 @@ function renderRunResult(r) {
   if (r.plugBalance > 0.08) { plugTxt = "rijk mengsel"; plugCls = "warn"; }
   else if (r.plugBalance < -0.08) { plugTxt = "mager mengsel"; plugCls = "bad"; }
   else { plugTxt = "optimaal"; plugCls = "ok"; }
+  // Same story as clutch heat above: this is a whole-run AVERAGE, which can
+  // land back near zero after an early, localized lean/rich excursion that
+  // already did enough damage to drop a cylinder (see the flag above) - an
+  // "optimaal" reading here doesn't mean that didn't happen.
+  if (r.cylindersDropped && (r.cylinderDropCause === "lean" || r.cylinderDropCause === "rich") && plugCls === "ok") {
+    plugTxt += " gemiddeld - zie cilindermelding hierboven";
+    plugCls = "warn";
+  }
   $("i-plugs").textContent = plugTxt;
   $("i-plugs").className = "status " + plugCls;
 
