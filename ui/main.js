@@ -1783,13 +1783,16 @@ $("importGameFile").addEventListener("change", (e) => {
 // A fresh start: wipes budget, garage, team, market and any active event
 // back to their defaults - not the saved tune setups (SETUPS_KEY), which
 // are just dial experiments a player built up, not part of the "team"
-// fiction, so there's no reason to lose them on a new game. Confirm()
-// (rather than the app's usual inline status text) is deliberate here -
-// this is the one genuinely destructive, unrecoverable action in the
-// whole UI, and a native blocking dialog is the right weight for that,
-// unlike the export/import flow's routine status messages.
-$("newGameBtn").addEventListener("click", () => {
-  if (!confirm("Nieuw spel starten? Budget, garage, team, tweedehandsmarkt en een lopend evenement worden gewist en je begint weer bij een lege garage met het startbudget. Opgeslagen setups blijven bewaard. Dit kan niet ongedaan gemaakt worden - exporteer eerst (zie hierboven) als je dit spel later terug wilt kunnen halen.")) return;
+// fiction, so there's no reason to lose them on a new game. Confirmation
+// goes through an in-page modal (same pattern as the export modal) rather
+// than window.confirm() - a sandboxed embed (e.g. the standalone artifact
+// preview) commonly disallows native dialogs outright, where confirm()
+// doesn't just look different, it silently returns false with nothing
+// ever shown, so the button appears to do nothing at all.
+$("newGameBtn").addEventListener("click", () => { $("newGameModal").hidden = false; });
+$("newGameCancelBtn").addEventListener("click", () => { $("newGameModal").hidden = true; });
+$("newGameConfirmBtn").addEventListener("click", () => {
+  $("newGameModal").hidden = true;
   financesState = defaultFinancesState();
   garageConfig = defaultGarageConfig();
   teamConfig = defaultTeamConfig();
