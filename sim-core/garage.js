@@ -78,25 +78,30 @@ export function generateUsedMarket(rng = Math.random) {
 // material and run negative (helps claw back toward the minimum after
 // other choices push a build over it) - the direct ask: worse parts make
 // for a heavier car, not just a weaker/less reliable one.
+// powerMult is scaled per part so the TOP brand tops out at exactly 1.00
+// (buying the best no longer grants a bonus over the sim's calibrated
+// baseline, it just stops costing you anything) and every cheaper tier is
+// scaled down proportionally along with it, keeping the same relative
+// spacing between tiers as before.
 export const ENGINE_BRANDS = [
-  { id: "ironclad", name: "Ironclad Racing", priceNew: 16000, powerMult: 0.98, reliabilityMult: 0.95, weightDeltaLb: 45 },
-  { id: "nitroforge", name: "NitroForge", priceNew: 24000, powerMult: 1.00, reliabilityMult: 1.00, weightDeltaLb: 0 },
-  { id: "apex", name: "Apex Billet", priceNew: 34000, powerMult: 1.02, reliabilityMult: 1.05, weightDeltaLb: -15 },
-  { id: "vortan", name: "Vortan Dynamics", priceNew: 46000, powerMult: 1.04, reliabilityMult: 1.10, weightDeltaLb: -25 },
+  { id: "ironclad", name: "Ironclad Racing", priceNew: 16000, powerMult: 0.94, reliabilityMult: 0.95, weightDeltaLb: 45 },
+  { id: "nitroforge", name: "NitroForge", priceNew: 24000, powerMult: 0.96, reliabilityMult: 1.00, weightDeltaLb: 0 },
+  { id: "apex", name: "Apex Billet", priceNew: 34000, powerMult: 0.98, reliabilityMult: 1.05, weightDeltaLb: -15 },
+  { id: "vortan", name: "Vortan Dynamics", priceNew: 46000, powerMult: 1.00, reliabilityMult: 1.10, weightDeltaLb: -25 },
 ];
 
 export const HEAD_BRANDS = [
-  { id: "trailblazer", name: "Trailblazer Heads", priceNew: 9000, powerMult: 0.97, reliabilityMult: 0.97, weightDeltaLb: 25 },
-  { id: "redlineflow", name: "Redline Flow", priceNew: 13000, powerMult: 1.00, reliabilityMult: 1.00, weightDeltaLb: 0 },
-  { id: "apexheads", name: "Apex Billet Heads", priceNew: 18000, powerMult: 1.03, reliabilityMult: 1.03, weightDeltaLb: -10 },
-  { id: "vortanheads", name: "Vortan CNC", priceNew: 24000, powerMult: 1.06, reliabilityMult: 1.06, weightDeltaLb: -18 },
+  { id: "trailblazer", name: "Trailblazer Heads", priceNew: 9000, powerMult: 0.92, reliabilityMult: 0.97, weightDeltaLb: 25 },
+  { id: "redlineflow", name: "Redline Flow", priceNew: 13000, powerMult: 0.94, reliabilityMult: 1.00, weightDeltaLb: 0 },
+  { id: "apexheads", name: "Apex Billet Heads", priceNew: 18000, powerMult: 0.97, reliabilityMult: 1.03, weightDeltaLb: -10 },
+  { id: "vortanheads", name: "Vortan CNC", priceNew: 24000, powerMult: 1.00, reliabilityMult: 1.06, weightDeltaLb: -18 },
 ];
 
 export const BLOWER_BRANDS = [
-  { id: "duneblast", name: "Duneblast Superchargers", priceNew: 11000, powerMult: 0.97, reliabilityMult: 0.97, weightDeltaLb: 20 },
-  { id: "hurricane", name: "Hurricane Blower Co", priceNew: 15000, powerMult: 1.00, reliabilityMult: 1.00, weightDeltaLb: 0 },
-  { id: "apexblower", name: "Apex Billet Blower", priceNew: 19000, powerMult: 1.03, reliabilityMult: 1.03, weightDeltaLb: -8 },
-  { id: "vortanblower", name: "Vortan Rootstype", priceNew: 23000, powerMult: 1.06, reliabilityMult: 1.06, weightDeltaLb: -15 },
+  { id: "duneblast", name: "Duneblast Superchargers", priceNew: 11000, powerMult: 0.92, reliabilityMult: 0.97, weightDeltaLb: 20 },
+  { id: "hurricane", name: "Hurricane Blower Co", priceNew: 15000, powerMult: 0.94, reliabilityMult: 1.00, weightDeltaLb: 0 },
+  { id: "apexblower", name: "Apex Billet Blower", priceNew: 19000, powerMult: 0.97, reliabilityMult: 1.03, weightDeltaLb: -8 },
+  { id: "vortanblower", name: "Vortan Rootstype", priceNew: 23000, powerMult: 1.00, reliabilityMult: 1.06, weightDeltaLb: -15 },
 ];
 
 export const BODY_MATERIALS = {
@@ -132,8 +137,8 @@ export const CLUTCH_BRANDS = [
 // tolerates more heat before it lets go, at a retrofit cost over a
 // conventional (in-line) mount.
 export const BLOWER_TYPES = {
-  conventional: { name: "Gewone blower", priceDelta: 0, tractionMult: 1.0, powerMult: 1.0, reliabilityMult: 1.0 },
-  setback: { name: "Setback blower", priceDelta: 4000, tractionMult: 1.015, powerMult: 1.04, reliabilityMult: 1.08 },
+  conventional: { name: "Gewone blower", priceDelta: 0, tractionMult: 1.0, powerMult: 0.96, reliabilityMult: 1.0 },
+  setback: { name: "Setback blower", priceDelta: 4000, tractionMult: 1.015, powerMult: 1.00, reliabilityMult: 1.08 },
 };
 
 // Fuel tank position: the tank's OWN weight (how much it's carrying over
