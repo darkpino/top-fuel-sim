@@ -124,6 +124,14 @@ const FOUL_DAMAGE_RATE = 0.4;
 const CYLINDER_DROP_THRESHOLD = 0.075;
 const ENGINE_FAILURE_THRESHOLD = 0.15;
 const CYLINDER_DROP_FORCE_PENALTY = 0.85; // one or more cylinders misfiring
+// How far (ft) past the commanded shutoff point an undisciplined driver
+// drifts before actually lifting - a pay driver who "doesn't listen," the
+// direct ask. Scales with the driver's own disciplineMult (see team.js):
+// a driver at or above the 1.0 baseline gets zero overshoot (executes
+// exactly, same as no hired driver at all - a complete no-op), a weaker
+// one drifts proportionally further past the mark, taking extra engine/
+// clutch stress the whole way there.
+const DRIVER_DISCIPLINE_OVERSHOOT_FT = 300;
 
 export function runSimulation(settings) {
   const {
@@ -142,6 +150,9 @@ export function runSimulation(settings) {
     // doesn't pass this) there's no capacity ceiling to run afoul of - only
     // the player's own garage-sized tank can actually run dry.
     garageTankUsableGal = Infinity,
+    // Hired-driver skill (see team.js) - both default to 1, an exact no-op
+    // reproducing pre-team behavior for AI opponents and any team-less run.
+    garageDriverCarControlMult = 1, garageDriverDisciplineMult = 1,
   } = settings;
 
   const densityAltitude = calcDensityAltitude(airtempC, humidity, baroInHg, trackElevationFt);
@@ -193,6 +204,8 @@ export function runSimulation(settings) {
     fuel4time, fuel4pct, fuel5time, fuel5pct, fuel6time, fuel6pct,
   };
   const fingerDesired = calcFingerDesired(fingerWeight);
+  const disciplineDeficit = Math.max(0, 1 - garageDriverDisciplineMult);
+  const effectiveDriverShutoffFt = Math.min(1000, driverShutoffFt + disciplineDeficit * DRIVER_DISCIPLINE_OVERSHOOT_FT);
 
   let t = 0, v = 0, x = 0, wheelV = 0;
   let et60 = null, et330 = null, et660 = null, mph660 = null;
@@ -255,7 +268,7 @@ export function runSimulation(settings) {
     // it too - whether the driver is still on the gas this instant is what
     // decides whether the free-revving engine keeps climbing/holding or
     // falls back toward idle (see engine.js).
-    const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, driverShutoffFt, DT);
+    const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, effectiveDriverShutoffFt, DT, garageDriverCarControlMult);
 
     engineRpmState = stepEngineRpm(engineRpmState, { t, wheelSpeedFtS: wheelV, lf, priorSlipPct: lastSlipPct, throttle }, DT);
     const rpm = engineRpmState;

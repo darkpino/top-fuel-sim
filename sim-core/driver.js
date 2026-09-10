@@ -49,10 +49,15 @@ export function createDriverState() {
 // lift point - a shutoff distance the driver commits to before the run,
 // same as a real delay box / preset shutoff, and takes it regardless of
 // how the run is going (clean or smoking); it does not depend on
-// aggressiveness or the smoke-reaction system at all. Returns the throttle
-// fraction (0-1) to apply to commanded engine force this step, and mutates
-// driverState in place.
-export function stepDriver(driverState, t, x, prevSlipPct, aggressiveness, watchUntilX, shutoffX, dt) {
+// aggressiveness or the smoke-reaction system at all. carControlMult (1.0 =
+// no-op) is a hired driver's own skill at reading and managing the car
+// through smoke, layered ON TOP of the tuned aggressiveness slider - it
+// scales the EFFECTIVE aggressiveness this function reasons with, so a
+// skilled driver hangs onto more smoke and pedals more capably than the
+// slider alone implies, and a weak one folds earlier than it implies.
+// Returns the throttle fraction (0-1) to apply to commanded engine force
+// this step, and mutates driverState in place.
+export function stepDriver(driverState, t, x, prevSlipPct, aggressiveness, watchUntilX, shutoffX, dt, carControlMult = 1) {
   if (driverState.lifted) return 0;
 
   if (x >= shutoffX) {
@@ -83,10 +88,12 @@ export function stepDriver(driverState, t, x, prevSlipPct, aggressiveness, watch
     return 1;
   }
 
-  if (driverState.smokeTime < calcSmokeTolerance(aggressiveness)) return 1;
+  const effectiveAggressiveness = Math.max(0, Math.min(100, aggressiveness * carControlMult));
+
+  if (driverState.smokeTime < calcSmokeTolerance(effectiveAggressiveness)) return 1;
 
   // Patience exhausted for this bout of smoke: pedal through it, or give up.
-  if (driverState.pedalCount >= calcMaxPedals(aggressiveness)) {
+  if (driverState.pedalCount >= calcMaxPedals(effectiveAggressiveness)) {
     driverState.lifted = true;
     driverState.liftTime = t;
     driverState.liftReason = "smoke";

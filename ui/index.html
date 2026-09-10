@@ -18,8 +18,14 @@
         <button class="nav-btn" id="tabEvent">Evenement</button>
         <button class="nav-btn" id="tabFinance">Financiën</button>
         <button class="nav-btn" id="tabGarage">Auto bouwen</button>
-        <button class="nav-btn disabled" type="button" disabled title="Binnenkort beschikbaar">Team bouwen</button>
+        <button class="nav-btn" id="tabTeam">Team bouwen</button>
       </nav>
+      <div class="sidebar-io">
+        <button class="secondary" id="exportGameBtn" type="button">Spel exporteren</button>
+        <button class="secondary" id="importGameBtn" type="button">Spel importeren</button>
+        <input type="file" id="importGameFile" accept="application/json" hidden>
+        <p class="note" id="io-status" style="margin-top:4px;">Exporteert/importeert budget, garage, team en een lopend evenement als één bestand - een back-up, of om over te zetten naar een andere browser/computer. De automatische opslag hierboven blijft alleen lokaal in deze browser.</p>
+      </div>
     </aside>
 
     <div class="app-main">
@@ -301,6 +307,55 @@
     <p class="note" id="garage-status"></p>
   </div>
 
+  <div class="panel" id="teamPanel" style="display:none;">
+    <div class="sec-title">Team bouwen</div>
+    <p class="note" style="margin-top:0;">De mensen om de auto heen, los van de onderdelen zelf. Elke rol kost (of levert, bij een pay driver) een vast salaris per evenement - geen aankoopprijs, en op elk moment te vervangen zonder ontslagvergoeding. Een nieuw team begint zonder iemand aangenomen; alles hieronder is dan een exacte 1.0×/geen-invloed-nulwaarde, precies zoals de fysica zonder team werkte.</p>
+
+    <div class="garage-section" id="team-sec-driver">
+      <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Rijder</div>
+      <p class="note" style="margin-top:0;" id="team-driver-status">Geen rijder aangenomen.</p>
+      <p class="note" style="margin-top:0;">Reactietijd (op de boom), autobeheersing (hoe goed hij de auto in de groove houdt bij bandenrook - pedalt hij 'm capabel terug of niet) en precisie/discipline (luistert hij naar het ingestelde afschakelpunt, of mist hij het) zijn drie losse eigenschappen. Een pay driver is goedkoop of brengt zelfs geld mee (sponsorgeld via zijn eigen netwerk), maar is vaak zwakker en minder gedisciplineerd - hij rijdt met wat de tune hem geeft, maar luistert minder precies naar de instructies. Er zijn ook pay drivers die gewoon goed zijn, dat is geen garantie de andere kant op.</p>
+      <div class="row"><label><span class="name">Kandidaat</span></label><select id="team-driver-select"></select></div>
+      <button class="secondary" data-hire-role="driver" type="button">Aannemen</button>
+      <button class="secondary" id="team-driver-fire" data-fire-role="driver" type="button" style="display:none;">Ontslaan</button>
+    </div>
+
+    <div class="garage-section" id="team-sec-carchief">
+      <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Car chief</div>
+      <p class="note" style="margin-top:0;" id="team-carChief-status">Geen car chief aangenomen.</p>
+      <p class="note" style="margin-top:0;">Zorgt dat de auto zelf goed in elkaar zit - correcte specs, verse bevestigingen, een nette opbouw - los van welke merken er gemonteerd zijn (zie Auto bouwen). Een scherpere car chief laat motor en koppeling langzamer schade opbouwen, én verkleint de kans dat een klapper meteen total loss is in plaats van iets dat de crew aan de baan kan repareren.</p>
+      <div class="row"><label><span class="name">Kandidaat</span></label><select id="team-carChief-select"></select></div>
+      <button class="secondary" data-hire-role="carChief" type="button">Aannemen</button>
+      <button class="secondary" id="team-carChief-fire" data-fire-role="carChief" type="button" style="display:none;">Ontslaan</button>
+    </div>
+
+    <div class="garage-section" id="team-sec-scout">
+      <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Sponsor-scout</div>
+      <p class="note" style="margin-top:0;" id="team-scout-status">Geen sponsor-scout aangenomen.</p>
+      <p class="note" style="margin-top:0;">Zoekt actief naar sponsors tussen evenementen door - raakt niet aan de auto. Een beter genetwerkte scout levert na een evenement niet alleen méér sponsorvoorstellen op (zie Financiën), maar ook gemiddeld gulle(re) bedragen.</p>
+      <div class="row"><label><span class="name">Kandidaat</span></label><select id="team-scout-select"></select></div>
+      <button class="secondary" data-hire-role="scout" type="button">Aannemen</button>
+      <button class="secondary" id="team-scout-fire" data-fire-role="scout" type="button" style="display:none;">Ontslaan</button>
+    </div>
+
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Overzicht</div>
+    <div class="results-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="stat"><div class="lbl">Reactietijd rijder</div><div class="num" id="team-reaction-mult">--</div></div>
+      <div class="stat"><div class="lbl">Autobeheersing rijder</div><div class="num" id="team-carcontrol-mult">--</div></div>
+      <div class="stat"><div class="lbl">Discipline rijder</div><div class="num" id="team-discipline-mult">--</div></div>
+    </div>
+    <div class="results-grid second" style="grid-template-columns:repeat(3,1fr);">
+      <div class="stat"><div class="lbl">Motorschade car chief</div><div class="num" id="team-engine-damage-mult">--</div></div>
+      <div class="stat"><div class="lbl">Koppelingsschade car chief</div><div class="num" id="team-clutch-damage-mult">--</div></div>
+      <div class="stat"><div class="lbl">Total-loss-kans car chief</div><div class="num" id="team-catastrophic-mult">--</div></div>
+    </div>
+    <div class="results-grid second" style="grid-template-columns:repeat(2,1fr);">
+      <div class="stat"><div class="lbl">Extra sponsorvoorstellen</div><div class="num" id="team-scout-count">--</div></div>
+      <div class="stat"><div class="lbl">Sponsorbedrag scout</div><div class="num" id="team-scout-amount">--</div></div>
+    </div>
+    <p class="note" style="margin-top:0;">Totale teamsalarissen: <span id="team-wages">--</span>, verrekend bij inschrijving voor een evenement (samen met het inschrijfgeld), niet bij een losse testrun.</p>
+  </div>
+
   <div class="grid" id="settingsGrid">
     <div>
       <div class="panel collapsible" id="setupPanel" data-collapse-key="setup">
@@ -413,6 +468,7 @@
       <div class="panel collapsible" data-collapse-key="rijder">
         <div class="sec-title">Rijder</div>
         <div class="panel-body">
+        <p class="note" id="rijder-team-note" style="margin-top:0;">--</p>
         <div class="row"><label>Agressiviteit <span class="val" id="v-aggro">70</span></label><input type="range" id="aggro" min="0" max="100" value="70" step="5"></div>
         <p class="note">Bij aanhoudende bandenrook (&gt;~55% slip) pedalt de rijder de auto (korte gas-tik om de banden weer te laten grippen) voor hij het opgeeft - hoe vaak hangt af van agressiviteit: onder 20 helemaal niet (meteen van het gas), 20-49 één keer, 50-79 twee keer, vanaf 80 tot 3 keer.</p>
         <div class="row">
@@ -491,6 +547,16 @@
   </div>
 
     </div>
+  </div>
+</div>
+
+<div class="io-modal" id="exportModal" hidden>
+  <div class="io-modal-inner">
+    <div class="sec-title" style="border-top:none; padding-top:0; margin-top:0;">Spel exporteren</div>
+    <p class="note" style="margin-top:0;" id="exportModalNote">Bestand wordt gedownload als topfuel-save.json.</p>
+    <textarea id="exportModalText" rows="8" readonly></textarea>
+    <button class="secondary" id="exportModalCopy" type="button">Kopieer naar klembord</button>
+    <button class="secondary" id="exportModalClose" type="button">Sluiten</button>
   </div>
 </div>
 

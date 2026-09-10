@@ -17,9 +17,13 @@ import {
   isPartOwned, isCarRaceReady, totalSpareCount, trailerSpareCapacity, buyUnit,
 } from "../sim-core/garage.js";
 import {
-  ENTRY_FEE, defaultFinancesState, addTransaction, chargeEntryFee, chargeRunCost,
+  ENTRY_FEE, defaultFinancesState, addTransaction, chargeEntryFee, chargeRunCost, chargeTeamWages,
   rollEnginePartsFailed, chargePartFailure, awardEventPrize, generateSponsorOffers,
 } from "../sim-core/finances.js";
+import {
+  TEAM_ROLES, defaultTeamConfig, computeTeamEffects, totalTeamWagesPerEvent,
+  findTeamMember, hireTeamMember, fireTeamMember,
+} from "../sim-core/team.js";
 
 function $(id) { return document.getElementById(id); }
 
@@ -292,6 +296,8 @@ function statusClass(val, warnAt, badAt) {
 }
 
 function readSettings() {
+  const garageEffects = computeGarageEffects(garageConfig);
+  const teamEffects = computeTeamEffects(teamConfig);
   return {
     airtempC: +$("airtemp").value,
     humidity: +$("hum").value,
@@ -315,7 +321,11 @@ function readSettings() {
     driverAggressiveness: +$("aggro").value,
     driverWatchUntilFt: +$("watchft").value,
     driverShutoffFt: +$("shutoff").value,
-    ...computeGarageEffects(garageConfig),
+    ...garageEffects,
+    garageEngineDamageMult: garageEffects.garageEngineDamageMult * teamEffects.teamEngineDamageMult,
+    garageClutchDamageMult: garageEffects.garageClutchDamageMult * teamEffects.teamClutchDamageMult,
+    garageDriverCarControlMult: teamEffects.teamCarControlMult,
+    garageDriverDisciplineMult: teamEffects.teamDisciplineMult,
   };
 }
 
@@ -460,7 +470,6 @@ $("runBtn").addEventListener("click", () => {
 
 const envSliderIds = ["airtemp", "hum", "baro", "track", "grip"];
 let currentMode = "test";
-let ladderState = null; // null when no event is active
 let viewingRoundIndex = null; // non-null while browsing a past round read-only via the history table
 const EVENT_IDLE_STATUS = "Nog geen evenement gestart. Kies het aantal auto's en start: 4 kwalificatierondes bepalen de ladder, het bovenste deel (macht van 2) gaat door naar de eliminatie. Elke ronde heeft eigen gesimuleerde omstandigheden - het hele veld rijdt onder dezelfde condities als jij.";
 
@@ -492,8 +501,152 @@ function saveGarageConfig() {
   try { localStorage.setItem(GARAGE_KEY, JSON.stringify(garageConfig)); } catch { /* private mode, storage full, etc - silently no-ops */ }
 }
 
+const TEAM_KEY = "topfuel-team";
+function loadTeamConfig() {
+  try {
+    const raw = localStorage.getItem(TEAM_KEY);
+    return raw ? { ...defaultTeamConfig(), ...JSON.parse(raw) } : defaultTeamConfig();
+  } catch { return defaultTeamConfig(); }
+}
+function saveTeamConfig() {
+  try { localStorage.setItem(TEAM_KEY, JSON.stringify(teamConfig)); } catch { /* private mode, storage full, etc - silently no-ops */ }
+}
+
 let financesState = loadFinancesState();
 let garageConfig = loadGarageConfig();
+let teamConfig = loadTeamConfig();
+
+// ---- Evenement opslaan: ladderState (actieve kwalificatie/eliminatie-
+// ladder) leeft normaal alleen in het geheugen - zonder dit zou een
+// pagina-refresh midden in een evenement de hele voortgang wegvegen.
+// De enige lastige eigenschap is ladderState.rng: een levende
+// mulberry32-closure kun je niet naar JSON schrijven, dus wordt de
+// INTERNE staat (rng.getState(), niet alleen de oorspronkelijke seed)
+// apart bewaard en bij het laden teruggezet - zo gaat een hervat
+// evenement precies verder waar de rng gebleven was, in plaats van de
+// reeks vanaf het begin te herhalen. Daarnaast verwijzen bracketPool,
+// qOrder, en de pairs/bye/playerOpponent/results in elimRounds allemaal
+// naar DEZELFDE deelnemer-objecten als ladderState.field (zodat
+// bijvoorbeeld "loser.eliminated = true" overal zichtbaar is) - een kale
+// JSON.stringify zou die identiteit breken en losse kopieën maken. Dus
+// worden die verwijzingen bij het opslaan vervangen door het
+// deelnemer-id, en bij het laden weer teruggekoppeld naar de echte
+// (herladen) objecten in field via een id-lookup.
+const EVENT_KEY = "topfuel-event";
+
+// Every runSimulation() result carries a full timestep trace (hundreds to
+// thousands of points) purely for the just-finished run's own chart -
+// nothing ever reads it back off an OLDER, already-stored result (browsing
+// history is read-only text, see renderHistoryTable/renderLadderRoundUi).
+// Persisting it anyway across every qualifying/elimination result in the
+// event would balloon a save into tens of megabytes by the later rounds
+// and risk silently blowing past localStorage's quota (the save calls
+// below already swallow that error) - so it's stripped wherever it
+// appears, generically by key name rather than tracking every specific
+// spot a result object can live (field[].quals[], playerHistory[].result/
+// .opponentResult, elimRounds[].byeResult/.results[].resultA/resultB).
+function stripTraceDeep(value) {
+  if (Array.isArray(value)) return value.map(stripTraceDeep);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (k === "trace") continue;
+      out[k] = stripTraceDeep(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+function serializeElimRound(ed) {
+  return {
+    pairs: ed.pairs.map(([a, b]) => [a.id, b.id]),
+    results: ed.results.map(res => res ? {
+      aId: res.a.id, bId: res.b.id, resultA: res.resultA, resultB: res.resultB,
+      reactA: res.reactA, reactB: res.reactB, winnerId: res.winner.id,
+    } : null),
+    bye: ed.bye ? ed.bye.id : null,
+    byeResult: ed.byeResult,
+    lanes: ed.lanes,
+    playerPairIndex: ed.playerPairIndex,
+    playerOpponent: ed.playerOpponent ? ed.playerOpponent.id : null,
+    playerLaneChoice: ed.playerLaneChoice,
+    opponentLaneChoice: ed.opponentLaneChoice,
+  };
+}
+function deserializeElimRound(saved, byId) {
+  return {
+    pairs: saved.pairs.map(([aId, bId]) => [byId.get(aId), byId.get(bId)]),
+    results: saved.results.map(res => res ? {
+      a: byId.get(res.aId), b: byId.get(res.bId), resultA: res.resultA, resultB: res.resultB,
+      reactA: res.reactA, reactB: res.reactB, winner: byId.get(res.winnerId),
+    } : null),
+    bye: saved.bye ? byId.get(saved.bye) : null,
+    byeResult: saved.byeResult,
+    lanes: saved.lanes,
+    playerPairIndex: saved.playerPairIndex,
+    playerOpponent: saved.playerOpponent ? byId.get(saved.playerOpponent) : null,
+    playerLaneChoice: saved.playerLaneChoice,
+    opponentLaneChoice: saved.opponentLaneChoice,
+  };
+}
+function serializePlayerHistory(h) {
+  if (!h || !h.opponent) return h;
+  const { opponent, ...rest } = h;
+  return { ...rest, opponentId: opponent.id };
+}
+function deserializePlayerHistory(h, byId) {
+  if (!h || !h.opponentId) return h;
+  const { opponentId, ...rest } = h;
+  return { ...rest, opponent: byId.get(opponentId) };
+}
+function serializeLadderState(ls) {
+  if (!ls) return null;
+  return stripTraceDeep({
+    bracketSize: ls.bracketSize, totalEntries: ls.totalEntries, seed: ls.seed,
+    rounds: ls.rounds, trackId: ls.trackId, roundIndex: ls.roundIndex,
+    field: ls.field,
+    rngState: ls.rng.getState(),
+    playerHistory: ls.playerHistory.map(serializePlayerHistory),
+    qOrder: ls.qOrder ? ls.qOrder.map(e => e.id) : null,
+    bracketPool: ls.bracketPool ? ls.bracketPool.map(e => e.id) : null,
+    elimRounds: Object.fromEntries(Object.entries(ls.elimRounds).map(([idx, ed]) => [idx, serializeElimRound(ed)])),
+    playerOutcome: ls.playerOutcome,
+    finalResultText: ls.finalResultText,
+  });
+}
+function deserializeLadderState(saved) {
+  if (!saved) return null;
+  const byId = new Map(saved.field.map(e => [e.id, e]));
+  const rng = mulberry32(0);
+  rng.setState(saved.rngState);
+  return {
+    bracketSize: saved.bracketSize, totalEntries: saved.totalEntries, seed: saved.seed,
+    rounds: saved.rounds, trackId: saved.trackId, roundIndex: saved.roundIndex,
+    field: saved.field,
+    rng,
+    playerHistory: saved.playerHistory.map(h => deserializePlayerHistory(h, byId)),
+    qOrder: saved.qOrder ? saved.qOrder.map(id => byId.get(id)) : null,
+    bracketPool: saved.bracketPool ? saved.bracketPool.map(id => byId.get(id)) : null,
+    elimRounds: Object.fromEntries(Object.entries(saved.elimRounds).map(([idx, ed]) => [idx, deserializeElimRound(ed, byId)])),
+    playerOutcome: saved.playerOutcome,
+    finalResultText: saved.finalResultText,
+  };
+}
+function loadEventState() {
+  try {
+    const raw = localStorage.getItem(EVENT_KEY);
+    return raw ? deserializeLadderState(JSON.parse(raw)) : null;
+  } catch { return null; }
+}
+function saveEventState() {
+  try {
+    if (ladderState) localStorage.setItem(EVENT_KEY, JSON.stringify(serializeLadderState(ladderState)));
+    else localStorage.removeItem(EVENT_KEY);
+  } catch { /* private mode, storage full, etc - silently no-ops */ }
+}
+
+let ladderState = loadEventState(); // null when no event is active
 
 function eventInProgress() {
   return ladderState !== null && ladderState.playerOutcome === null;
@@ -505,7 +658,7 @@ function updateEnvLock() {
   $("event-env-note").style.display = locked ? "block" : "none";
 }
 
-const MODE_TAB_IDS = { test: "tabTest", event: "tabEvent", finance: "tabFinance", garage: "tabGarage" };
+const MODE_TAB_IDS = { test: "tabTest", event: "tabEvent", finance: "tabFinance", garage: "tabGarage", team: "tabTeam" };
 
 function setMode(mode) {
   currentMode = mode;
@@ -513,12 +666,14 @@ function setMode(mode) {
   $("eventPanel").style.display = mode === "event" ? "block" : "none";
   $("financePanel").style.display = mode === "finance" ? "block" : "none";
   $("garagePanel").style.display = mode === "garage" ? "block" : "none";
+  $("teamPanel").style.display = mode === "team" ? "block" : "none";
   $("settingsGrid").style.display = (mode === "test" || mode === "event") ? "grid" : "none";
   $("runBtn").style.display = mode === "test" ? "block" : "none";
   updateEnvLock();
   if (mode === "event" && eventInProgress()) refreshLadderView();
   if (mode === "finance") renderFinancePanel();
   if (mode === "garage") renderGaragePanel();
+  if (mode === "team") renderTeamPanel();
 }
 Object.entries(MODE_TAB_IDS).forEach(([m, id]) => $(id).addEventListener("click", () => setMode(m)));
 
@@ -543,16 +698,33 @@ function entrantLabel(e) { return escapeHtml(e.name) + (e.isPlayer ? " (jij)" : 
 
 $("trackSelect").innerHTML = TRACKS.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
 
+// Shared between starting a fresh event and restoring a saved one on page
+// load - both land on the same "active event" panel state.
+function showEventActiveUI() {
+  const track = findTrack(ladderState.trackId);
+  $("event-track-label").textContent = `Circuit: ${track.name} (${track.elevationFt.toLocaleString("nl-NL")} ft hoogte).`;
+  $("event-setup").style.display = "none";
+  $("event-active").style.display = "block";
+  $("event-result").style.display = "none";
+  $("startEventBtn").style.display = "none";
+  $("newEventBtn").style.display = "block";
+  $("runRoundBtn").style.display = "block";
+  $("skipQualBtn").style.display = "block";
+}
+
 $("startEventBtn").addEventListener("click", () => {
   if (!isCarRaceReady(garageConfig)) {
     $("event-status").textContent = `Auto niet compleet - koop eerst motor, koppen, blower, koppeling en trailer in Auto bouwen voor je kunt inschrijven.`;
     return;
   }
-  if (financesState.budget < ENTRY_FEE) {
-    $("event-status").textContent = `Onvoldoende budget voor het inschrijfgeld (€${ENTRY_FEE.toLocaleString("nl-NL")}) - huidig budget €${financesState.budget.toLocaleString("nl-NL")}. Check Financiën voor sponsorvoorstellen.`;
+  const wagesPerEvent = totalTeamWagesPerEvent(teamConfig);
+  const totalCost = ENTRY_FEE + Math.max(0, wagesPerEvent);
+  if (financesState.budget < totalCost) {
+    $("event-status").textContent = `Onvoldoende budget voor inschrijfgeld + teamsalarissen (€${totalCost.toLocaleString("nl-NL")}) - huidig budget €${financesState.budget.toLocaleString("nl-NL")}. Check Financiën voor sponsorvoorstellen.`;
     return;
   }
   chargeEntryFee(financesState);
+  chargeTeamWages(financesState, wagesPerEvent);
   saveFinancesState();
   renderFinancePanel();
   const totalEntries = +$("fieldSizeSelect").value;
@@ -572,23 +744,18 @@ $("startEventBtn").addEventListener("click", () => {
     field: [player, ...generateAiField(totalEntries - 1, seed + 1)],
     rng: mulberry32(seed + 777),
     playerHistory: new Array(rounds.length).fill(null),
-    qOrder: null, bracketPool: null, elimRounds: {}, playerOutcome: null,
+    qOrder: null, bracketPool: null, elimRounds: {}, playerOutcome: null, finalResultText: null,
   };
   viewingRoundIndex = null;
-  $("event-track-label").textContent = `Circuit: ${track.name} (${track.elevationFt.toLocaleString("nl-NL")} ft hoogte).`;
-  $("event-setup").style.display = "none";
-  $("event-active").style.display = "block";
-  $("event-result").style.display = "none";
-  $("startEventBtn").style.display = "none";
-  $("newEventBtn").style.display = "block";
-  $("runRoundBtn").style.display = "block";
-  $("skipQualBtn").style.display = "block";
+  showEventActiveUI();
   activateLadderRound();
   updateEnvLock();
+  saveEventState();
 });
 
 $("newEventBtn").addEventListener("click", () => {
   ladderState = null;
+  saveEventState();
   $("event-status").textContent = EVENT_IDLE_STATUS;
   $("event-setup").style.display = "block";
   $("event-active").style.display = "none";
@@ -820,6 +987,7 @@ function renderBracketTable(roundDef, roundIndex = ladderState.roundIndex, readO
 
 function choosePlayerLane(lane) {
   ladderState.elimRounds[ladderState.roundIndex].playerLaneChoice = lane;
+  saveEventState();
   renderBracketTable(ladderState.rounds[ladderState.roundIndex]);
 }
 $("chooseLaneA").addEventListener("click", () => choosePlayerLane("A"));
@@ -843,6 +1011,7 @@ function advanceLadderRound() {
   }
   ladderState.roundIndex++;
   activateLadderRound();
+  saveEventState();
 }
 
 function renderFinalResult(text) {
@@ -874,15 +1043,16 @@ function fatalPartsText(parts) {
 // for the REST of this event (empty array if the car survived).
 function chargePlayerRun(r) {
   chargeRunCost(financesState);
+  const catastrophicMult = computeTeamEffects(teamConfig).teamCatastrophicMult;
   const fatalParts = [];
   if (r.engineFailed) {
     const parts = rollEnginePartsFailed(r.engineFailCause, ladderState.rng);
     parts.forEach((part) => {
-      if (chargePartFailure(financesState, garageConfig, part, ladderState.rng) === "fatal") fatalParts.push(part);
+      if (chargePartFailure(financesState, garageConfig, part, ladderState.rng, catastrophicMult) === "fatal") fatalParts.push(part);
     });
   }
   if (r.clutchFailed) {
-    if (chargePartFailure(financesState, garageConfig, "clutch", ladderState.rng) === "fatal") fatalParts.push("clutch");
+    if (chargePartFailure(financesState, garageConfig, "clutch", ladderState.rng, catastrophicMult) === "fatal") fatalParts.push("clutch");
   }
   saveFinancesState();
   saveGarageConfig();
@@ -896,9 +1066,12 @@ function chargePlayerRun(r) {
 function finishEvent(outcome, text) {
   awardEventPrize(financesState, outcome);
   if (!financesState.sponsorOffers.length) {
-    financesState.sponsorOffers = generateSponsorOffers(ladderState.rng, 2);
+    const teamEffects = computeTeamEffects(teamConfig);
+    financesState.sponsorOffers = generateSponsorOffers(ladderState.rng, 2 + teamEffects.teamSponsorOfferCountBonus, teamEffects.teamSponsorOfferAmountMult);
   }
+  ladderState.finalResultText = text;
   saveFinancesState();
+  saveEventState();
   renderFinancePanel();
   renderFinalResult(text);
 }
@@ -925,6 +1098,7 @@ function runPlayerQualifying(skip) {
   for (let i = playerIdx + 1; i < order.length; i++) runQualifyingAttempt(order[i], sessionIndex, roundDef.conditions, false);
   renderQualiTable(roundDef);
   renderHistoryTable();
+  saveEventState();
   if (fatalParts.length) {
     ladderState.playerOutcome = "dnq";
     finishEvent(
@@ -982,7 +1156,7 @@ function runPlayerElimination() {
 
   const rPlayer = runSimulation(readSettings());
   const rOpponent = runSimulation({ ...opponent.tune, ...ed.lanes[opponentLane] });
-  const reactPlayer = calcReactionTime(+$("aggro").value, ladderState.rng);
+  const reactPlayer = calcReactionTime(+$("aggro").value, ladderState.rng, computeTeamEffects(teamConfig).teamReactionMult);
   const reactOpponent = calcReactionTime(opponent.tune.driverAggressiveness, ladderState.rng);
 
   const resultA = playerIsA ? rPlayer : rOpponent;
@@ -1317,6 +1491,192 @@ $("g-buy-trailer").addEventListener("click", () => {
   renderFinancePanel();
   $("garage-status").textContent = `Trailer (${trailer.name}) gekocht voor €${trailer.priceNew.toLocaleString("nl-NL")}.`;
 });
+
+// ---- Team bouwen: rijder, car chief, sponsor-scout - dezelfde
+// merk/prijs-catalogus-opzet als Auto bouwen (zie garage.js), maar dan
+// mensen in plaats van onderdelen. Geen voorraadsysteem: er is op elk
+// moment hooguit één iemand per rol aangenomen, direct te vervangen (geen
+// ontslagvergoeding). In plaats van een aankoopprijs kost elke hire een
+// terugkerend salaris per evenement (chargeTeamWages, samen met het
+// inschrijfgeld) - een pay driver heeft een NEGATIEF salaris (brengt
+// sponsorgeld mee in plaats van dat hij kost). ----
+
+const TEAM_ROLE_LIST = Object.keys(TEAM_ROLES);
+
+function populateTeamSelects() {
+  TEAM_ROLE_LIST.forEach(role => {
+    const optionsHtml = TEAM_ROLES[role].list.map(m => {
+      const wageTxt = m.salaryPerEvent >= 0
+        ? `€${m.salaryPerEvent.toLocaleString("nl-NL")}/evenement`
+        : `brengt €${Math.abs(m.salaryPerEvent).toLocaleString("nl-NL")}/evenement mee`;
+      return `<option value="${m.id}">${escapeHtml(m.name)} — ${wageTxt}</option>`;
+    }).join("");
+    $(`team-${role}-select`).innerHTML = optionsHtml;
+  });
+}
+populateTeamSelects();
+renderRijderTeamNote();
+
+function renderRijderTeamNote() {
+  const driverId = teamConfig.driverId;
+  const el = $("rijder-team-note");
+  if (!el) return;
+  if (!driverId) {
+    el.textContent = "Geen rijder aangenomen (zie Team bouwen) - de instellingen hierboven worden 1-op-1 uitgevoerd, geen extra ruis of vertraging.";
+    return;
+  }
+  const driver = findTeamMember(TEAM_ROLES.driver.list, driverId);
+  if (!driver) return;
+  el.textContent = `Actieve rijder: ${driver.name} — reactietijd ×${driver.reactionMult.toFixed(2)}, autobeheersing ×${driver.carControlMult.toFixed(2)}, precisie/discipline ×${driver.disciplineMult.toFixed(2)}. Discipline onder de 1.0 laat 'm het "Gas dicht op"-punt hierboven met tot zo'n 300 ft missen (later van het gas, meer slijtage/risico) - hoe verder onder 1.0, hoe verder hij het mist.`;
+}
+
+function renderTeamPanel() {
+  const effects = computeTeamEffects(teamConfig);
+  TEAM_ROLE_LIST.forEach(role => {
+    const roleDef = TEAM_ROLES[role];
+    const id = teamConfig[role + "Id"];
+    const member = id ? findTeamMember(roleDef.list, id) : null;
+    const statusEl = $(`team-${role}-status`);
+    if (member) {
+      const wageTxt = member.salaryPerEvent >= 0
+        ? `€${member.salaryPerEvent.toLocaleString("nl-NL")}/evenement`
+        : `brengt €${Math.abs(member.salaryPerEvent).toLocaleString("nl-NL")}/evenement mee`;
+      statusEl.textContent = `Aangenomen: ${member.name} (${wageTxt}).`;
+    } else {
+      statusEl.textContent = `Geen ${roleDef.label} aangenomen.`;
+    }
+    $(`team-${role}-fire`).style.display = member ? "block" : "none";
+  });
+
+  $("team-wages").textContent = (() => {
+    const total = totalTeamWagesPerEvent(teamConfig);
+    if (total === 0) return "€0/evenement (niemand aangenomen)";
+    return total > 0
+      ? `€${total.toLocaleString("nl-NL")}/evenement (van je budget)`
+      : `+€${Math.abs(total).toLocaleString("nl-NL")}/evenement (netto sponsorinkomsten via pay driver(s))`;
+  })();
+  $("team-reaction-mult").textContent = `×${effects.teamReactionMult.toFixed(2)}`;
+  $("team-carcontrol-mult").textContent = `×${effects.teamCarControlMult.toFixed(2)}`;
+  $("team-discipline-mult").textContent = `×${effects.teamDisciplineMult.toFixed(2)}`;
+  $("team-engine-damage-mult").textContent = `×${effects.teamEngineDamageMult.toFixed(2)}`;
+  $("team-clutch-damage-mult").textContent = `×${effects.teamClutchDamageMult.toFixed(2)}`;
+  $("team-catastrophic-mult").textContent = `×${effects.teamCatastrophicMult.toFixed(2)}`;
+  $("team-scout-count").textContent = `+${effects.teamSponsorOfferCountBonus}`;
+  $("team-scout-amount").textContent = `×${effects.teamSponsorOfferAmountMult.toFixed(2)}`;
+
+  renderRijderTeamNote();
+}
+
+$("teamPanel").addEventListener("click", (e) => {
+  const hireBtn = e.target.closest("[data-hire-role]");
+  const fireBtn = e.target.closest("[data-fire-role]");
+  if (hireBtn) {
+    const role = hireBtn.dataset.hireRole;
+    const id = $(`team-${role}-select`).value;
+    hireTeamMember(teamConfig, role, id);
+    saveTeamConfig();
+    renderTeamPanel();
+  } else if (fireBtn) {
+    const role = fireBtn.dataset.fireRole;
+    fireTeamMember(teamConfig, role);
+    saveTeamConfig();
+    renderTeamPanel();
+  }
+});
+
+// ---- Spel exporteren/importeren: bundelt financiën, garage, team, setups
+// en een eventueel actief evenement in één downloadbaar JSON-bestand - een
+// expliciete back-up/overdracht bovenop de automatische lokale opslag
+// hierboven (die alleen in DEZE browser blijft, en niet overdraagbaar is
+// naar een andere machine). Download via <a download> werkt niet in elke
+// context (bijv. binnen een sandboxed preview) - het modal met een
+// kopieerbare textarea is dan het werkende alternatief. loadSetupsStore/
+// saveSetupsStore komen pas verderop in dit bestand, maar zijn hier al
+// bruikbaar: functiedeclaraties worden gehesen, en deze functies worden
+// pas op een klik aangeroepen, ruim na module-load. ----
+
+function collectFullSaveState() {
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    finances: financesState,
+    garage: garageConfig,
+    team: teamConfig,
+    event: serializeLadderState(ladderState),
+    setups: loadSetupsStore(),
+  };
+}
+
+function applyFullSaveState(data) {
+  financesState = { ...defaultFinancesState(), ...(data.finances || {}) };
+  garageConfig = { ...defaultGarageConfig(), ...(data.garage || {}) };
+  teamConfig = { ...defaultTeamConfig(), ...(data.team || {}) };
+  ladderState = data.event ? deserializeLadderState(data.event) : null;
+  if (data.setups) saveSetupsStore(data.setups);
+  saveFinancesState();
+  saveGarageConfig();
+  saveTeamConfig();
+  saveEventState();
+}
+
+$("exportGameBtn").addEventListener("click", () => {
+  const json = JSON.stringify(collectFullSaveState(), null, 2);
+  $("exportModalText").value = json;
+  $("exportModal").hidden = false;
+  try {
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `topfuel-save-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $("exportModalNote").textContent = "Bestand wordt gedownload. Lukt dat niet (bijv. in een preview-omgeving)? Kopieer de JSON hieronder handmatig.";
+  } catch {
+    $("exportModalNote").textContent = "Downloaden lukte niet in deze omgeving - kopieer de JSON hieronder handmatig.";
+  }
+});
+$("exportModalCopy").addEventListener("click", () => {
+  $("exportModalText").select();
+  if (!navigator.clipboard) {
+    $("exportModalNote").textContent = "Tekst is geselecteerd - gebruik Ctrl/Cmd+C om te kopiëren.";
+    return;
+  }
+  navigator.clipboard.writeText($("exportModalText").value).then(
+    () => { $("exportModalNote").textContent = "Gekopieerd naar klembord."; },
+    () => { $("exportModalNote").textContent = "Automatisch kopiëren lukte niet - tekst is geselecteerd, gebruik Ctrl/Cmd+C."; }
+  );
+});
+$("exportModalClose").addEventListener("click", () => { $("exportModal").hidden = true; });
+
+$("importGameBtn").addEventListener("click", () => { $("importGameFile").click(); });
+$("importGameFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      applyFullSaveState(data);
+      $("io-status").textContent = "Spel geïmporteerd - pagina wordt herladen...";
+      setTimeout(() => location.reload(), 600);
+    } catch {
+      $("io-status").textContent = "Kon het bestand niet lezen - is het een geldig topfuel-save.json bestand?";
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+});
+
+// A restored event (see loadEventState above) needs the same "active event"
+// panel state a freshly started one gets, plus the final-result banner if
+// it had already concluded before the page was left/refreshed.
+if (ladderState) {
+  showEventActiveUI();
+  if (ladderState.playerOutcome !== null) renderFinalResult(ladderState.finalResultText);
+}
 
 setMode("test");
 

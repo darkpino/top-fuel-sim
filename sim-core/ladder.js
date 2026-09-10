@@ -12,14 +12,22 @@
 
 import { runSimulation } from "./run-simulator.js";
 
+// getState/setState let a save system snapshot exactly where a given rng
+// stream is (not just its original seed) and restore it later - without
+// this, reloading a saved event would replay the SAME sequence of "random"
+// outcomes from the top instead of continuing from where the event actually
+// was, silently desyncing a resumed event from the one that was saved.
 function mulberry32(seed) {
   let s = seed | 0;
-  return function () {
+  const fn = function () {
     s = (s + 0x6d2b79f5) | 0;
     let t = Math.imul(s ^ (s >>> 15), 1 | s);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+  fn.getState = () => s;
+  fn.setState = (v) => { s = v | 0; };
+  return fn;
 }
 
 function clamp(v, min, max) {
@@ -349,9 +357,15 @@ export function pickBetterLane(lanes) {
 // (negative reaction = red light = automatic loss, see resolveHeadToHead).
 // This is deliberately the ONLY new "randomness" tied to aggressiveness -
 // it reuses the existing slider rather than adding a separate one.
-export function calcReactionTime(driverAggressiveness, rng) {
-  const meanReaction = 0.12 - (driverAggressiveness / 100) * 0.08;
-  const stdDev = 0.02 + (driverAggressiveness / 100) * 0.03;
+// reactionMult is a second, independent axis on top of that: WHO is behind
+// the wheel, not how hard you've told them to push. A quicker, more
+// consistent driver (mult > 1) shrinks BOTH the mean and the spread by the
+// same factor - faster on average AND less likely to produce an outlier
+// (red light) at either end; 1.0 (no hired driver, or a neutral one) is an
+// exact no-op reproducing the original formula.
+export function calcReactionTime(driverAggressiveness, rng, reactionMult = 1) {
+  const meanReaction = (0.12 - (driverAggressiveness / 100) * 0.08) / reactionMult;
+  const stdDev = (0.02 + (driverAggressiveness / 100) * 0.03) / reactionMult;
   const u1 = Math.max(1e-9, rng());
   const u2 = rng();
   const gaussian = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);

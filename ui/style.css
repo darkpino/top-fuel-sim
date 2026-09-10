@@ -74,3 +74,8 @@ input[type=text]{width:100%; background:var(--panel-alt); color:var(--text); bor
 .dragster-diagram .diagram-part:hover path, .dragster-diagram .diagram-part:hover rect{fill:var(--amber-dim);}
 .garage-section{border-radius:6px; transition:background-color 0.3s;}
 .garage-section.flash{background-color:rgba(242,167,27,0.16);}
+.sidebar-io{margin-top:12px; padding-top:12px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:4px;}
+textarea{width:100%; background:var(--panel-alt); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:8px; font-size:12px; font-family:var(--mono); resize:vertical;}
+.io-modal{position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50;}
+.io-modal[hidden]{display:none;}
+.io-modal-inner{background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:16px; max-width:480px; width:100%; max-height:80vh; overflow-y:auto;}

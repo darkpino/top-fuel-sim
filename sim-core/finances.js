@@ -59,6 +59,16 @@ export function chargeRunCost(state, label = "Run kosten (brandstof, crew)") {
   return addTransaction(state, label, -RUN_COST);
 }
 
+// Team wages (see team.js's totalTeamWagesPerEvent) are charged once per
+// event, same timing as the entry fee - a pay driver's negative salary
+// means this can also be a net CREDIT, sponsorship money coming in through
+// the driver rather than going out.
+export function chargeTeamWages(state, totalWagesPerEvent) {
+  if (totalWagesPerEvent === 0) return state;
+  const label = totalWagesPerEvent > 0 ? "Teamsalarissen" : "Sponsorbijdrage pay driver(s)";
+  return addTransaction(state, label, -totalWagesPerEvent);
+}
+
 // Real nitro engine failures are rarely a clean single-part event - an
 // over-driven blower running hot can let go on its own or take the short
 // block with it; a lean burn-down just as often shows up as a holed
@@ -93,11 +103,11 @@ export function rollEnginePartsFailed(cause, rng = Math.random) {
 //    is a write-off, unmounted on the spot, regardless of any spare
 // Returns "spared", "repaired", or "fatal" (no working unit of this part
 // for the rest of THIS event).
-export function chargePartFailure(state, garageConfig, part, rng = Math.random) {
+export function chargePartFailure(state, garageConfig, part, rng = Math.random, catastrophicMult = 1) {
   const label = spareLabel(part);
   const cap = label.charAt(0).toUpperCase() + label.slice(1);
   const priceBefore = equippedPartPrice(garageConfig, part);
-  if (rng() < CATASTROPHIC_CHANCE) {
+  if (rng() < CATASTROPHIC_CHANCE * catastrophicMult) {
     unequipPart(garageConfig, part);
     const fee = Math.round(priceBefore * CATASTROPHIC_FEE_FRACTION);
     addTransaction(state, `${cap} total loss — onherstelbaar aan de baan, moet voor het volgende evenement vervangen worden`, -fee);
@@ -130,13 +140,13 @@ export function awardEventPrize(state, outcome) {
   return addTransaction(state, label, amount);
 }
 
-export function generateSponsorOffers(rng = Math.random, count = 2) {
+export function generateSponsorOffers(rng = Math.random, count = 2, amountMult = 1) {
   const pool = [...SPONSOR_NAMES];
   const offers = [];
   for (let i = 0; i < count && pool.length; i++) {
     const idx = Math.floor(rng() * pool.length);
     const name = pool.splice(idx, 1)[0];
-    const amount = Math.round((4000 + rng() * 16000) / 100) * 100;
+    const amount = Math.round(((4000 + rng() * 16000) * amountMult) / 100) * 100;
     offers.push({ id: `${name}-${Date.now()}-${i}`, name, amount });
   }
   return offers;
