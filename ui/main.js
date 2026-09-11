@@ -176,10 +176,10 @@ function updateEngineHints() {
   const tempQuality = trackTempDiff < 0
     ? (trackTempDiff < -15 ? "veel te koud, traction compound activeert nauwelijks" : "iets aan de koude kant")
     : (trackTempDiff > 25 ? "veel te heet, baan wordt gooey/glad" : (trackTempDiff > 8 ? "iets aan de warme kant" : "in de sweet spot (~24°C / 75°F)"));
-  // Displayed purely as a kN-flavored readout (2600-3400 span), rescaled
+  // Displayed purely as a kN-flavored readout (2500-3300 span), rescaled
   // from the internal grip coefficient (0.6-6.6) after temp/tire penalties -
   // this is the OUTCOME of VHT% + track temp + tire pressure, not an input.
-  const gripKN = Math.round(2600 + Math.max(0, Math.min(1, (gripEstimate - 0.6) / 6.0)) * 800);
+  const gripKN = Math.round(2500 + Math.max(0, Math.min(1, (gripEstimate - 0.6) / 6.0)) * 800);
   gripHint.textContent = `Effectieve grip: ${gripKN} kN (${tempQuality})`;
 }
 ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1p", "gasket", "ign1", "tpsi"].forEach(id => {

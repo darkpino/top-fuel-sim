@@ -379,8 +379,8 @@ export function generateLaneVariants(baseConditions, rng) {
   const gripDelta = (rng() * 2 - 1) * 6;
   const trackDelta = (rng() * 2 - 1) * 3;
   return {
-    A: { ...baseConditions, gripSliderPct: clamp(baseConditions.gripSliderPct + gripDelta, 20, 100), trackTempC: clamp(baseConditions.trackTempC + trackDelta, 15, 65) },
-    B: { ...baseConditions, gripSliderPct: clamp(baseConditions.gripSliderPct - gripDelta, 20, 100), trackTempC: clamp(baseConditions.trackTempC - trackDelta, 15, 65) },
+    A: { ...baseConditions, gripSliderPct: clamp(baseConditions.gripSliderPct + gripDelta, 15, 100), trackTempC: clamp(baseConditions.trackTempC + trackDelta, 15, 65) },
+    B: { ...baseConditions, gripSliderPct: clamp(baseConditions.gripSliderPct - gripDelta, 15, 100), trackTempC: clamp(baseConditions.trackTempC - trackDelta, 15, 65) },
   };
 }
 
