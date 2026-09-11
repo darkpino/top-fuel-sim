@@ -51,6 +51,20 @@ export function calcIgnitionHeatDamageRate(effectiveIgnitionDeg) {
   return Math.max(0, (effectiveIgnitionDeg - IGNITION_SAFE_DEG) / 30) * IGNITION_HEAT_RATE;
 }
 
+// Heat risk past which the mixture is genuinely detonation-prone - shared
+// between the UI-facing detonationRisk flag here and the actual damage
+// accumulation rate in run-simulator.js, so both agree on where the line
+// is. Pulled down from an earlier 0.62: that value, combined with the
+// nitro term below only starting at 88%, left a wide band where blower,
+// compression and nitro could all be pushed well past a stock tune with
+// zero consequence at all, right up to a sudden cliff into engine
+// failure - not a gradually rising risk, just "safe" then "destroyed."
+// 0.5 (with the nitro term starting earlier too) keeps a stock tune
+// comfortably under it but meaningfully shrinks how far several knobs can
+// be pushed together before real risk shows up - see run-simulator.js's
+// heatDamage accumulation, which is what actually gates on this.
+export const HEAT_RISK_THRESHOLD = 0.5;
+
 export function calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition, airDensityRatio = 1 }) {
   const fuelFactor = 0.60 + (fuelPct - 75) / 15 * 0.40;
   const blowerNorm = Math.max(0, (blowerOD - 20) / 50);
@@ -67,9 +81,15 @@ export function calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition, air
   // small nudge on top of the tune's own three terms, not a dominant one
   // (real crew chiefs do back off some at altitude partly for this, not
   // just for the power loss - see calcOxygenMult below for that side).
-  const heatRisk = blowerNorm * 0.65 + Math.max(0, (compressionFactor - 1)) * 1.1 + Math.max(0, (fuelPct - 88)) / 10 * 0.15
+  // The nitro term's own start (84, was 88) and rate (0.09, was 0.15)
+  // are a smaller, deliberately gentler move than the threshold above -
+  // nitro alone stays safe within the legal 75-90% range (real Top Fuel
+  // doesn't grenade from nitro% in isolation, it's always the COMBINATION
+  // with blower/compression that does it), it just no longer gets a
+  // complete free pass all the way to the illegal ceiling either.
+  const heatRisk = blowerNorm * 0.65 + Math.max(0, (compressionFactor - 1)) * 1.1 + Math.max(0, (fuelPct - 84)) / 10 * 0.09
     + Math.max(0, airDensityRatio - 1) * 0.2;
-  const detonationRisk = heatRisk > 0.62;
+  const detonationRisk = heatRisk > HEAT_RISK_THRESHOLD;
 
   return { fuelFactor, blowerNorm, blowerFactor, ignEff, compressionFactor, heatRisk, detonationRisk, nitroIllegal };
 }

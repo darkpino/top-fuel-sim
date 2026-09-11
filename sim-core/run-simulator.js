@@ -6,7 +6,7 @@ import {
   calcEngineFactors, calcMult, stepEngineRpm, calcFuelFlowGpm,
   calcIdealFuelPct, calcMixtureRichness, activeFuelPct, calcOxygenMult,
   calcIgnEff, activeIgnition, calcIgnitionRetard,
-  IGNITION_MAX_ADVANCE_RATE, calcIgnitionHeatDamageRate,
+  IGNITION_MAX_ADVANCE_RATE, calcIgnitionHeatDamageRate, HEAT_RISK_THRESHOLD,
 } from "./engine.js";
 import { activeSetpoint, activeSpeed, calcFingerDesired, calcWornFingerDesired, stepBearingPos } from "./clutch.js";
 import { calcOptimalPsi, calcPsiPenalty, calcTireWear } from "./tires.js";
@@ -100,8 +100,8 @@ const TIRE_GROWTH_RATE = 8;
 // that produces tire shake in real cars: not enough margin to slip
 // smoothly, not enough grip to hook up clean either.
 const GROWTH_EFFICIENCY_PSI_REF = 1.5;
-const TIRE_SHAKE_LOAD_THRESHOLD = 0.55;
-const TIRE_SHAKE_EFFICIENCY_THRESHOLD = 0.6;
+const TIRE_SHAKE_LOAD_THRESHOLD = 0.48;
+const TIRE_SHAKE_EFFICIENCY_THRESHOLD = 0.68;
 const DT = 0.004;
 const MAX_T = 10.0;
 // Holding lockup back to stay under the traction ceiling isn't free: the
@@ -132,8 +132,15 @@ const CLUTCH_FAILURE_THRESHOLD = 0.15;
 // CYLINDER_DROP_THRESHOLD while still catching a genuinely over-rich tune.
 const LEAN_DAMAGE_RATE = 0.5;
 const FOUL_DAMAGE_RATE = 0.15;
-const CYLINDER_DROP_THRESHOLD = 0.075;
-const ENGINE_FAILURE_THRESHOLD = 0.15;
+// CYLINDER_DROP_THRESHOLD and ENGINE_FAILURE_THRESHOLD both pulled down a
+// bit (were 0.075/0.15): between this and HEAT_RISK_THRESHOLD above, a
+// stock default pass keeps a healthy margin under every one of these
+// (still verified against the regression baseline), but there's
+// noticeably less room left to push blower/compression/nitro together
+// before something actually gives - narrower on purpose, see the note on
+// HEAT_RISK_THRESHOLD in engine.js.
+const CYLINDER_DROP_THRESHOLD = 0.065;
+const ENGINE_FAILURE_THRESHOLD = 0.13;
 // Hydraulic lock: too much liquid fuel pooling in a cylinder doesn't fully
 // vaporize/burn before the piston reaches it - and liquid doesn't
 // compress, so something mechanical gives (a bent rod, worse) rather than
@@ -141,12 +148,10 @@ const ENGINE_FAILURE_THRESHOLD = 0.15;
 // That makes it a THIS-INSTANT mechanical event tied to the peak richness
 // actually seen, not an accumulated clock - checked directly against
 // richness every tick, independent of heatDamage/leanDamage/foulDamage.
-// Calibrated well above what even a badly-tuned rich curve reaches on its
-// own (a default pass peaks around 0.15, a +25-over-rich curve around
-// 0.4) so this only bites a build that's genuinely flooding the engine,
-// not an ordinary tuning mistake that the existing foul/cylinder-drop
-// path already covers.
-const HYDROLOCK_RICHNESS_THRESHOLD = 0.55;
+// Calibrated above what a default pass reaches (peaks around 0.15) with
+// real but tighter room above that (was 0.55) before a genuinely
+// over-rich build hits it, in line with the other margins above.
+const HYDROLOCK_RICHNESS_THRESHOLD = 0.48;
 const CYLINDER_DROP_FORCE_PENALTY = 0.85; // one or more cylinders misfiring
 // How far (ft) past the commanded shutoff point an undisciplined driver
 // drifts before actually lifting - a pay driver who "doesn't listen," the
@@ -442,7 +447,7 @@ export function runSimulation(settings) {
     // simulated time at the SAME damage rate as full throttle - the tune
     // did nothing wrong, the model just kept counting a stress that had
     // already stopped happening.
-    heatDamage += Math.max(0, heatRisk - 0.62) * loadHeatMult * garageEngineDamageMult * throttle * DT;
+    heatDamage += Math.max(0, heatRisk - HEAT_RISK_THRESHOLD) * loadHeatMult * garageEngineDamageMult * throttle * DT;
     // The retarder exists specifically to keep this at bay - it only bites
     // if the curve is dialed aggressively enough that even -30deg of
     // retard can't pull effective timing back under a safe line.
