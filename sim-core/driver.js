@@ -41,11 +41,14 @@ export function createDriverState() {
 // reacts to what the car just did, not what it's about to do this instant -
 // this also avoids a circular dependency, since this step's slip% depends
 // on the throttle this function returns) and the car's current distance x
-// (ft). watchUntilX caps how far into the run the driver is actively
-// watching for smoke and reacting to it - past that point (but not before
-// it, and not overriding an already-lifted or already-pedaling driver) the
-// commanded throttle is left alone, as if the driver has settled in and is
-// just holding what the tune gives him. shutoffX is a separate, planned
+// (ft). watchUntilX caps how far into the run the driver actively tries to
+// SAVE a bout of smoke with pedal technique - past that point (but not
+// before it, and not overriding an already-lifted or already-pedaling
+// driver) he no longer attempts that, but he isn't blind to the car either:
+// sustained smoke past this point still gets an outright lift, just without
+// the pedal-and-reapply dance first. A clean run (slip under the smoke
+// threshold) is unaffected - he holds what the tune gives exactly as
+// before. shutoffX is a separate, planned
 // lift point - a shutoff distance the driver commits to before the run,
 // same as a real delay box / preset shutoff, and takes it regardless of
 // how the run is going (clean or smoking); it does not depend on
@@ -77,6 +80,12 @@ export function stepDriver(driverState, t, x, prevSlipPct, aggressiveness, watch
   }
 
   if (x > watchUntilX) {
+    if (prevSlipPct >= SMOKE_SLIP_THRESHOLD) {
+      driverState.lifted = true;
+      driverState.liftTime = t;
+      driverState.liftReason = "smoke";
+      return 0;
+    }
     driverState.smokeTime = 0;
     return 1;
   }
