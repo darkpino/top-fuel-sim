@@ -13,13 +13,14 @@ import {
 import {
   PARTS, TRAILER_TYPES, findBrand, defaultGarageConfig, computeGarageEffects,
   totalBuildValue, spareLabel, computeWeightDistribution,
-  equippedUnit, installUnit, unitPrice, computeClutchReliabilityMult,
+  equippedUnit, installUnit, unitPrice, computeClutchReliabilityMult, equippedPartPrice,
   isPartOwned, isCarRaceReady, totalSpareCount, trailerSpareCapacity, buyUnit, buyAndEquipUnit,
   migrateGarageConfig, generateUsedMarket, usedPriceMult, usedReliabilityMult,
+  addRunWear, isPartBroken, estimatePartCondition,
 } from "../sim-core/garage.js";
 import {
   ENTRY_FEE, defaultFinancesState, addTransaction, chargeEntryFee, chargeRunCost, chargeTeamWages,
-  rollEnginePartsFailed, chargePartFailure, awardEventPrize, generateSponsorOffers,
+  rollEnginePartsFailed, chargePartFailure, repairPartUnit, REPAIR_FRACTION, awardEventPrize, generateSponsorOffers,
 } from "../sim-core/finances.js";
 import {
   TEAM_ROLES, defaultTeamConfig, computeTeamEffects, totalTeamWagesPerEvent,
@@ -477,12 +478,19 @@ function renderRunResult(r) {
 $("runBtn").addEventListener("click", () => {
   if (!isCarRaceReady(garageConfig)) {
     $("placeholder").style.display = "block";
-    $("placeholder").textContent = "Auto niet compleet - koop eerst motor, koppen, blower, koppeling en trailer in Auto bouwen.";
+    $("placeholder").textContent = "Auto niet compleet, of een onderdeel is kapot - koop/repareer eerst in Auto bouwen (motor, koppen, blower, koppeling en trailer nodig, en geen kapotte onderdelen).";
     $("resultsContent").style.display = "none";
     $("inspPanel").style.display = "none";
     return;
   }
+  // A test pass is free and has no failure/repair consequences (that
+  // stays specific to real event runs, see chargePlayerRun), but it's
+  // still a real physical run on the equipped parts - the same wear clock
+  // a qualifying or elimination pass turns, see addRunWear in garage.js.
+  addRunWear(garageConfig);
+  saveGarageConfig();
   renderRunResult(runSimulation(readSettings()));
+  if (currentMode === "garage") renderGarageSummary();
 });
 
 // ---- Evenement: 4 kwalificatierondes tegen een AI-veld (sim-core/ladder.js),
@@ -755,7 +763,7 @@ function showEventActiveUI() {
 
 $("startEventBtn").addEventListener("click", () => {
   if (!isCarRaceReady(garageConfig)) {
-    $("event-status").textContent = `Auto niet compleet - koop eerst motor, koppen, blower, koppeling en trailer in Auto bouwen voor je kunt inschrijven.`;
+    $("event-status").textContent = `Auto niet compleet of er staat een kapot onderdeel - koop/repareer eerst in Auto bouwen (motor, koppen, blower, koppeling en trailer nodig, niets kapot) voor je kunt inschrijven.`;
     return;
   }
   const wagesPerEvent = totalTeamWagesPerEvent(teamConfig);
@@ -1073,25 +1081,46 @@ function renderFinalResult(text) {
 const FATAL_FAILURE_NOUN = { engine: "Motorblok", head: "Cilinderkop", blower: "Blower", clutch: "Koppeling" };
 
 // Joins 1+ Dutch part nouns into a natural list ("Motorblok", "Motorblok
-// en blower") for the fatal-failure messages below - a failure can now
-// take out more than one part at once (see rollEnginePartsFailed).
+// en blower") for the failure messages below - a failure can now take out
+// more than one part at once (see rollEnginePartsFailed).
 function fatalPartsText(parts) {
   return parts.map((p) => FATAL_FAILURE_NOUN[p]).join(" en ");
 }
 
+// Both fatalParts (total loss) and brokenParts (still mounted, just needs
+// an explicit repair - see finances.js's repairPartUnit) end THIS event
+// the same way - no working unit for the rest of it - but mean different
+// things for what the player has to do about it before the next one, so
+// the end-of-event message spells out which is which rather than lumping
+// them into one generic "kapot" list.
+function unusablePartsClause(fatalParts, brokenParts) {
+  const clauses = [];
+  if (fatalParts.length) clauses.push(`${fatalPartsText(fatalParts)} total loss`);
+  if (brokenParts.length) clauses.push(`${fatalPartsText(brokenParts)} kapot (reparatie nodig in Auto bouwen)`);
+  return clauses.join(", ");
+}
+
 // Every actual player run during an event (qualifying pass, elimination
 // pass, bye pass - not a skipped qualifying round, not a Testrun-tab
-// run) costs run money, plus damage cost(s) on top if the motor side or
-// koppeling let go. An "engine" failure doesn't always mean the block
-// itself - rollEnginePartsFailed picks which of engine/head/blower (1 or
-// 2 of them) actually took the hit, and chargePartFailure charges each
-// independently on an escalating spare/repair/catastrophic-write-off
+// run, which wears the car but never costs money or triggers a failure
+// roll) costs run money, adds a bit of wear to every equipped part
+// (addRunWear - the same physical-mileage clock a Testrun lap also
+// turns), plus damage cost(s) on top if the motor side or koppeling let
+// go. An "engine" failure doesn't always mean the block itself -
+// rollEnginePartsFailed picks which of engine/head/blower (1 or 2 of
+// them) actually took the hit, and chargePartFailure charges each
+// independently on an escalating spare/broken/catastrophic-write-off
 // ladder (see finances.js). Returns the part(s) left with no working unit
-// for the REST of this event (empty array if the car survived).
+// for the REST of this event, split by why: fatalParts (total loss, needs
+// a full replacement before racing that slot again) and brokenParts
+// (still mounted, just needs an explicit, paid repair - see
+// repairPartUnit) - both empty if the car survived clean.
 function chargePlayerRun(r) {
   chargeRunCost(financesState);
+  addRunWear(garageConfig);
   const catastrophicMult = computeTeamEffects(teamConfig).teamCatastrophicMult;
   const fatalParts = [];
+  const brokenParts = [];
   if (r.engineFailed) {
     const parts = rollEnginePartsFailed(r.engineFailCause, ladderState.rng);
     // A liquid-locked cylinder bending a rod is almost never something a
@@ -1099,16 +1128,20 @@ function chargePlayerRun(r) {
     // whatever the car chief's own catastrophicMult already says.
     const engineCatastrophicMult = catastrophicMult * (r.engineFailCause === "hydrolock" ? 2.5 : 1);
     parts.forEach((part) => {
-      if (chargePartFailure(financesState, garageConfig, part, ladderState.rng, engineCatastrophicMult) === "fatal") fatalParts.push(part);
+      const outcome = chargePartFailure(financesState, garageConfig, part, ladderState.rng, engineCatastrophicMult);
+      if (outcome === "fatal") fatalParts.push(part);
+      else if (outcome === "broken") brokenParts.push(part);
     });
   }
   if (r.clutchFailed) {
-    if (chargePartFailure(financesState, garageConfig, "clutch", ladderState.rng, catastrophicMult) === "fatal") fatalParts.push("clutch");
+    const outcome = chargePartFailure(financesState, garageConfig, "clutch", ladderState.rng, catastrophicMult);
+    if (outcome === "fatal") fatalParts.push("clutch");
+    else if (outcome === "broken") brokenParts.push("clutch");
   }
   saveFinancesState();
   saveGarageConfig();
   renderFinancePanel();
-  return fatalParts;
+  return { fatalParts, brokenParts };
 }
 
 // Awards prize money for how the event ended, offers 1-2 sponsor deals
@@ -1133,12 +1166,13 @@ function runPlayerQualifying(skip) {
   const player = ladderState.field.find(e => e.isPlayer);
   applyConditions(roundDef.conditions);
   let fatalParts = [];
+  let brokenParts = [];
   if (!skip) {
     const r = runSimulation(readSettings());
     player.quals[sessionIndex] = r;
     if (r.finished && !r.weightIllegal && !r.engineFailed && !r.clutchFailed && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
     ladderState.playerHistory[ladderState.roundIndex] = { result: r };
-    fatalParts = chargePlayerRun(r);
+    ({ fatalParts, brokenParts } = chargePlayerRun(r));
     renderRunResult(r);
   } else {
     player.quals[sessionIndex] = null;
@@ -1150,11 +1184,11 @@ function runPlayerQualifying(skip) {
   renderQualiTable(roundDef);
   renderHistoryTable();
   saveEventState();
-  if (fatalParts.length) {
+  if (fatalParts.length || brokenParts.length) {
     ladderState.playerOutcome = "dnq";
     finishEvent(
       { qualified: false },
-      `${fatalPartsText(fatalParts)} kapot tijdens de kwalificatie en niet meer inzetbaar deze ronde — het evenement is voorbij voor je team.`
+      `${unusablePartsClause(fatalParts, brokenParts)} tijdens de kwalificatie en niet meer inzetbaar deze ronde — het evenement is voorbij voor je team.`
     );
     return;
   }
@@ -1169,7 +1203,7 @@ function runPlayerBye() {
   const r = runSimulation(readSettings());
   ladderState.elimRounds[ladderState.roundIndex].byeResult = r;
   ladderState.playerHistory[ladderState.roundIndex] = { result: r, bye: true };
-  const fatalParts = chargePlayerRun(r);
+  const { fatalParts, brokenParts } = chargePlayerRun(r);
   renderRunResult(r);
   renderBracketTable(roundDef);
   renderHistoryTable();
@@ -1180,11 +1214,11 @@ function runPlayerBye() {
       { qualified: true, champion: true, totalElimRounds: totalElimRoundsFor(ladderState.bracketSize) },
       `Kampioen! Je won de finale van dit evenement (bye in de laatste ronde) (${ladderState.totalEntries} auto's).`
     );
-  } else if (fatalParts.length) {
+  } else if (fatalParts.length || brokenParts.length) {
     ladderState.playerOutcome = "eliminated";
     finishEvent(
       { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber + 1 },
-      `${fatalPartsText(fatalParts)} kapot — je kreeg deze ronde een bye, maar bent niet meer race-klaar. Het evenement is voorbij voor je team.`
+      `${unusablePartsClause(fatalParts, brokenParts)} — je kreeg deze ronde een bye, maar bent niet meer race-klaar. Het evenement is voorbij voor je team.`
     );
   } else {
     advanceLadderRound();
@@ -1221,7 +1255,7 @@ function runPlayerElimination() {
   ed.results[ed.playerPairIndex] = { a, b, resultA, resultB, reactA, reactB, winner };
   ladderState.playerHistory[ladderState.roundIndex] = { result: rPlayer, opponent, opponentResult: rOpponent, won: winner.isPlayer };
 
-  const fatalParts = chargePlayerRun(rPlayer);
+  const { fatalParts, brokenParts } = chargePlayerRun(rPlayer);
   renderRunResult(rPlayer);
   renderBracketTable(roundDef);
   renderHistoryTable();
@@ -1234,19 +1268,19 @@ function runPlayerElimination() {
         { qualified: true, champion: true, totalElimRounds: totalElimRoundsFor(ladderState.bracketSize) },
         `Kampioen! Je won de finale van dit evenement (${ladderState.totalEntries} auto's).`
       );
-    } else if (fatalParts.length) {
+    } else if (fatalParts.length || brokenParts.length) {
       ladderState.playerOutcome = "eliminated";
       finishEvent(
         { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber + 1 },
-        `${fatalPartsText(fatalParts)} kapot — je won deze ronde nog wel, maar bent niet meer race-klaar. Het evenement is voorbij voor je team.`
+        `${unusablePartsClause(fatalParts, brokenParts)} — je won deze ronde nog wel, maar bent niet meer race-klaar. Het evenement is voorbij voor je team.`
       );
     } else {
       advanceLadderRound();
     }
   } else {
     ladderState.playerOutcome = "eliminated";
-    const failureNote = fatalParts.length
-      ? ` Je ${fatalPartsText(fatalParts).toLowerCase()} ging bovendien kapot — die moet(en) voor het volgende evenement vervangen worden.`
+    const failureNote = (fatalParts.length || brokenParts.length)
+      ? ` Bovendien: ${unusablePartsClause(fatalParts, brokenParts)}.`
       : "";
     const dqNote = rPlayer.weightIllegal
       ? ` Je auto woog ${Math.round(rPlayer.weightLb)} lbs, onder het minimum van ${WEIGHT_LB_MIN} lbs — automatisch verlies ongeacht de tijd.`
@@ -1429,17 +1463,36 @@ function renderPartMarketList(part) {
 // Per-part readonly "what's mounted" line, plus the buy button's label -
 // "X kopen" for a first purchase (becomes equipped directly), "Reserve X
 // kopen" once something's already mounted (goes to inventory instead,
-// capacity permitting - see buyUnit in garage.js).
+// capacity permitting - see buyUnit in garage.js). Also renders the
+// condition readout (estimatePartCondition - deliberately fuzzy, see
+// garage.js) and, when the part is broken (markPartBroken - mounted but
+// unusable until repaired), the repair note/button.
 function renderPartEquippedStatus(part) {
   const owned = isPartOwned(garageConfig, part);
   const label = spareLabel(part);
   const capLabel = label[0].toUpperCase() + label.slice(1);
+  const conditionEl = $(`g-${part}-condition`);
+  const repairBtn = $(`g-repair-${part}`);
   if (owned) {
     const unit = equippedUnit(garageConfig, part);
     const brand = findBrand(PARTS[part].brands, unit.brandId);
     $(`g-${part}-equipped`).textContent = `Gemonteerd: ${brand.name} (${formatAgeMonths(unit.ageMonths)}).`;
+    const broken = isPartBroken(garageConfig, part);
+    if (broken) {
+      conditionEl.innerHTML = `<span style="color:var(--red)">Kapot — niet meer inzetbaar tot reparatie.</span>`;
+      const cost = Math.round(equippedPartPrice(garageConfig, part) * REPAIR_FRACTION[part]);
+      repairBtn.style.display = "block";
+      repairBtn.textContent = `${capLabel} repareren (~€${cost.toLocaleString("nl-NL")})`;
+    } else {
+      const c = estimatePartCondition(garageConfig[`${part}Wear`]);
+      const color = c.cls === "ok" ? "var(--green)" : c.cls === "warn" ? "var(--amber)" : "var(--red)";
+      conditionEl.innerHTML = `Conditie: <span style="color:${color}">${c.label} (~${c.rangeLow}-${c.rangeHigh}%)</span>`;
+      repairBtn.style.display = "none";
+    }
   } else {
     $(`g-${part}-equipped`).textContent = `Geen ${label} gemonteerd.`;
+    conditionEl.textContent = "";
+    repairBtn.style.display = "none";
   }
   $(`g-buy-${part}-spare`).textContent = owned ? `Reserve ${label} kopen (nieuw)` : `${capLabel} kopen (nieuw)`;
 }
@@ -1464,8 +1517,8 @@ function renderGarageSummary() {
   $("g-spare-capacity").style.color = spareCount >= spareCap ? "var(--red)" : "var(--text)";
 
   $("garage-readiness-note").innerHTML = isCarRaceReady(garageConfig)
-    ? `<span style="color:var(--green)">Klaar om te racen: motor, koppen, blower, koppeling en trailer zijn allemaal aanwezig.</span>`
-    : `<span style="color:var(--red)">Nog niet klaar om te racen — koop hieronder wat ontbreekt (motor, koppen, blower, koppeling, trailer) voor je een run of evenement kunt starten.</span>`;
+    ? `<span style="color:var(--green)">Klaar om te racen: motor, koppen, blower, koppeling en trailer zijn allemaal aanwezig en niets staat kapot.</span>`
+    : `<span style="color:var(--red)">Nog niet klaar om te racen — koop hieronder wat ontbreekt (motor, koppen, blower, koppeling, trailer), en repareer eventueel kapotte onderdelen, voor je een run of evenement kunt starten.</span>`;
 
   $("g-build-value").textContent = "€" + totalBuildValue(garageConfig).toLocaleString("nl-NL");
   const effects = computeGarageEffects(garageConfig);
@@ -1567,6 +1620,21 @@ function buyPart(part) {
     : `Reserve ${label} (${brandName}, nieuw) gekocht voor €${price.toLocaleString("nl-NL")}.`;
 }
 PART_LIST.forEach(part => $(`g-buy-${part}-spare`).addEventListener("click", () => buyPart(part)));
+
+// Explicit, player-initiated fix for a broken part (see finances.js's
+// repairPartUnit - the only place a broken part ever gets un-broken now,
+// no more automatic repair-on-failure). Pays the same repair cost the old
+// auto-repair used, and resets the part's wear as part of the rebuild.
+function repairPart(part) {
+  const label = spareLabel(part);
+  if (!repairPartUnit(financesState, garageConfig, part)) return;
+  saveFinancesState();
+  saveGarageConfig();
+  renderGarageSummary();
+  renderFinancePanel();
+  $("garage-status").textContent = `${label[0].toUpperCase()}${label.slice(1)} gerepareerd — weer inzetbaar.`;
+}
+PART_LIST.forEach(part => $(`g-repair-${part}`).addEventListener("click", () => repairPart(part)));
 
 // Buys a specific used listing off the market (see garage.js's
 // generateUsedMarket) - same budget/capacity gates as a new purchase, but

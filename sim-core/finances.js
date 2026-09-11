@@ -4,7 +4,7 @@
 // scale with the price of the equipped part that failed (so a Vortan
 // motor costs more to fix than an Ironclad one).
 
-import { equippedPartPrice, consumeSpareOnFailure, unequipPart, spareLabel } from "./garage.js";
+import { equippedPartPrice, consumeSpareOnFailure, unequipPart, spareLabel, markPartBroken, isPartBroken, clearPartBroken } from "./garage.js";
 
 export const STARTING_BUDGET = 75000;
 export const ENTRY_FEE = 2500;
@@ -99,15 +99,20 @@ export function rollEnginePartsFailed(cause, rng = Math.random) {
   return parts;
 }
 
-// The one place money actually changes hands for a broken part - engine,
-// head, blower or clutch alike. Three outcomes, in escalating cost and
-// consequence:
-//  - a spare on hand: swap-labor fee only (SPARE_SWAP_LABOR_FRACTION)
-//  - no spare: full repair, fixed in time for the NEXT event, not this one
+// The one place a broken part gets RECORDED - engine, head, blower or
+// clutch alike. Three outcomes, in escalating cost and consequence:
+//  - a spare on hand: swap-labor fee only (SPARE_SWAP_LABOR_FRACTION),
+//    keeps racing on the spare right away
+//  - no spare: the part stays mounted but is marked broken (see garage.js's
+//    markPartBroken) - NOT usable again, this event or any other, until
+//    the player explicitly pays to fix it (repairPartUnit below). No
+//    money changes hands here for that branch - repairing is a separate,
+//    player-initiated step, not something a failure quietly pays for
+//    itself.
 //  - catastrophic (rolled independently of spare availability): the part
 //    is a write-off, unmounted on the spot, regardless of any spare
-// Returns "spared", "repaired", or "fatal" (no working unit of this part
-// for the rest of THIS event).
+// Returns "spared", "broken", or "fatal" (no working unit of this part
+// for the rest of THIS event, either way - see garage.js's isCarRaceReady).
 export function chargePartFailure(state, garageConfig, part, rng = Math.random, catastrophicMult = 1) {
   const label = spareLabel(part);
   const cap = label.charAt(0).toUpperCase() + label.slice(1);
@@ -123,9 +128,28 @@ export function chargePartFailure(state, garageConfig, part, rng = Math.random, 
     addTransaction(state, `${cap}schade — reserve gemonteerd (montagekosten)`, -fee);
     return "spared";
   }
-  const cost = Math.round(priceBefore * REPAIR_FRACTION[part]);
+  markPartBroken(garageConfig, part);
+  addTransaction(state, `${cap}schade — kapot, nog niet gerepareerd (zie Auto bouwen)`, 0);
+  return "broken";
+}
+
+// The explicit, player-initiated fix for a broken part (garage.js's
+// markPartBroken) - unlike the old behavior, a failure no longer pays for
+// its own repair as a side effect; this is the only place that actually
+// happens, and only when the player triggers it (the garage panel's
+// "Repareer" action). Same cost as the old auto-repair (REPAIR_FRACTION),
+// just moved to when the player actually asks for it - and it also
+// resets the part's accumulated wear (clearPartBroken), a genuine rebuild
+// rather than a patch. No-op (returns false, charges nothing) if the part
+// isn't actually broken, so a stray call can't double-charge.
+export function repairPartUnit(state, garageConfig, part) {
+  if (!isPartBroken(garageConfig, part)) return false;
+  const label = spareLabel(part);
+  const cap = label.charAt(0).toUpperCase() + label.slice(1);
+  const cost = Math.round(equippedPartPrice(garageConfig, part) * REPAIR_FRACTION[part]);
+  clearPartBroken(garageConfig, part);
   addTransaction(state, `${cap}schade — reparatie`, -cost);
-  return "repaired";
+  return true;
 }
 
 function prizeForRoundsWon(roundsWon, champion) {

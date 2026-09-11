@@ -228,11 +228,11 @@ export const PARTS = {
 // isCarRaceReady for the actual gate on running/racing.
 export function defaultGarageConfig() {
   return {
-    engineBrandId: null, engineAgeMonths: 0,
-    headBrandId: null, headAgeMonths: 0,
-    blowerBrandId: null, blowerAgeMonths: 0,
+    engineBrandId: null, engineAgeMonths: 0, engineWear: 0, engineBroken: false,
+    headBrandId: null, headAgeMonths: 0, headWear: 0, headBroken: false,
+    blowerBrandId: null, blowerAgeMonths: 0, blowerWear: 0, blowerBroken: false,
     blowerType: "conventional",
-    clutchBrandId: null, clutchAgeMonths: 0,
+    clutchBrandId: null, clutchAgeMonths: 0, clutchWear: 0, clutchBroken: false,
     bodyMaterial: "aluminium",
     chassisLengthIn: CHASSIS_LENGTH_BASELINE_IN,
     tankSizeGal: TANK_SIZE_BASELINE_GAL,
@@ -271,6 +271,15 @@ export function migrateGarageConfig(config) {
     delete config[secondhandKey];
     const invKey = part + "Inventory";
     if (Array.isArray(config[invKey])) config[invKey] = config[invKey].map(migrateUnit);
+    // A save from before per-run wear/broken tracking existed - the
+    // equipped unit was already out there racing, but 0/false (as-new,
+    // not broken) is the only sane default: there's no history to recover
+    // wear from, and defaulting to "broken" would strand an old save on a
+    // part that was working fine.
+    const wearKey = part + "Wear";
+    if (config[wearKey] === undefined) config[wearKey] = 0;
+    const brokenKey = part + "Broken";
+    if (config[brokenKey] === undefined) config[brokenKey] = false;
   });
   return config;
 }
@@ -292,19 +301,31 @@ export function trailerSpareCapacity(config) {
 }
 
 // The minimum to actually show up and make a pass: all four driveline
-// parts mounted, plus a trailer to get the car there. Body/chassis/tank
-// are build SPECS, not ownable parts - free to dial in either way.
+// parts mounted, none of them currently broken (see markPartBroken -
+// mounted but not safe to run until repaired), plus a trailer to get the
+// car there. Body/chassis/tank are build SPECS, not ownable parts - free
+// to dial in either way.
 export function isCarRaceReady(config) {
-  return Object.keys(PARTS).every((part) => isPartOwned(config, part)) && !!config.trailerId;
+  return Object.keys(PARTS).every((part) => isPartOwned(config, part) && !isPartBroken(config, part)) && !!config.trailerId;
 }
 
 export function equippedUnit(config, part) {
   return { brandId: config[part + "BrandId"], ageMonths: config[part + "AgeMonths"] };
 }
 
+// Mounting ANY unit - a spare, a fresh purchase, a swap - always means a
+// physically different part than whatever was there before, so wear and
+// broken always reset here: they describe the specific unit currently
+// bolted in, not the slot. A spare that gets swapped back OUT to
+// inventory (installUnit) loses its own wear history this way too - spare
+// units in inventory don't carry a wear number at all, only ageMonths -
+// an accepted simplification, since spares by definition haven't been run
+// since they were last serviced.
 function setEquippedUnit(config, part, unit) {
   config[part + "BrandId"] = unit.brandId;
   config[part + "AgeMonths"] = unit.ageMonths;
+  config[part + "Wear"] = 0;
+  config[part + "Broken"] = false;
 }
 
 export function unitPrice(part, unit) {
@@ -312,13 +333,21 @@ export function unitPrice(part, unit) {
 }
 
 // Player-initiated swap: mount inventory[index] and return whatever was
-// equipped before it back into inventory (it isn't broken, just parked).
+// equipped before it back into inventory - UNLESS it's currently broken
+// (markPartBroken), in which case there's nothing good to park: a blown
+// unit doesn't go back on the shelf as if it were a working spare, it's
+// scrapped, same as a spare consumed by consumeSpareOnFailure. Swapping
+// away from a broken part is a legitimate way to keep racing on it (a
+// team with a spare handy doesn't have to wait on a repair), it just
+// doesn't get to keep the broken unit around for free the way parking a
+// healthy one does.
 export function installUnit(config, part, index) {
   const inv = config[part + "Inventory"];
   const incoming = inv[index];
   if (!incoming) return;
   const outgoing = equippedUnit(config, part);
-  inv.splice(index, 1, outgoing);
+  const outgoingBroken = isPartBroken(config, part);
+  inv.splice(index, 1, ...(outgoingBroken ? [] : [outgoing]));
   setEquippedUnit(config, part, incoming);
 }
 
@@ -340,6 +369,98 @@ export function consumeSpareOnFailure(config, part) {
 // (installUnit) before the next event, but not this one.
 export function unequipPart(config, part) {
   setEquippedUnit(config, part, { brandId: null, ageMonths: 0 });
+}
+
+// How much a part's OWN reliability erodes just from being run, on top of
+// its brand tier and (if bought used) its calendar age - real parts don't
+// stay at day-one condition forever, and a crew that never rebuilds
+// anything should feel that, not just the discrete failure rolls the
+// physics already carry. Deliberately gentle per run (see the wear-to-
+// reliability mapping below, and the comment on WEAR_RELIABILITY_FLOOR_
+// MULT) - this is a slow background drift, not a second failure system.
+const WEAR_PER_RUN_PCT = 1.5;
+
+// Every actual pass down the strip - a Testrun-tab lap included, not just
+// a paid qualifying/elimination run - puts real hours on the engine,
+// heads, blower and clutch simultaneously (they're either all in the car
+// racing or none of them are), so a single run adds the same wear to all
+// four equipped units at once. A part with no unit equipped is simply
+// skipped (isPartOwned guards it) - nothing to wear on an empty mount.
+export function addRunWear(config) {
+  Object.keys(PARTS).forEach((part) => {
+    if (!isPartOwned(config, part)) return;
+    config[part + "Wear"] = Math.min(100, (config[part + "Wear"] || 0) + WEAR_PER_RUN_PCT);
+  });
+}
+
+// At 100% worn, a part's OWN reliability contribution is knocked down to
+// this floor - deliberately gentler than the used-market age floor
+// (USED_RELIABILITY_MULT_FLOOR, 0.80): wear stacks with age AND across up
+// to three parts at once in computeEngineReliabilityMult (engine * head *
+// blower all wearing together), so a floor as steep as age's own would
+// compound into an unplayable multiplier for a team that just races
+// without ever rebuilding. 0.90 per part still means something real once
+// several parts are all worn together (three parts at max wear multiply
+// to ~0.73, roughly the same order of magnitude as the "worst-case
+// budget-everything-oldest-available-used build lands around 1.5x
+// damage" ballpark noted above computeEngineReliabilityMult) without
+// being punishing on its own.
+const WEAR_RELIABILITY_FLOOR_MULT = 0.90;
+
+function partWearReliabilityMult(wearPct) {
+  const frac = Math.max(0, Math.min(100, wearPct || 0)) / 100;
+  return 1 - frac * (1 - WEAR_RELIABILITY_FLOOR_MULT);
+}
+
+export function isPartBroken(config, part) {
+  return !!config[part + "Broken"];
+}
+
+// Set when a non-catastrophic failure has no spare to swap in (see
+// finances.js's chargePartFailure) - the part stays mounted (it's not a
+// write-off) but isn't safe to run again until it's actually repaired.
+// Deliberately does NOT touch money or wear itself - chargePartFailure
+// only marks the fact that it broke; repairPartUnit below is the one
+// place that actually charges for and clears a repair, kept separate so
+// "it broke" and "it got fixed" stay two distinct, explicit steps instead
+// of a failure silently paying for its own fix.
+export function markPartBroken(config, part) {
+  config[part + "Broken"] = true;
+}
+
+// The only way a broken part becomes usable again - a genuine rebuild, so
+// it also resets wear to 0 along with clearing the broken flag (same
+// "fresh unit" logic setEquippedUnit uses, just without actually
+// swapping which physical unit is mounted). Called from finances.js's
+// repairPartUnit once the repair fee is actually charged.
+export function clearPartBroken(config, part) {
+  config[part + "Broken"] = false;
+  config[part + "Wear"] = 0;
+}
+
+// A player-facing condition read - deliberately NOT the raw wear number.
+// A fixed spread of noise around the true value, re-rolled every time
+// it's read (the UI calls this on every render), so the garage panel
+// gives a rough sense of a part's health - trending down, roughly in this
+// bracket - without ever pinning down an exact number the player could
+// count down to zero. That mirrors how a real crew chief actually judges
+// it: mileage, sound, a little intuition, never a lab-precise reading.
+const CONDITION_NOISE_PTS = 12;
+const CONDITION_BUCKETS = [
+  { min: 85, label: "als nieuw", cls: "ok" },
+  { min: 65, label: "ingelopen", cls: "ok" },
+  { min: 45, label: "gebruikssporen", cls: "warn" },
+  { min: 25, label: "verouderd", cls: "warn" },
+  { min: -Infinity, label: "zorgelijk", cls: "bad" },
+];
+
+export function estimatePartCondition(wearPct, rng = Math.random) {
+  const trueHealth = 100 - Math.max(0, Math.min(100, wearPct || 0));
+  const shown = Math.max(0, Math.min(100, trueHealth + (rng() * 2 - 1) * CONDITION_NOISE_PTS));
+  const rangeLow = Math.max(0, Math.round((shown - CONDITION_NOISE_PTS) / 5) * 5);
+  const rangeHigh = Math.min(100, Math.round((shown + CONDITION_NOISE_PTS) / 5) * 5);
+  const bucket = CONDITION_BUCKETS.find((b) => shown >= b.min);
+  return { label: bucket.label, cls: bucket.cls, rangeLow, rangeHigh };
 }
 
 // A purchase of a part the team doesn't have yet becomes the equipped
@@ -374,16 +495,21 @@ export function buyAndEquipUnit(config, part, unit) {
   }
   if (totalSpareCount(config) >= trailerSpareCapacity(config)) return "no-capacity";
   const outgoing = equippedUnit(config, part);
+  const outgoingBroken = isPartBroken(config, part);
   setEquippedUnit(config, part, unit);
-  config[part + "Inventory"].push(outgoing);
+  // A broken outgoing unit is scrapped, not parked - same reasoning as
+  // installUnit above.
+  if (!outgoingBroken) config[part + "Inventory"].push(outgoing);
   return "swapped";
 }
 
 // A part's own reliability tier, knocked down further by how old it is if
-// it's a used unit - a used part still makes full power, it's just more
-// fragile (and the older it is, the more so - see usedReliabilityMult).
-function partReliabilityMult(brand, ageMonths = 0) {
-  return brand.reliabilityMult * (ageMonths > 0 ? usedReliabilityMult(ageMonths) : 1);
+// it's a used unit (usedReliabilityMult - a used part still makes full
+// power, it's just more fragile) AND by how many runs it's actually seen
+// since it was last fresh (partWearReliabilityMult) - two independent,
+// stacking sources of "this isn't a day-one part anymore."
+function partReliabilityMult(brand, ageMonths = 0, wearPct = 0) {
+  return brand.reliabilityMult * (ageMonths > 0 ? usedReliabilityMult(ageMonths) : 1) * partWearReliabilityMult(wearPct);
 }
 
 // Combined power and reliability across the three parts that make up
@@ -403,18 +529,19 @@ export function computeEngineReliabilityMult(config) {
   const head = findBrand(HEAD_BRANDS, config.headBrandId);
   const blower = findBrand(BLOWER_BRANDS, config.blowerBrandId);
   const blowerType = BLOWER_TYPES[config.blowerType];
-  return partReliabilityMult(engine, config.engineAgeMonths)
-    * partReliabilityMult(head, config.headAgeMonths)
-    * partReliabilityMult(blower, config.blowerAgeMonths)
+  return partReliabilityMult(engine, config.engineAgeMonths, config.engineWear)
+    * partReliabilityMult(head, config.headAgeMonths, config.headWear)
+    * partReliabilityMult(blower, config.blowerAgeMonths, config.blowerWear)
     * blowerType.reliabilityMult;
 }
 
 // The clutch's own reliability tier - tracked separately from the engine's
 // (it fails on its own heat-damage clock, see CLUTCH_DAMAGE_RATE in
-// run-simulator.js), same age-based knock-down as the other three parts.
+// run-simulator.js), same age- and wear-based knock-down as the other
+// three parts.
 export function computeClutchReliabilityMult(config) {
   const clutch = findBrand(CLUTCH_BRANDS, config.clutchBrandId);
-  return partReliabilityMult(clutch, config.clutchAgeMonths);
+  return partReliabilityMult(clutch, config.clutchAgeMonths, config.clutchWear);
 }
 
 // Turns a build config into the handful of physics modifiers
