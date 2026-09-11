@@ -299,9 +299,10 @@ export function runSimulation(settings) {
     // falls back toward idle (see engine.js).
     const throttle = stepDriver(driverState, t, x, lastSlipPct, driverAggressiveness, driverWatchUntilFt, effectiveDriverShutoffFt, DT, garageDriverCarControlMult);
 
-    engineRpmState = stepEngineRpm(engineRpmState, { t, wheelSpeedFtS: wheelV, lf, priorSlipPct: lastSlipPct, throttle }, DT);
+    const rpmStep = stepEngineRpm(engineRpmState, { t, wheelSpeedFtS: wheelV, lf, priorSlipPct: lastSlipPct, throttle }, DT);
+    engineRpmState = rpmStep.rpm;
     const rpm = engineRpmState;
-    const fuelVolPctNow = activeFuelPct(t, fuelStages, lf);
+    const fuelVolPctNow = activeFuelPct(t, fuelStages, rpmStep.pulldownFrac);
     // Ignition is a curve too now, and the retard system (real safety
     // equipment on cars like these, not a driver-tunable knob) can pull
     // timing further out on top of it once armed - see engine.js for both.
@@ -535,7 +536,7 @@ export function runSimulation(settings) {
     if (et330 === null && x >= 330) et330 = crossingTime(330);
     if (et660 === null && x >= 660) { et660 = crossingTime(660); mph660 = v / 1.4667; }
     if (finishT === null && x >= 1000) finishT = crossingTime(1000);
-    trace.push({ t, x, v_mph: v / 1.4667, wheel_mph: wheelV / 1.4667, slip: slipPct, clutch_pos: bearingPos * 100, effective_lockup: Math.min(1, lf) * 100, fuel_gpm: fuelGpm, rpm, ignition_set: ignitionSet, ignition_retard: ignitionRetardDeg, ignition_effective: ignitionEffective });
+    trace.push({ t, x, v_mph: v / 1.4667, wheel_mph: wheelV / 1.4667, slip: slipPct, clutch_pos: bearingPos * 100, effective_lockup: Math.min(1, lf) * 100, pulldown_frac: rpmStep.pulldownFrac * 100, fuel_gpm: fuelGpm, rpm, ignition_set: ignitionSet, ignition_retard: ignitionRetardDeg, ignition_effective: ignitionEffective });
     t += DT;
   }
 

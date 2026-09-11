@@ -155,44 +155,75 @@ const GEAR_RPM_PER_FTS = 16.2; // rpm per ft/s of wheel speed once fully locked 
 // lf (effective lockup fraction) is a torque-capacity number, not a "is the
 // clutch mechanically rigid yet" flag - a slipper clutch is DESIGNED to
 // still be slipping internally well before lf gets anywhere near 1.0
-// (that's the entire point of staging lockup instead of an on/off switch),
-// so blending toward locked-RPM in proportion to lf itself is wrong - it
-// would tie RPM to wheel speed while the plates are still very much
-// sliding against each other. Only once lf gets close to its 1.0 ceiling
-// is there no more meaningful internal slip left, so genuine 1:1 lock -
-// and the ramp toward it - only starts here.
-const LOCK_ENGAGE_START = 0.9;
+// (that's the entire point of staging lockup instead of an on/off switch).
+// A real launch clutch also snaps to its first-stage position (s1pct, in a
+// few tenths of a second) long before the car is actually moving at all -
+// that initial clamp is deliberate and does NOT yet mean the engine is
+// being dragged down, since wheel speed hasn't caught up to anything yet.
+// So the pulldown can't just track lf from 0 - it needs a start point past
+// that initial clamp - but it also shouldn't be squeezed into one final
+// sliver of lf either: real telemetry (see clutch.js's note on
+// activeSetpoint) shows a multi-stage affair - a dip as drag catches up,
+// then a climb to the peak right as lockup completes - so LOCK_ENGAGE_START
+// is set well below the old 0.9, covering the tune's later staged
+// increases (not just its very last step) so the sag plays out gradually
+// over those stages instead of arriving as one near-vertical drop in the
+// last hundredth of a second of lockup. lockRemap is additionally eased
+// (smoothstep) rather than linear, so the blend has no sharp corner where
+// it starts or finishes either - both together are what turn the old cliff
+// into a gradual, multi-tenths-of-a-second pull.
+const LOCK_ENGAGE_START = 0.8;
 
-// Off-throttle RPM fall: once locked (lockFrac > 0.5) RPM already correctly
-// tracks wheel speed, which decelerates on its own once appliedForce cuts -
-// no extra handling needed there. But while still free-revving/unlocked,
-// the formula above has no throttle term at all, so a lift used to be
-// completely invisible on the RPM trace: the free-rev band just kept
-// climbing (or holding at redline) regardless of whether the driver had
-// already lifted. stepEngineRpm is stateful specifically to fix that - off
-// throttle and not yet locked, nothing is still driving the engine up, so
-// it falls back toward idle at a real (fast, but not instant) rate instead
-// of silently continuing to track the full-throttle target.
+function smoothstep01(x) {
+  const c = Math.max(0, Math.min(1, x));
+  return c * c * (3 - 2 * c);
+}
+
+// The pulldown, as a single 0-1 "how far along is it" number shared by
+// stepEngineRpm (which uses it to blend actual RPM) and, via
+// run-simulator.js, activeFuelPct's fuel-curve richening (see the note on
+// activeFuelPct below) - both need to agree on when the clutch has
+// actually started meaningfully dragging the engine down off its free-rev
+// band, not just on the same lf INPUT recomputed twice.
+export function calcPulldownFrac(lf) {
+  return smoothstep01((lf - LOCK_ENGAGE_START) / (1 - LOCK_ENGAGE_START));
+}
+
+// Off-throttle RPM fall: once locked (pulldownFrac > 0.5) RPM already
+// correctly tracks wheel speed, which decelerates on its own once
+// appliedForce cuts - no extra handling needed there. But while still
+// free-revving/unlocked, the formula above has no throttle term at all, so
+// a lift used to be completely invisible on the RPM trace: the free-rev
+// band just kept climbing (or holding at redline) regardless of whether
+// the driver had already lifted. stepEngineRpm is stateful specifically to
+// fix that - off throttle and not yet locked, nothing is still driving the
+// engine up, so it falls back toward idle at a real (fast, but not
+// instant) rate instead of silently continuing to track the full-throttle
+// target.
 const ENGINE_RPM_FALL_RATE_OFF_THROTTLE = 12000; // rpm/s
 const ENGINE_IDLE_RPM = 1200;
 const ENGINE_RPM_THROTTLE_TRACK_THRESHOLD = 0.5;
 
+// Returns { rpm, pulldownFrac } - pulldownFrac is exposed so the fuel
+// curve (activeFuelPct, called from run-simulator.js right after this)
+// richens on the exact same signal that's actually pulling RPM down,
+// instead of recomputing its own approximation of it.
 export function stepEngineRpm(prevRpm, { t, wheelSpeedFtS, lf, priorSlipPct, throttle }, dt) {
   const riseFrac = Math.min(1, t / RISE_DURATION);
   const freeRpm = STAGING_RPM + (LAUNCH_RPM - STAGING_RPM) * riseFrac + FLARE_RPM_PER_SLIP_PCT * Math.max(0, priorSlipPct || 0);
   const lockedRpm = GEAR_RPM_PER_FTS * wheelSpeedFtS;
-  const lockFrac = Math.max(0, Math.min(1, (lf - LOCK_ENGAGE_START) / (1 - LOCK_ENGAGE_START)));
-  const targetRpm = freeRpm * (1 - lockFrac) + lockedRpm * lockFrac;
-  if (throttle > ENGINE_RPM_THROTTLE_TRACK_THRESHOLD || lockFrac > ENGINE_RPM_THROTTLE_TRACK_THRESHOLD) {
+  const pulldownFrac = calcPulldownFrac(lf);
+  const targetRpm = freeRpm * (1 - pulldownFrac) + lockedRpm * pulldownFrac;
+  if (throttle > ENGINE_RPM_THROTTLE_TRACK_THRESHOLD || pulldownFrac > ENGINE_RPM_THROTTLE_TRACK_THRESHOLD) {
     // Under power, or mechanically tied to wheel speed via a mostly-locked
     // clutch: track the target directly, same as the old formula (no rate
     // limit - the engine responds instantly to the load it's actually
     // seeing). This is the overwhelming majority of a normal run, so
     // existing calibration is untouched.
-    return targetRpm;
+    return { rpm: targetRpm, pulldownFrac };
   }
   const fallTarget = Math.max(ENGINE_IDLE_RPM, lockedRpm);
-  return Math.max(fallTarget, prevRpm - ENGINE_RPM_FALL_RATE_OFF_THROTTLE * dt);
+  return { rpm: Math.max(fallTarget, prevRpm - ENGINE_RPM_FALL_RATE_OFF_THROTTLE * dt), pulldownFrac };
 }
 
 // Fuel flow: a nitro fuel pump is a positive-displacement gear pump driven
@@ -253,22 +284,21 @@ const FUEL_STAGE_NUMBERS = [1, 2, 3, 4, 5, 6];
 // still schedules them in seconds, same UI, same saved setups) - but the
 // REASON later stages open richer is to cover the pulldown (see the note
 // above calcIdealFuelPct), and the pulldown itself is a clutch-lockup
-// event, not a clock event: it happens whenever lf actually crosses
-// LOCK_ENGAGE_START, which can be earlier or later than the time-based
+// event, not a clock event: it happens whenever the clutch actually starts
+// dragging RPM down, which can be earlier or later than the time-based
 // plan expected depending on the tune. Blending the planned stage value
-// toward fuel1pct by how far short of real lockup the clutch still is
-// (reusing stepEngineRpm's own lockFrac - the same 0-1 number that
-// already governs when RPM itself actually starts sagging) means a later
-// stage's richer setting only fully lands once the pulldown it was meant
-// for has actually started, instead of firing early off the clock and
-// running rich for no reason while the motor is still free-revving.
-export function activeFuelPct(t, fuelStages, lf = 1) {
+// toward fuel1pct by pulldownFrac (stepEngineRpm's own calcPulldownFrac
+// output - the exact same 0-1 number that's actually pulling RPM down that
+// instant, not a separate approximation of it) means a later stage's
+// richer setting only fully lands once the pulldown it was meant for has
+// actually started, instead of firing early off the clock and running
+// rich for no reason while the motor is still free-revving.
+export function activeFuelPct(t, fuelStages, pulldownFrac = 1) {
   let planned = fuelStages.fuel6pct;
   for (const n of FUEL_STAGE_NUMBERS) {
     if (t < fuelStages[`fuel${n}time`]) { planned = fuelStages[`fuel${n}pct`]; break; }
   }
-  const lockFrac = Math.max(0, Math.min(1, (lf - LOCK_ENGAGE_START) / (1 - LOCK_ENGAGE_START)));
-  return fuelStages.fuel1pct + (planned - fuelStages.fuel1pct) * lockFrac;
+  return fuelStages.fuel1pct + (planned - fuelStages.fuel1pct) * pulldownFrac;
 }
 
 // Generic breakpoint-curve sampler: points is an array of {t, v} sorted by
