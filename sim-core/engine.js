@@ -282,8 +282,16 @@ export function stepEngineRpm(prevRpm, { t, wheelSpeedFtS, lf, priorSlipPct, thr
 // gets the exact prior behavior.
 const FUEL_FLOW_BASE_GPM = 90;
 
+// fuelVolFactor and the rpm/LAUNCH_RPM ratio can each individually run above
+// 1.0 (a high-percentage fuel curve setting, or an RPM flare above LAUNCH_RPM
+// during wheelspin) - uncapped, their product could push flow well past what
+// the equipped pump can actually deliver, defeating the entire point of a
+// rated capacity (a "90gpm pump" quietly flowing 120gpm under the right
+// conditions). The pump's own rating is a hard ceiling: it can only ever put
+// out AT MOST pumpRatedGpm, however far past 100% the demand from the curve/
+// RPM combination goes.
 export function calcFuelFlowGpm(rpm, fuelVolFactor, pumpRatedGpm = FUEL_FLOW_BASE_GPM) {
-  return pumpRatedGpm * fuelVolFactor * (rpm / LAUNCH_RPM);
+  return pumpRatedGpm * Math.min(1, fuelVolFactor * (rpm / LAUNCH_RPM));
 }
 
 // Ideal fuel curve: since the pump's own flow already rises and falls with

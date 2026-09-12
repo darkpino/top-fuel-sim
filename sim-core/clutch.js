@@ -49,20 +49,25 @@ export function activeSetpoint(t, stages) {
 // Modeled here as a blend between that old deterministic ceiling (still
 // the exact result at fingerWeight 100 - base=1 zeroes out the random
 // term entirely, so the calibrated default tune and every 100-weight AI
-// archetype stay byte-identical to before) and a floor-skewed random draw
-// whose share of the blend grows as fingerWeight drops. At weight 0 the
-// result is governed entirely by that draw: usually well short of full
-// lockup (FINGER_RANDOM_SKEW biases rng() toward the floor most passes),
-// but on a lucky one, right up near it - "less likely, never impossible."
+// archetype stay byte-identical to before) and a uniform random draw
+// between FINGER_RANDOM_FLOOR and 1.0, whose share of the blend grows as
+// fingerWeight drops. At weight 0 the result is governed entirely by that
+// draw: MORE OFTEN than not it falls well short of a full lockup (that's
+// the whole point - less weight genuinely is less aggressive on average),
+// but "sometimes it just fully locks anyway" needs to be a real, visible
+// outcome across a handful of runs, not a one-in-forty fluke - an earlier
+// version skewed the draw so hard toward the floor (Math.pow(rng(), 2.5))
+// that a full lockup was too rare to ever actually show up in play,
+// reading as "it just never locks" even though it was never literally
+// impossible. Plain rng() (no skew) plus a higher floor fixes that.
 // Rolled once per run (call site is outside the per-tick loop), not
 // per-tick - a given pass has one consistent mechanical ceiling throughout,
 // not fingers whose reach fluctuates tick to tick.
-const FINGER_RANDOM_FLOOR = 0.25;
-const FINGER_RANDOM_SKEW = 2.5;
+const FINGER_RANDOM_FLOOR = 0.35;
 
 export function calcFingerDesired(fingerWeight, rng = Math.random) {
   const base = fingerWeight / 100;
-  const randomDraw = FINGER_RANDOM_FLOOR + (1 - FINGER_RANDOM_FLOOR) * Math.pow(rng(), FINGER_RANDOM_SKEW);
+  const randomDraw = FINGER_RANDOM_FLOOR + (1 - FINGER_RANDOM_FLOOR) * rng();
   return base + (1 - base) * randomDraw;
 }
 
