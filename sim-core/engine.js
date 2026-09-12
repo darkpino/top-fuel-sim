@@ -280,7 +280,7 @@ export function stepEngineRpm(prevRpm, { t, wheelSpeedFtS, lf, priorSlipPct, thr
 // 100% open on a 120gpm one. Defaults to the old flat 90gpm baseline so
 // any caller that hasn't been updated to pass a real pump rating still
 // gets the exact prior behavior.
-const FUEL_FLOW_BASE_GPM = 90;
+export const FUEL_FLOW_BASE_GPM = 90;
 
 // fuelVolFactor and the rpm/LAUNCH_RPM ratio can each individually run above
 // 1.0 (a high-percentage fuel curve setting, or an RPM flare above LAUNCH_RPM
@@ -325,6 +325,24 @@ export function calcIdealFuelPct(rpm, referenceFuelPct, oxygenMult = 1) {
 // instant calls for - positive means running rich, negative means lean.
 export function calcMixtureRichness(actualFuelPct, idealFuelPct) {
   return (actualFuelPct - idealFuelPct) / 100;
+}
+
+// The dial (fuelVolPct) only tells the barrel valve how far to open - what
+// mixture that ACTUALLY produces depends on how much fuel the pump behind
+// it can put out. Every fuel curve number in this sim (calcIdealFuelPct's
+// target included) was authored and tuned assuming the FUEL_FLOW_BASE_GPM
+// reference pump, so a bigger pump delivers proportionally MORE than the
+// dial setting implies at that reference (running richer for the same
+// dial%), and a smaller one proportionally less (running leaner) - not
+// just less overall flow (calcFuelFlowGpm/fuelConsumedGal), but a real
+// shift in the mixture calcMixtureRichness sees, which is what actually
+// drives lean/rich engine damage. Pinned to exactly 1.0 (a complete no-op)
+// at the reference pump size, so every calibrated tune and every AI
+// archetype - all of which implicitly run the reference pump - keeps its
+// exact prior richness behavior; only an actually-different pump choice
+// shifts anything.
+export function calcPumpMixtureScale(pumpRatedGpm) {
+  return pumpRatedGpm / FUEL_FLOW_BASE_GPM;
 }
 
 // Fuel curve: brandstoftoevoer is now a 6-stage timer of its own, same

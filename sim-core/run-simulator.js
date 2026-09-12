@@ -7,6 +7,7 @@ import {
   calcIdealFuelPct, calcMixtureRichness, activeFuelPct, calcOxygenMult,
   calcIgnEff, activeIgnition, calcIgnitionRetard,
   IGNITION_MAX_ADVANCE_RATE, calcIgnitionHeatDamageRate, HEAT_RISK_THRESHOLD,
+  calcPumpMixtureScale,
 } from "./engine.js";
 import { activeSetpoint, activeSpeed, calcFingerDesired, calcWornFingerDesired, stepBearingPos } from "./clutch.js";
 import { calcOptimalPsi, calcPsiPenalty, calcTireWear } from "./tires.js";
@@ -242,6 +243,7 @@ export function runSimulation(settings, rng = Math.random) {
     fuel4time, fuel4pct, fuel5time, fuel5pct, fuel6time, fuel6pct,
   };
   const fingerDesired = calcFingerDesired(fingerWeight, rng);
+  const pumpMixtureScale = calcPumpMixtureScale(garageFuelPumpGpm);
   const disciplineDeficit = Math.max(0, 1 - garageDriverDisciplineMult);
   const effectiveDriverShutoffFt = Math.min(1000, driverShutoffFt + disciplineDeficit * DRIVER_DISCIPLINE_OVERSHOOT_FT);
 
@@ -405,7 +407,7 @@ export function runSimulation(settings, rng = Math.random) {
     const loadFuelMult = 0.7 + 0.3 * loadFraction;
     const loadHeatMult = 0.3 + 0.7 * loadFraction;
     const idealFuelPct = calcIdealFuelPct(rpm, fuel1pct, oxygenMult * loadFuelMult);
-    const richness = calcMixtureRichness(fuelVolPctNow, idealFuelPct);
+    const richness = calcMixtureRichness(fuelVolPctNow * pumpMixtureScale, idealFuelPct);
     richnessIntegral += richness * DT;
 
     const wingDownforce = WING_K * v * v;
