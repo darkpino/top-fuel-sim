@@ -35,11 +35,35 @@ export function activeSetpoint(t, stages) {
 }
 
 // Finger-desired lockup: how far centrifugal force wants to push the
-// fingers out, purely from finger weight (assumes launch RPM is reached and
-// roughly held through the run - real cars do vary RPM, but that's a future
-// refinement).
-export function calcFingerDesired(fingerWeight) {
-  return 0.30 + (fingerWeight / 100) * 0.70;
+// fingers out (assumes launch RPM is reached and roughly held through the
+// run - real cars do vary RPM, but that's a future refinement).
+//
+// Used to be a hard deterministic ceiling scaling linearly with
+// fingerWeight (0.30 at zero weight, 1.00 at full) - meaning at low
+// weight, full lockup wasn't just unlikely, it was LITERALLY impossible
+// no matter how the rest of the run went. Real fingers don't work that
+// way: less weight makes the assembly less aggressive (lower expected
+// reach) AND less consistent (more scatter pass to pass), but it never
+// rules out a fully-locked run outright, just makes one less likely.
+//
+// Modeled here as a blend between that old deterministic ceiling (still
+// the exact result at fingerWeight 100 - base=1 zeroes out the random
+// term entirely, so the calibrated default tune and every 100-weight AI
+// archetype stay byte-identical to before) and a floor-skewed random draw
+// whose share of the blend grows as fingerWeight drops. At weight 0 the
+// result is governed entirely by that draw: usually well short of full
+// lockup (FINGER_RANDOM_SKEW biases rng() toward the floor most passes),
+// but on a lucky one, right up near it - "less likely, never impossible."
+// Rolled once per run (call site is outside the per-tick loop), not
+// per-tick - a given pass has one consistent mechanical ceiling throughout,
+// not fingers whose reach fluctuates tick to tick.
+const FINGER_RANDOM_FLOOR = 0.25;
+const FINGER_RANDOM_SKEW = 2.5;
+
+export function calcFingerDesired(fingerWeight, rng = Math.random) {
+  const base = fingerWeight / 100;
+  const randomDraw = FINGER_RANDOM_FLOOR + (1 - FINGER_RANDOM_FLOOR) * Math.pow(rng(), FINGER_RANDOM_SKEW);
+  return base + (1 - base) * randomDraw;
 }
 
 const WEAR_LOCKUP_GAIN = 1.0;

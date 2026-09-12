@@ -162,7 +162,7 @@ const CYLINDER_DROP_FORCE_PENALTY = 0.85; // one or more cylinders misfiring
 // clutch stress the whole way there.
 const DRIVER_DISCIPLINE_OVERSHOOT_FT = 300;
 
-export function runSimulation(settings) {
+export function runSimulation(settings, rng = Math.random) {
   const {
     airtempC, humidity, baroInHg, trackTempC, gripSliderPct, trackElevationFt = 0,
     blowerOD, fuelPct, gasketThou, ignitionCurve,
@@ -241,7 +241,7 @@ export function runSimulation(settings) {
     fuel1time, fuel1pct, fuel2time, fuel2pct, fuel3time, fuel3pct,
     fuel4time, fuel4pct, fuel5time, fuel5pct, fuel6time, fuel6pct,
   };
-  const fingerDesired = calcFingerDesired(fingerWeight);
+  const fingerDesired = calcFingerDesired(fingerWeight, rng);
   const disciplineDeficit = Math.max(0, 1 - garageDriverDisciplineMult);
   const effectiveDriverShutoffFt = Math.min(1000, driverShutoffFt + disciplineDeficit * DRIVER_DISCIPLINE_OVERSHOOT_FT);
 
