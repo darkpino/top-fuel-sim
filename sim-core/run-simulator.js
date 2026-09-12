@@ -179,6 +179,10 @@ export function runSimulation(settings) {
     // doesn't pass this) there's no capacity ceiling to run afoul of - only
     // the player's own garage-sized tank can actually run dry.
     garageTankUsableGal = Infinity,
+    // 90: the old flat FUEL_FLOW_BASE_GPM constant, now the fuel pump's own
+    // rated capacity (garage.js's FUEL_PUMP_BRANDS) - AI opponents and any
+    // caller without a configured pump still see exactly the old flow rate.
+    garageFuelPumpGpm = 90,
     // Hired-driver skill (see team.js) - both default to 1, an exact no-op
     // reproducing pre-team behavior for AI opponents and any team-less run.
     garageDriverCarControlMult = 1, garageDriverDisciplineMult = 1,
@@ -514,7 +518,7 @@ export function runSimulation(settings) {
       earlyLoadCount++;
     }
 
-    const fuelGpm = calcFuelFlowGpm(rpm, fuelVolFactor);
+    const fuelGpm = calcFuelFlowGpm(rpm, fuelVolFactor, garageFuelPumpGpm);
     fuelConsumedGal += fuelGpm * (DT / 60); // gpm is gallons per MINUTE, DT is seconds
     if (!engineFailed && !fuelStarved && fuelConsumedGal > garageTankUsableGal) {
       // Running dry mid-pass isn't a gentle sputter - the pump goes instantly

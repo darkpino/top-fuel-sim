@@ -1078,7 +1078,7 @@ function renderFinalResult(text) {
   updateEnvLock();
 }
 
-const FATAL_FAILURE_NOUN = { engine: "Motorblok", head: "Cilinderkop", blower: "Blower", clutch: "Koppeling" };
+const FATAL_FAILURE_NOUN = { engine: "Motorblok", head: "Cilinderkop", blower: "Blower", clutch: "Koppeling", fuelPump: "Brandstofpomp" };
 
 // Joins 1+ Dutch part nouns into a natural list ("Motorblok", "Motorblok
 // en blower") for the failure messages below - a failure can now take out
@@ -1528,6 +1528,7 @@ function renderGarageSummary() {
   $("g-power-mult").textContent = Math.round(effects.garagePowerMult * 100) + "%";
   $("g-reliability-mult").textContent = Math.round((1 / effects.garageEngineDamageMult) * 100) + "%";
   $("g-clutch-reliability-mult").textContent = Math.round(computeClutchReliabilityMult(garageConfig) * 100) + "%";
+  $("g-fuelpump-gpm").textContent = effects.garageFuelPumpGpm.toFixed(0) + " gpm";
 
   const ballastFrontLb = +$("ballfront").value;
   const ballastRearLb = +$("ballrear").value;

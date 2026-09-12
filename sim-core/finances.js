@@ -72,17 +72,20 @@ export function chargeTeamWages(state, totalWagesPerEvent) {
 // Real nitro engine failures are rarely a clean single-part event - an
 // over-driven blower running hot can let go on its own or take the short
 // block with it; a lean burn-down just as often shows up as a holed
-// piston or a burnt head as "the engine" in the abstract. cause comes
-// straight from run-simulator.js's engineFailCause ("heat", "lean", or
-// "hydrolock") - heat-side failures skew toward the blower, lean-side
-// skew toward the heads, hydrolock is overwhelmingly a bent-rod/short-
-// block event (a liquid-locked cylinder hits the crank and rod, not the
-// heads or the blower), and any of the three can (SECONDARY_FAILURE_CHANCE)
-// take a second part with it. Returns 1 or 2 part names from {engine,
-// head, blower}; the actual charge for each happens separately via
-// chargePartFailure so a spare (or lack of one) is checked per part,
-// independently.
-const ENGINE_SIDE_PARTS = ["engine", "head", "blower"];
+// piston or a burnt head as "the engine" in the abstract, and a lean
+// burn-down can just as easily be the fuel pump itself giving out under
+// it rather than a tuning mistake. cause comes straight from run-
+// simulator.js's engineFailCause ("heat", "lean", or "hydrolock") - heat-
+// side failures skew toward the blower, lean-side skew toward the heads
+// (the PRIMARY roll below is still just engine/head/blower, unchanged),
+// hydrolock is overwhelmingly a bent-rod/short-block event (a liquid-
+// locked cylinder hits the crank and rod, not the heads, blower, or
+// pump), and any of the three primaries can (SECONDARY_FAILURE_CHANCE)
+// take a second part with it - now possibly the fuel pump too. Returns 1
+// or 2 part names from {engine, head, blower, fuelPump}; the actual
+// charge for each happens separately via chargePartFailure so a spare
+// (or lack of one) is checked per part, independently.
+const ENGINE_SIDE_PARTS = ["engine", "head", "blower", "fuelPump"];
 const SECONDARY_FAILURE_CHANCE = 0.25;
 
 export function rollEnginePartsFailed(cause, rng = Math.random) {

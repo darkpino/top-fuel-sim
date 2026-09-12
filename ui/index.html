@@ -261,6 +261,21 @@
     <div id="g-clutch-market-list"></div>
     </div>
 
+    <div class="garage-section" id="garage-sec-fuelpump">
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Brandstofpomp</div>
+    <p class="note" style="margin-top:0;" id="g-fuelPump-equipped">Geen brandstofpomp gemonteerd.</p>
+    <p class="note" style="margin-top:0;" id="g-fuelPump-condition"></p>
+    <button class="secondary" id="g-repair-fuelPump" type="button" style="display:none;">Brandstofpomp repareren</button>
+    <p class="note" style="margin-top:0;">De pomp draait mechanisch mee met de motor en bepaalt wat 100% op de brandstofcurve daadwerkelijk aan debiet levert - een pomp van 90 gpm en eentje van 120 gpm leveren bij dezelfde standknop een heel andere hoeveelheid brandstof (zie het brandstofdebiet in de motorgrafiek). Zonder gemonteerde pomp kun je niet racen, net als bij motor, koppen, blower en koppeling.</p>
+    <div id="g-fuelPump-inventory-list"></div>
+    <div class="row"><label>Merk (nieuw)</label><select id="g-fuelPump-spare-brand"></select></div>
+    <button class="secondary" id="g-buy-fuelPump-spare" type="button">Brandstofpomp kopen</button>
+    <p class="note">Slijt mee met elke run (test of echt - zie Conditie hierboven), en kan bij motorschade ook zelf meegenomen worden (vooral bij een te mager mengsel). Zonder reserve blijft ze kapot gemonteerd zitten tot je 'm zelf repareert - geen automatische fix.</p>
+    <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
+    <p class="note" style="margin-top:0;">Wisselend aanbod, per merk een eigen leeftijd - hoe ouder, hoe goedkoper maar ook hoe minder betrouwbaar. Kopen monteert het direct (het huidige onderdeel gaat naar de reservevoorraad, niet weg) - dit is dus een bewuste vervanging, geen extra reserve erbij. Ververst bij elk nieuw evenement.</p>
+    <div id="g-fuelPump-market-list"></div>
+    </div>
+
     <div class="garage-section" id="garage-sec-trailer">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Trailer</div>
     <p class="note" style="margin-top:0;" id="g-trailer-equipped">Geen trailer.</p>
@@ -312,7 +327,10 @@
       <div class="stat"><div class="lbl">Betrouwbaarheid motor</div><div class="num" id="g-reliability-mult">--</div></div>
       <div class="stat"><div class="lbl">Betrouwbaarheid koppeling</div><div class="num" id="g-clutch-reliability-mult">--</div></div>
     </div>
-    <p class="note" style="margin-top:0;">Betrouwbaarheid boven 100% betekent dat het onderdeel langzamer schade opbouwt dan de standaardbouw (kan dus meer hebben voor het kapot gaat), eronder juist sneller - stem je brandstof- en ontstekingscurve bij een minder betrouwbare motor voorzichtiger af, en houd bij een minder betrouwbare koppeling meer marge tot oververhitting aan.</p>
+    <div class="results-grid second" style="grid-template-columns:1fr;">
+      <div class="stat"><div class="lbl">Brandstofpomp debiet (100% op de curve)</div><div class="num" id="g-fuelpump-gpm">--</div></div>
+    </div>
+    <p class="note" style="margin-top:0;">Betrouwbaarheid boven 100% betekent dat het onderdeel langzamer schade opbouwt dan de standaardbouw (kan dus meer hebben voor het kapot gaat), eronder juist sneller - stem je brandstof- en ontstekingscurve bij een minder betrouwbare motor voorzichtiger af, en houd bij een minder betrouwbare koppeling meer marge tot oververhitting aan. Betrouwbaarheid motor telt de brandstofpomp inmiddels ook mee. Het debiet bepaalt wat 100% op de brandstofcurve daadwerkelijk levert - dezelfde standknop geeft met een grotere pomp meer brandstof.</p>
 
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Gewicht per band</div>
     <div class="results-grid" style="grid-template-columns:repeat(3,1fr);">

@@ -109,6 +109,25 @@ export const BODY_MATERIALS = {
   carbon: { name: "Carbon", priceNew: 15000, weightDeltaLb: -70 },
 };
 
+// A nitro fuel pump is a positive-displacement gear pump driven directly
+// off the blower (see engine.js's calcFuelFlowGpm) - its own rated
+// capacity (ratedGpm) sets what "100% open" on the fuel curve actually
+// delivers, same as engine.js's note there: 100% of a 90gpm pump is not
+// the same fuel flow as 100% of a 120gpm one. ratedGpm is a fixed spec of
+// the physical pump - age/wear only erode reliabilityMult (it fails more
+// often as it gets older/more run-hours, never flows less on its own),
+// same pattern as every other ownable part. The baseline tier
+// (nitroline, tier index 1) is deliberately set to exactly 90gpm/1.00x -
+// the same number engine.js used as a flat constant before this became a
+// purchasable part - so a fresh default build reproduces the prior fuel-
+// flow behavior exactly.
+export const FUEL_PUMP_BRANDS = [
+  { id: "streetflow", name: "StreetFlow Racing", priceNew: 3000, ratedGpm: 80, reliabilityMult: 0.95, weightDeltaLb: 3 },
+  { id: "nitroline", name: "NitroLine Pumps", priceNew: 4500, ratedGpm: 90, reliabilityMult: 1.00, weightDeltaLb: 0 },
+  { id: "apexflow", name: "Apex Billet Pump", priceNew: 6500, ratedGpm: 105, reliabilityMult: 1.04, weightDeltaLb: -2 },
+  { id: "vortanpump", name: "Vortan High-Volume", priceNew: 9000, ratedGpm: 120, reliabilityMult: 1.08, weightDeltaLb: -4 },
+];
+
 // A purchasable, ownable part like the other three - same brand tiering
 // (middle tier is the neutral default), plus the plate count baked into
 // each model rather than picked separately: fewer plates means less total
@@ -217,6 +236,7 @@ export const PARTS = {
   head: { brands: HEAD_BRANDS, label: "cilinderkop" },
   blower: { brands: BLOWER_BRANDS, label: "blower" },
   clutch: { brands: CLUTCH_BRANDS, label: "koppeling" },
+  fuelPump: { brands: FUEL_PUMP_BRANDS, label: "brandstofpomp" },
 };
 
 // A new team starts with an empty shop, not a free mid-tier car - every
@@ -233,6 +253,7 @@ export function defaultGarageConfig() {
     blowerBrandId: null, blowerAgeMonths: 0, blowerWear: 0, blowerBroken: false,
     blowerType: "conventional",
     clutchBrandId: null, clutchAgeMonths: 0, clutchWear: 0, clutchBroken: false,
+    fuelPumpBrandId: null, fuelPumpAgeMonths: 0, fuelPumpWear: 0, fuelPumpBroken: false,
     bodyMaterial: "aluminium",
     chassisLengthIn: CHASSIS_LENGTH_BASELINE_IN,
     tankSizeGal: TANK_SIZE_BASELINE_GAL,
@@ -244,6 +265,7 @@ export function defaultGarageConfig() {
     headInventory: [],
     blowerInventory: [],
     clutchInventory: [],
+    fuelPumpInventory: [],
   };
 }
 
@@ -529,9 +551,11 @@ export function computeEngineReliabilityMult(config) {
   const head = findBrand(HEAD_BRANDS, config.headBrandId);
   const blower = findBrand(BLOWER_BRANDS, config.blowerBrandId);
   const blowerType = BLOWER_TYPES[config.blowerType];
+  const fuelPump = findBrand(FUEL_PUMP_BRANDS, config.fuelPumpBrandId);
   return partReliabilityMult(engine, config.engineAgeMonths, config.engineWear)
     * partReliabilityMult(head, config.headAgeMonths, config.headWear)
     * partReliabilityMult(blower, config.blowerAgeMonths, config.blowerWear)
+    * partReliabilityMult(fuelPump, config.fuelPumpAgeMonths, config.fuelPumpWear)
     * blowerType.reliabilityMult;
 }
 
@@ -552,11 +576,12 @@ export function computeGarageEffects(config) {
   const head = findBrand(HEAD_BRANDS, config.headBrandId);
   const blower = findBrand(BLOWER_BRANDS, config.blowerBrandId);
   const clutch = findBrand(CLUTCH_BRANDS, config.clutchBrandId);
+  const fuelPump = findBrand(FUEL_PUMP_BRANDS, config.fuelPumpBrandId);
   const body = BODY_MATERIALS[config.bodyMaterial];
   const blowerType = BLOWER_TYPES[config.blowerType];
 
   const weightDeltaLb = body.weightDeltaLb
-    + engine.weightDeltaLb + head.weightDeltaLb + blower.weightDeltaLb + clutch.weightDeltaLb
+    + engine.weightDeltaLb + head.weightDeltaLb + blower.weightDeltaLb + clutch.weightDeltaLb + fuelPump.weightDeltaLb
     + (config.chassisLengthIn - CHASSIS_LENGTH_BASELINE_IN) * CHASSIS_WEIGHT_PER_IN_LB
     + (config.tankSizeGal - TANK_SIZE_BASELINE_GAL) * TANK_WEIGHT_PER_GAL_LB
     + (config.mudflaps ? MUDFLAPS_WEIGHT_LB : 0);
@@ -585,6 +610,7 @@ export function computeGarageEffects(config) {
     garageTractionMult: blowerType.tractionMult,
     garagePowerMult: computeEnginePowerMult(config),
     garageEngineDamageMult: 1 / reliabilityMult,
+    garageFuelPumpGpm: fuelPump.ratedGpm,
   };
 }
 
@@ -609,6 +635,7 @@ export function equippedPartPrice(config, part) {
   if (part === "head") return partPrice(findBrand(HEAD_BRANDS, config.headBrandId), config.headAgeMonths);
   if (part === "blower") return partPrice(findBrand(BLOWER_BRANDS, config.blowerBrandId), config.blowerAgeMonths) + BLOWER_TYPES[config.blowerType].priceDelta;
   if (part === "clutch") return partPrice(findBrand(CLUTCH_BRANDS, config.clutchBrandId), config.clutchAgeMonths);
+  if (part === "fuelPump") return partPrice(findBrand(FUEL_PUMP_BRANDS, config.fuelPumpBrandId), config.fuelPumpAgeMonths);
   return 0;
 }
 

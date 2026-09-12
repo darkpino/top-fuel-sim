@@ -274,11 +274,16 @@ export function stepEngineRpm(prevRpm, { t, wheelSpeedFtS, lf, priorSlipPct, thr
 // Fuel flow: a nitro fuel pump is a positive-displacement gear pump driven
 // directly off the blower, so flow scales with engine RPM rather than load;
 // the barrel valve / fuel curve (fuelVolFactor) sets how much of that flow
-// actually reaches the injectors.
+// actually reaches the injectors. pumpRatedGpm is the equipped pump's own
+// rated capacity (garage.js's FUEL_PUMP_BRANDS, via computeGarageEffects'
+// garageFuelPumpGpm) - 100% open on a 90gpm pump is not the same flow as
+// 100% open on a 120gpm one. Defaults to the old flat 90gpm baseline so
+// any caller that hasn't been updated to pass a real pump rating still
+// gets the exact prior behavior.
 const FUEL_FLOW_BASE_GPM = 90;
 
-export function calcFuelFlowGpm(rpm, fuelVolFactor) {
-  return FUEL_FLOW_BASE_GPM * fuelVolFactor * (rpm / LAUNCH_RPM);
+export function calcFuelFlowGpm(rpm, fuelVolFactor, pumpRatedGpm = FUEL_FLOW_BASE_GPM) {
+  return pumpRatedGpm * fuelVolFactor * (rpm / LAUNCH_RPM);
 }
 
 // Ideal fuel curve: since the pump's own flow already rises and falls with
