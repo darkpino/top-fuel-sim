@@ -224,6 +224,26 @@ const ENGINE_RPM_FALL_RATE_OFF_THROTTLE = 12000; // rpm/s
 const ENGINE_IDLE_RPM = 1200;
 const ENGINE_RPM_THROTTLE_TRACK_THRESHOLD = 0.5;
 
+// Real clutch curves are staged (see clutch.js's activeSetpoint): a
+// common shape is a hard early clamp, a held plateau while speed catches
+// up, then a fast final bite to full lock. Recomputing targetRpm fresh
+// every tick from that staged lf tracks the plateau faithfully too - the
+// target genuinely firms back up while lf holds flat and wheel speed
+// keeps climbing under it - and then the final fast bite yanks it back
+// down hard, right after. On the RPM trace that reads as two separate
+// drops with a brief recovery in between ("zakt hij nog 2x na de
+// pulldown"), not the one continuous pulldown a real engine would show.
+// A real engine can't do that either way - its own rotational inertia
+// won't let RPM snap to a freshly recomputed target in one tick, it has
+// to physically speed up or slow down at a bounded rate. Rate-limiting
+// the approach to targetRpm once the pulldown has actually started
+// (pulldownFrac > 0) reproduces that without a full torque/inertia
+// model: it folds the plateau's small bump and the final bite's big drop
+// into one smooth decline spread over the real time the transition takes,
+// the same idea the off-throttle fall below already uses, just active
+// during the pulldown itself instead of only after a lift.
+const ENGINE_RPM_PULLDOWN_RATE = 3000; // rpm/s
+
 // Returns { rpm, pulldownFrac } - pulldownFrac is exposed so the fuel
 // curve (activeFuelPct, called from run-simulator.js right after this)
 // richens on the exact same signal that's actually pulling RPM down,
@@ -235,12 +255,17 @@ export function stepEngineRpm(prevRpm, { t, wheelSpeedFtS, lf, priorSlipPct, thr
   const pulldownFrac = calcPulldownFrac(lf);
   const targetRpm = freeRpm * (1 - pulldownFrac) + lockedRpm * pulldownFrac;
   if (throttle > ENGINE_RPM_THROTTLE_TRACK_THRESHOLD || pulldownFrac > ENGINE_RPM_THROTTLE_TRACK_THRESHOLD) {
-    // Under power, or mechanically tied to wheel speed via a mostly-locked
-    // clutch: track the target directly, same as the old formula (no rate
-    // limit - the engine responds instantly to the load it's actually
-    // seeing). This is the overwhelming majority of a normal run, so
-    // existing calibration is untouched.
-    return { rpm: targetRpm, pulldownFrac };
+    if (pulldownFrac <= 0) {
+      // Still purely free-revving: track the target directly, same as
+      // the old formula (no rate limit - the engine responds instantly
+      // to the load it's actually seeing, and freeRpm's own RISE_DURATION
+      // ramp already makes this smooth). Untouched by the rate limit
+      // above, which only applies once a real pulldown is underway.
+      return { rpm: targetRpm, pulldownFrac };
+    }
+    const maxDelta = ENGINE_RPM_PULLDOWN_RATE * dt;
+    const delta = Math.max(-maxDelta, Math.min(maxDelta, targetRpm - prevRpm));
+    return { rpm: prevRpm + delta, pulldownFrac };
   }
   const fallTarget = Math.max(ENGINE_IDLE_RPM, lockedRpm);
   return { rpm: Math.max(fallTarget, prevRpm - ENGINE_RPM_FALL_RATE_OFF_THROTTLE * dt), pulldownFrac };
