@@ -17,6 +17,8 @@ import {
   isPartOwned, isCarRaceReady, totalSpareCount, trailerSpareCapacity, buyUnit, buyAndEquipUnit,
   migrateGarageConfig, generateUsedMarket, usedPriceMult, usedReliabilityMult,
   addRunWear, isPartBroken, estimatePartCondition,
+  BLOWER_TYPES, BODY_MATERIALS, CHASSIS_LENGTH_MIN_IN, CHASSIS_LENGTH_MAX_IN,
+  chassisBuildPrice, chassisListingPrice, buildNewChassis, buySecondhandChassis, buyNewBody,
 } from "../sim-core/garage.js";
 import {
   ENTRY_FEE, defaultFinancesState, addTransaction, chargeEntryFee, chargeRunCost, chargeTeamWages,
@@ -478,7 +480,7 @@ function renderRunResult(r) {
 $("runBtn").addEventListener("click", () => {
   if (!isCarRaceReady(garageConfig)) {
     $("placeholder").style.display = "block";
-    $("placeholder").textContent = "Auto niet compleet, of een onderdeel is kapot - koop/repareer eerst in Auto bouwen (motor, koppen, blower, koppeling en trailer nodig, en geen kapotte onderdelen).";
+    $("placeholder").textContent = "Auto niet compleet, of een onderdeel is kapot - koop/repareer eerst in Auto bouwen (chassis, motor, koppen, blower, koppeling en trailer nodig, en geen kapotte onderdelen).";
     $("resultsContent").style.display = "none";
     $("inspPanel").style.display = "none";
     return;
@@ -763,7 +765,7 @@ function showEventActiveUI() {
 
 $("startEventBtn").addEventListener("click", () => {
   if (!isCarRaceReady(garageConfig)) {
-    $("event-status").textContent = `Auto niet compleet of er staat een kapot onderdeel - koop/repareer eerst in Auto bouwen (motor, koppen, blower, koppeling en trailer nodig, niets kapot) voor je kunt inschrijven.`;
+    $("event-status").textContent = `Auto niet compleet of er staat een kapot onderdeel - koop/repareer eerst in Auto bouwen (chassis, motor, koppen, blower, koppeling en trailer nodig, niets kapot) voor je kunt inschrijven.`;
     return;
   }
   const wagesPerEvent = totalTeamWagesPerEvent(teamConfig);
@@ -1352,11 +1354,13 @@ $("sponsor-offers").addEventListener("click", (e) => {
   }
 });
 
-// ---- Auto bouwen: motor/kop/blower/koppeling merken, chassis- en
-// tankkeuzes. Elk van de vier onderdelen (PARTS in garage.js) heeft een
-// gemonteerde eenheid (brand + secondhand) en een eigen voorraad reserve-
-// eenheden die best een ANDER merk of staat mogen zijn - dat is de hele
-// clou van de voorraad-UI hieronder. ----
+// ---- Auto bouwen: motor/kop/blower/koppeling/brandstofpomp merken,
+// chassis- en tankkeuzes. Elk van de vijf onderdelen (PARTS in garage.js)
+// heeft een gemonteerde eenheid (brand + secondhand) en een eigen voorraad
+// reserve-eenheden die best een ANDER merk of staat mogen zijn - dat is de
+// hele clou van de voorraad-UI hieronder. Chassis (lengte + body) is een
+// zesde, apart aangekocht onderdeel zonder merken - zie renderChassisSection
+// hieronder. ----
 
 const PART_LIST = Object.keys(PARTS);
 
@@ -1389,6 +1393,7 @@ function applyGarageConfigToForm() {
   $("g-blower-type").value = garageConfig.blowerType;
   $("g-body-material").value = garageConfig.bodyMaterial;
   $("g-chassis-length").value = garageConfig.chassisLengthIn;
+  $("g-chassis-length").disabled = garageConfig.chassisOwned;
   $("g-tank-size").value = garageConfig.tankSizeGal;
   $("g-tank-position").value = garageConfig.tankPosition;
   $("g-mudflaps").checked = garageConfig.mudflaps;
@@ -1396,9 +1401,6 @@ function applyGarageConfigToForm() {
 }
 
 function readGarageConfigFromForm() {
-  garageConfig.blowerType = $("g-blower-type").value;
-  garageConfig.bodyMaterial = $("g-body-material").value;
-  garageConfig.chassisLengthIn = +$("g-chassis-length").value;
   garageConfig.tankSizeGal = +$("g-tank-size").value;
   garageConfig.tankPosition = $("g-tank-position").value;
   garageConfig.mudflaps = $("g-mudflaps").checked;
@@ -1497,11 +1499,58 @@ function renderPartEquippedStatus(part) {
   $(`g-buy-${part}-spare`).textContent = owned ? `Reserve ${label} kopen (nieuw)` : `${capLabel} kopen (nieuw)`;
 }
 
+// Chassis is bought, not dialed in for free (see garage.js's chassisOwned/
+// buildNewChassis/buySecondhandChassis/buyNewBody): before it's owned, the
+// length slider is a live draft for a custom build (still enabled, still
+// gated to the NHRA range by its own min/max) and the build/market blocks
+// show; once owned, the length is fixed for good (slider disabled) and only
+// the body-swap block stays live - a new body can still be bought any time,
+// on either a custom or secondhand chassis, without touching the length.
+function renderChassisSection() {
+  const owned = garageConfig.chassisOwned;
+  $("g-chassis-length").disabled = owned;
+  $("g-chassis-build-block").style.display = owned ? "none" : "block";
+  $("g-chassis-owned-block").style.display = owned ? "block" : "none";
+
+  if (owned) {
+    $("g-chassis-equipped").textContent = `Chassis: ${garageConfig.chassisLengthIn}" — lengte ligt vast.`;
+  } else {
+    $("g-chassis-equipped").textContent = "Geen chassis gemonteerd — geen run of evenement mogelijk.";
+    const bodyId = $("g-chassis-build-body").value;
+    $("g-build-chassis").textContent = `Chassis laten bouwen (€${chassisBuildPrice(bodyId).toLocaleString("nl-NL")})`;
+  }
+
+  const listings = marketState.chassis || [];
+  const marketContainer = $("g-chassis-market-list");
+  if (owned) {
+    marketContainer.innerHTML = "";
+  } else if (!listings.length) {
+    marketContainer.innerHTML = `<p class="note" style="margin-top:0;">Geen tweedehands aanbod op dit moment - de markt ververst bij het volgende evenement.</p>`;
+  } else {
+    const rows = listings.map(listing => {
+      const price = chassisListingPrice(listing);
+      const bodyName = BODY_MATERIALS[listing.bodyMaterial].name;
+      return `<tr><td>${listing.lengthIn}"</td><td>${escapeHtml(bodyName)}</td><td>${formatAgeMonths(listing.ageMonths)}</td><td>€${price.toLocaleString("nl-NL")}</td>` +
+        `<td><button class="secondary mini-btn" type="button" data-buy-chassis-listing="${escapeHtml(listing.id)}">Kopen</button></td></tr>`;
+    }).join("");
+    marketContainer.innerHTML = `<table class="event-table"><thead><tr><th>Lengte</th><th>Body</th><th>Leeftijd</th><th>Prijs</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  const bodyOwned = owned;
+  const currentBodyName = BODY_MATERIALS[garageConfig.bodyMaterial].name;
+  const selectedBody = $("g-body-material").value;
+  $("g-buy-body").disabled = !bodyOwned;
+  $("g-buy-body").textContent = selectedBody === garageConfig.bodyMaterial
+    ? `Body is al ${currentBodyName.toLowerCase()}`
+    : `Nieuwe body kopen (€${BODY_MATERIALS[selectedBody].priceNew.toLocaleString("nl-NL")})`;
+}
+
 function renderGarageSummary() {
   $("v-g-chassis-length").textContent = garageConfig.chassisLengthIn + '"';
   $("v-g-tank-size").textContent = garageConfig.tankSizeGal + " gal";
   $("v-g-engine-position").textContent = garageConfig.enginePositionIn;
   PART_LIST.forEach(part => { renderPartEquippedStatus(part); renderPartInventoryList(part); renderPartMarketList(part); });
+  renderChassisSection();
 
   if (garageConfig.trailerId) {
     const trailer = findBrand(TRAILER_TYPES, garageConfig.trailerId);
@@ -1517,8 +1566,8 @@ function renderGarageSummary() {
   $("g-spare-capacity").style.color = spareCount >= spareCap ? "var(--red)" : "var(--text)";
 
   $("garage-readiness-note").innerHTML = isCarRaceReady(garageConfig)
-    ? `<span style="color:var(--green)">Klaar om te racen: motor, koppen, blower, koppeling en trailer zijn allemaal aanwezig en niets staat kapot.</span>`
-    : `<span style="color:var(--red)">Nog niet klaar om te racen — koop hieronder wat ontbreekt (motor, koppen, blower, koppeling, trailer), en repareer eventueel kapotte onderdelen, voor je een run of evenement kunt starten.</span>`;
+    ? `<span style="color:var(--green)">Klaar om te racen: chassis, motor, koppen, blower, koppeling en trailer zijn allemaal aanwezig en niets staat kapot.</span>`
+    : `<span style="color:var(--red)">Nog niet klaar om te racen — koop hieronder wat ontbreekt (motor, koppen, blower, koppeling, trailer, chassis), en repareer eventueel kapotte onderdelen, voor je een run of evenement kunt starten.</span>`;
 
   $("g-build-value").textContent = "€" + totalBuildValue(garageConfig).toLocaleString("nl-NL");
   const effects = computeGarageEffects(garageConfig);
@@ -1549,8 +1598,7 @@ function renderGaragePanel() {
 }
 
 const GARAGE_FORM_IDS = [
-  "g-blower-type",
-  "g-body-material", "g-chassis-length", "g-tank-size", "g-tank-position",
+  "g-tank-size", "g-tank-position",
   "g-mudflaps", "g-engine-position",
 ];
 GARAGE_FORM_IDS.forEach(id => {
@@ -1564,6 +1612,110 @@ GARAGE_FORM_IDS.forEach(id => {
 // the weight-per-band readout above needs to react to it too.
 ["ballfront", "ballrear"].forEach(id => {
   $(id).addEventListener("input", renderGarageSummary);
+});
+
+// Blower type is a purchasable modification, not a free toggle (a setback
+// blower's extra cost, see garage.js's BLOWER_TYPES, only means anything if
+// switching to it actually charges the difference) - switching either
+// direction costs the absolute difference between the two types' priceDelta,
+// same budget gate as every other purchase, and reverts the select if the
+// budget doesn't cover it.
+$("g-blower-type").addEventListener("input", () => {
+  const newType = $("g-blower-type").value;
+  const oldType = garageConfig.blowerType;
+  if (newType === oldType) return;
+  const cost = Math.abs(BLOWER_TYPES[newType].priceDelta - BLOWER_TYPES[oldType].priceDelta);
+  if (financesState.budget < cost) {
+    $("garage-status").textContent = `Onvoldoende budget om over te schakelen naar ${BLOWER_TYPES[newType].name} (€${cost.toLocaleString("nl-NL")} nodig, €${financesState.budget.toLocaleString("nl-NL")} beschikbaar).`;
+    $("g-blower-type").value = oldType;
+    return;
+  }
+  if (cost > 0) addTransaction(financesState, `Blower omgebouwd naar ${BLOWER_TYPES[newType].name}`, -cost);
+  garageConfig.blowerType = newType;
+  saveFinancesState();
+  saveGarageConfig();
+  renderGarageSummary();
+  renderFinancePanel();
+  $("garage-status").textContent = cost > 0
+    ? `Blower omgebouwd naar ${BLOWER_TYPES[newType].name} voor €${cost.toLocaleString("nl-NL")}.`
+    : `Blower omgezet naar ${BLOWER_TYPES[newType].name}.`;
+});
+
+// Chassis length: a live draft for the custom build below until a chassis
+// is actually bought (see renderChassisSection - the slider is disabled the
+// moment garageConfig.chassisOwned is true, so this listener only ever
+// fires pre-purchase).
+$("g-chassis-length").addEventListener("input", () => {
+  garageConfig.chassisLengthIn = +$("g-chassis-length").value;
+  renderGarageSummary();
+});
+
+// Re-render on either selector change just to refresh the dependent price
+// labels (build price depends on the chosen body, buy-body's label depends
+// on whether the selection differs from what's currently mounted) - neither
+// charges anything by itself, only the buttons below do.
+$("g-chassis-build-body").addEventListener("input", renderGarageSummary);
+$("g-body-material").addEventListener("input", renderGarageSummary);
+
+$("g-build-chassis").addEventListener("click", () => {
+  if (garageConfig.chassisOwned) return;
+  const bodyId = $("g-chassis-build-body").value;
+  const lengthIn = +$("g-chassis-length").value;
+  const price = chassisBuildPrice(bodyId);
+  if (financesState.budget < price) {
+    $("garage-status").textContent = `Onvoldoende budget (€${price.toLocaleString("nl-NL")} nodig, €${financesState.budget.toLocaleString("nl-NL")} beschikbaar).`;
+    return;
+  }
+  buildNewChassis(garageConfig, lengthIn, bodyId);
+  addTransaction(financesState, `Chassis laten bouwen (${lengthIn}", ${BODY_MATERIALS[bodyId].name})`, -price);
+  saveFinancesState();
+  saveGarageConfig();
+  renderGarageSummary();
+  renderFinancePanel();
+  $("garage-status").textContent = `Chassis gebouwd (${lengthIn}", ${BODY_MATERIALS[bodyId].name}) voor €${price.toLocaleString("nl-NL")}.`;
+});
+
+$("g-chassis-market-list").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-buy-chassis-listing]");
+  if (!btn || garageConfig.chassisOwned) return;
+  const listingId = btn.dataset.buyChassisListing;
+  const listings = marketState.chassis || [];
+  const idx = listings.findIndex(l => l.id === listingId);
+  if (idx === -1) return;
+  const listing = listings[idx];
+  const price = chassisListingPrice(listing);
+  if (financesState.budget < price) {
+    $("garage-status").textContent = `Onvoldoende budget (€${price.toLocaleString("nl-NL")} nodig, €${financesState.budget.toLocaleString("nl-NL")} beschikbaar).`;
+    return;
+  }
+  buySecondhandChassis(garageConfig, listing);
+  addTransaction(financesState, `Chassis gekocht (tweedehands, ${listing.lengthIn}", ${BODY_MATERIALS[listing.bodyMaterial].name}, ${formatAgeMonths(listing.ageMonths)})`, -price);
+  listings.splice(idx, 1);
+  saveFinancesState();
+  saveGarageConfig();
+  saveMarketState();
+  applyGarageConfigToForm();
+  renderGarageSummary();
+  renderFinancePanel();
+  $("garage-status").textContent = `Chassis gekocht (tweedehands, ${listing.lengthIn}", ${BODY_MATERIALS[listing.bodyMaterial].name}) voor €${price.toLocaleString("nl-NL")}.`;
+});
+
+$("g-buy-body").addEventListener("click", () => {
+  if (!garageConfig.chassisOwned) return;
+  const bodyId = $("g-body-material").value;
+  if (bodyId === garageConfig.bodyMaterial) return;
+  const price = BODY_MATERIALS[bodyId].priceNew;
+  if (financesState.budget < price) {
+    $("garage-status").textContent = `Onvoldoende budget (€${price.toLocaleString("nl-NL")} nodig, €${financesState.budget.toLocaleString("nl-NL")} beschikbaar).`;
+    return;
+  }
+  buyNewBody(garageConfig, bodyId);
+  addTransaction(financesState, `Nieuwe body gekocht (${BODY_MATERIALS[bodyId].name})`, -price);
+  saveFinancesState();
+  saveGarageConfig();
+  renderGarageSummary();
+  renderFinancePanel();
+  $("garage-status").textContent = `Nieuwe body (${BODY_MATERIALS[bodyId].name}) gekocht en gemonteerd voor €${price.toLocaleString("nl-NL")}.`;
 });
 
 // "Monteer" and market "Kopen" buttons are both re-rendered on every

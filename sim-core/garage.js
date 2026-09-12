@@ -67,6 +67,7 @@ export function generateUsedMarket(rng = Math.random) {
       return { id: `${part}-${Date.now()}-${i}-${Math.floor(rng() * 1e6)}`, brandId: brand.id, ageMonths };
     });
   });
+  market.chassis = generateChassisMarket(rng);
   return market;
 }
 
@@ -180,6 +181,66 @@ export const CHASSIS_LENGTH_MAX_IN = 320;
 export const CHASSIS_LENGTH_BASELINE_IN = 300;
 export const CHASSIS_WEIGHT_PER_IN_LB = 3;
 
+// The bare frame itself, before a body material (BODY_MATERIALS above) is
+// even picked - a custom build ("zelf laten bouwen") pays this PLUS the
+// chosen body's priceNew, and gets to choose both length (within the NHRA
+// range above) and material; a secondhand chassis (CHASSIS_LISTINGS_COUNT
+// listings below) is cheaper (same age-based discount as every other used
+// part, see usedPriceMult) but its length was already fixed by whoever
+// built it - only the body can still be swapped afterward, never the length.
+// Kept low enough that a fresh team can still afford one legal car (cheapest
+// tier of every driveline part + trailer + this, aluminium body) within the
+// starting budget with some room left for an entry fee - see finances.js's
+// STARTING_BUDGET. A pricier carbon custom build, or upgrading later, is
+// still a real, deliberate investment on top of that floor.
+export const CHASSIS_BUILD_PRICE = 10000;
+export const CHASSIS_LISTINGS_COUNT = 3;
+const BODY_MATERIAL_KEYS = Object.keys(BODY_MATERIALS);
+
+export function chassisBuildPrice(bodyMaterial) {
+  return CHASSIS_BUILD_PRICE + BODY_MATERIALS[bodyMaterial].priceNew;
+}
+
+export function generateChassisMarket(rng = Math.random) {
+  return Array.from({ length: CHASSIS_LISTINGS_COUNT }, (_, i) => {
+    const lengthIn = Math.round(CHASSIS_LENGTH_MIN_IN + rng() * (CHASSIS_LENGTH_MAX_IN - CHASSIS_LENGTH_MIN_IN));
+    const bodyMaterial = BODY_MATERIAL_KEYS[Math.floor(rng() * BODY_MATERIAL_KEYS.length)];
+    const ageMonths = Math.round(USED_AGE_MIN_MONTHS + rng() * (USED_AGE_MAX_MONTHS - USED_AGE_MIN_MONTHS));
+    return { id: `chassis-${Date.now()}-${i}-${Math.floor(rng() * 1e6)}`, lengthIn, bodyMaterial, ageMonths };
+  });
+}
+
+export function chassisListingPrice(listing) {
+  return Math.round(chassisBuildPrice(listing.bodyMaterial) * usedPriceMult(listing.ageMonths));
+}
+
+// A custom build: the player's own length (already validated against the
+// NHRA range by the slider itself) and initial body material choice. Sets
+// chassisAgeMonths to 0 - a fresh build, no depreciation yet.
+export function buildNewChassis(config, lengthIn, bodyMaterial) {
+  config.chassisOwned = true;
+  config.chassisLengthIn = lengthIn;
+  config.bodyMaterial = bodyMaterial;
+  config.chassisAgeMonths = 0;
+}
+
+// A secondhand listing (generateChassisMarket) - length and body come from
+// the listing itself, not a player choice; the length is fixed forever
+// from here on, same as a custom build's is once it's poured.
+export function buySecondhandChassis(config, listing) {
+  config.chassisOwned = true;
+  config.chassisLengthIn = listing.lengthIn;
+  config.bodyMaterial = listing.bodyMaterial;
+  config.chassisAgeMonths = listing.ageMonths;
+}
+
+// The one thing that stays swappable after the chassis itself is settled -
+// a new body shell bolted onto the existing (fixed-length) frame, at that
+// material's full priceNew regardless of what was mounted before.
+export function buyNewBody(config, bodyMaterial) {
+  config.bodyMaterial = bodyMaterial;
+}
+
 export const TANK_SIZE_MIN_GAL = 45;
 export const TANK_SIZE_MAX_GAL = 75;
 export const TANK_SIZE_BASELINE_GAL = 55;
@@ -254,6 +315,8 @@ export function defaultGarageConfig() {
     blowerType: "conventional",
     clutchBrandId: null, clutchAgeMonths: 0, clutchWear: 0, clutchBroken: false,
     fuelPumpBrandId: null, fuelPumpAgeMonths: 0, fuelPumpWear: 0, fuelPumpBroken: false,
+    chassisOwned: false,
+    chassisAgeMonths: 0,
     bodyMaterial: "aluminium",
     chassisLengthIn: CHASSIS_LENGTH_BASELINE_IN,
     tankSizeGal: TANK_SIZE_BASELINE_GAL,
@@ -284,6 +347,12 @@ function migrateUnit(unit) {
 }
 
 export function migrateGarageConfig(config) {
+  // A save from before the chassis became a purchasable part: it already
+  // had a bodyMaterial/chassisLengthIn (previously free build-spec dials),
+  // so treat that as an already-paid-for chassis rather than suddenly
+  // stranding an existing team without one.
+  if (config.chassisOwned === undefined) config.chassisOwned = true;
+  if (config.chassisAgeMonths === undefined) config.chassisAgeMonths = 0;
   Object.keys(PARTS).forEach((part) => {
     const secondhandKey = part + "Secondhand";
     const ageKey = part + "AgeMonths";
@@ -325,10 +394,12 @@ export function trailerSpareCapacity(config) {
 // The minimum to actually show up and make a pass: all four driveline
 // parts mounted, none of them currently broken (see markPartBroken -
 // mounted but not safe to run until repaired), plus a trailer to get the
-// car there. Body/chassis/tank are build SPECS, not ownable parts - free
-// to dial in either way.
+// car there and a chassis to bolt it all to. Tank/mudflaps/engine position
+// stay free build SPECS, not ownable parts - only chassis length/body are
+// gated behind an actual purchase (buildNewChassis/buySecondhandChassis).
 export function isCarRaceReady(config) {
-  return Object.keys(PARTS).every((part) => isPartOwned(config, part) && !isPartBroken(config, part)) && !!config.trailerId;
+  return Object.keys(PARTS).every((part) => isPartOwned(config, part) && !isPartBroken(config, part))
+    && !!config.trailerId && !!config.chassisOwned;
 }
 
 export function equippedUnit(config, part) {
@@ -624,9 +695,12 @@ export function totalBuildValue(config) {
     return sum + partPrice(findBrand(PARTS[part].brands, config[part + "BrandId"]), config[part + "AgeMonths"]);
   }, 0);
   const trailerTotal = config.trailerId ? findBrand(TRAILER_TYPES, config.trailerId).priceNew : 0;
+  const chassisTotal = config.chassisOwned
+    ? Math.round(chassisBuildPrice(config.bodyMaterial) * (config.chassisAgeMonths > 0 ? usedPriceMult(config.chassisAgeMonths) : 1))
+    : 0;
   return partsTotal
     + (config.blowerBrandId ? BLOWER_TYPES[config.blowerType].priceDelta : 0)
-    + BODY_MATERIALS[config.bodyMaterial].priceNew
+    + chassisTotal
     + trailerTotal;
 }
 

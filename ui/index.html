@@ -237,6 +237,7 @@
         <option value="setback">Setback blower (meer vermogen, betrouwbaarder, duurder)</option>
       </select>
     </div>
+    <p class="note" style="margin-top:0;">Ombouwen tussen type kost echt geld (het prijsverschil, zie Type hierboven) - geen gratis knopje meer, in beide richtingen.</p>
     <div id="g-blower-inventory-list"></div>
     <div class="row"><label>Merk (nieuw)</label><select id="g-blower-spare-brand"></select></div>
     <button class="secondary" id="g-buy-blower-spare" type="button">Blower kopen</button>
@@ -286,14 +287,35 @@
 
     <div class="garage-section" id="garage-sec-chassis">
     <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Chassis</div>
+    <p class="note" style="margin-top:0;" id="g-chassis-equipped">Geen chassis gemonteerd.</p>
+
+    <div id="g-chassis-build-block">
+    <div class="row"><label>Chassislengte <span class="val" id="v-g-chassis-length">300"</span></label>
+      <input type="range" id="g-chassis-length" min="280" max="320" value="300" step="1"></div>
+    <p class="note" style="margin-top:0;">Lengte binnen het NHRA-reglement (280"-320") - alleen bij zelf laten bouwen kies je 'm zelf; eenmaal gebouwd (of tweedehands gekocht) ligt de lengte vast, ook als je later de body nog vervangt.</p>
+    <div class="row"><label>Bodytype (nieuwbouw)</label>
+      <select id="g-chassis-build-body">
+        <option value="aluminium">Aluminium</option>
+        <option value="carbon">Carbon (duurder, lichter)</option>
+      </select>
+    </div>
+    <button class="secondary" id="g-build-chassis" type="button">Chassis laten bouwen</button>
+    <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
+    <p class="note" style="margin-top:0;">Tweedehands chassis hebben al een vaste lengte en body, bepaald door de vorige eigenaar - goedkoper dan zelf laten bouwen, maar geen keuze in lengte. Ververst bij elk nieuw evenement.</p>
+    <div id="g-chassis-market-list"></div>
+    </div>
+
+    <div id="g-chassis-owned-block" style="display:none;">
     <div class="row"><label>Bodytype</label>
       <select id="g-body-material">
         <option value="aluminium">Aluminium</option>
         <option value="carbon">Carbon (duurder, lichter)</option>
       </select>
     </div>
-    <div class="row"><label>Chassislengte <span class="val" id="v-g-chassis-length">300"</span></label>
-      <input type="range" id="g-chassis-length" min="280" max="320" value="300" step="1"></div>
+    <button class="secondary" id="g-buy-body" type="button">Nieuwe body kopen</button>
+    <p class="note">De body kan op elk moment vervangen worden, los van de vastliggende chassislengte - carbon is duurder maar lichter.</p>
+    </div>
+
     <div class="row"><label><input type="checkbox" id="g-mudflaps"> Mudflaps gemonteerd</label></div>
     <p class="note" style="margin-top:0;">Mudflaps zijn achter de achterbanden gemonteerd platen: geven ~5% extra downforce (schonere luchtstroom van de banden af) tegen ~5 kg extra gewicht en iets meer luchtweerstand.</p>
     <div class="row"><label>Motorpositie (setback) <span class="val" id="v-g-engine-position">0</span></label>
