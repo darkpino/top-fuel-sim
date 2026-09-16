@@ -72,6 +72,7 @@
       <div id="quali-block" style="display:none;">
         <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:0;">Kwalificatiestand</div>
         <p class="note" style="margin-top:0;">"Tijd deze sessie" laat zien wie er onder de huidige omstandigheden al voor je is gegaan - gebruik dat voor last-minute aanpassingen (koppeling, ontsteking) voor je zelf rijdt.</p>
+        <p class="flag" id="quali-car-not-ready-note" style="display:none;">Auto niet race-klaar (kapot onderdeel) - repareer eerst in Auto bouwen om deze sessie alsnog te rijden, of sla 'm over. Een tijd die je in een eerdere sessie al reed blijft gewoon staan.</p>
         <div style="overflow-x:auto;">
           <table class="event-table" id="quali-table">
             <thead><tr><th>Pos</th><th>Naam</th><th>Team</th><th>Tijd deze sessie</th><th>Beste ET</th><th>mph</th><th>Status</th></tr></thead>
@@ -502,7 +503,7 @@
         <div class="row"><label>Stage 6 max lockup <span class="val" id="v-s6p">100%</span></label><input type="range" id="s6p" min="10" max="100" value="100" step="1"></div>
         <div class="row"><label>Stage 6 lager snelheid <span class="val" id="v-s6speed">160%/s</span></label><input type="range" id="s6speed" min="20" max="800" value="160" step="5"></div>
         <div class="row"><label>Vingergewicht (gewenste lockup) <span class="val" id="v-fw">100</span></label><input type="range" id="fw" min="0" max="100" value="100" step="1"></div>
-        <p class="note" style="margin-top:0;">Zwaardere vingers duwen door middelpuntvliedende kracht harder naar buiten - lichtere vingers maken de koppeling minder agressief én minder voorspelbaar: bij weinig vingergewicht is volledige lockup niet onmogelijk, maar wel minder waarschijnlijk en wisselt het van run tot run. Op 100 blijft dit exact zoals voorheen (altijd volledige lockup haalbaar).</p>
+        <p class="note" style="margin-top:0;">Zwaardere vingers duwen door middelpuntvliedende kracht harder naar buiten. Lichter vingergewicht doet twee dingen: de koppeling komt gedurende de hele run merkbaar trager/lakser in (elke stage duurt langer om zijn setpoint te bereiken, niet alleen de laatste), én het uiteindelijke plafond wordt minder voorspelbaar - bij weinig vingergewicht is volledige lockup niet onmogelijk, maar wel minder waarschijnlijk en wisselt het van run tot run. Op 100 blijft dit exact zoals voorheen (volle snelheid, altijd volledige lockup haalbaar).</p>
         <p class="note" id="clutch-reach-hint">Haalbare lockup per stage: --</p>
         <p class="note">Elke stage heeft zijn eigen lager snelheid (hydraulische bleed rate) - de koppeling beweegt dus rustig naar elk setpoint toe in plaats van te springen, en met 6 in plaats van 3 momenten kan die overgang veel geleidelijker verlopen dan de vrij verticale lijn die 3 stappen gaf. Stage 6 is het plafond voor de rest van de run (géén automatische sprong naar 100% erna): op 100% geeft dat moment in echte telemetrie de piek-G, niet de launch. Zet het lager om de koppeling bewust te laten slippen wanneer de baan geen volledige lockup aankan - dat beschermt de banden, maar de koppeling zelf betaalt de rekening (oververhit en uiteindelijk kapot als je het te lang of te ver volhoudt). De koppelingslager is een eenrichtingsmechaniek: hij kan alleen naar méér lockup toe bewegen, nooit terug. Stage-percentages moeten dus oplopend zijn (of gelijk aan de vorige) om effect te hebben - een lager percentage dan al bereikt is, doet niets (de lager houdt gewoon vast waar hij al is). De 60ft-tijd bescherm je dus door in de eerste stages bewust nog niet naar hoge lockup te gaan, niet door na een piek weer terug te vallen.</p>
         </div>
@@ -598,9 +599,12 @@
           <div class="insp"><div class="lbl">Brandstofverbruik</div><div class="status" id="i-fuelused">--</div></div>
           <div class="insp"><div class="lbl">Rijdersactie</div><div class="status" id="i-driver">--</div></div>
           <div class="insp"><div class="lbl">Cilinders</div><div class="status" id="i-cyl">--</div></div>
+          <div class="insp"><div class="lbl">Motorschade (hitte/arm)</div><div class="status" id="i-engine-damage">--</div></div>
+          <div class="insp"><div class="lbl">Vervuiling (rijk)</div><div class="status" id="i-foul-damage">--</div></div>
           <div class="insp"><div class="lbl">Ontstekingsretarder</div><div class="status" id="i-retard">--</div></div>
           <div class="insp"><div class="lbl">Totaalgewicht</div><div class="status" id="i-weight">--</div></div>
         </div>
+        <p class="note" style="margin-top:0;">Motorschade en vervuiling zijn opbouwende klokken, geen momentopnames - ze lopen al op ruim voor een cilinder wegvalt of de motor kapot gaat, dus 100% op "Cilinders" is niet de eerste waarschuwing, het is het moment dat het al misgaat. Een deel-run (afschakelpunt op 330ft of 660ft zetten) laat je die twee lezen zonder de volle 1000ft te riskeren. Motorschade (hitte/arm) loopt door tot echte motorschade; vervuiling (te rijk) kost hooguit een cilinder, nooit de hele motor.</p>
       </div>
     </div>
   </div>

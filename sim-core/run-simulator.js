@@ -9,7 +9,7 @@ import {
   IGNITION_MAX_ADVANCE_RATE, calcIgnitionHeatDamageRate, HEAT_RISK_THRESHOLD,
   calcPumpMixtureScale,
 } from "./engine.js";
-import { activeSetpoint, activeSpeed, calcFingerDesired, calcWornFingerDesired, stepBearingPos } from "./clutch.js";
+import { activeSetpoint, activeSpeed, calcFingerDesired, calcFingerSpeedMult, calcWornFingerDesired, stepBearingPos } from "./clutch.js";
 import { calcOptimalPsi, calcPsiPenalty, calcTireWear } from "./tires.js";
 import { createDriverState, stepDriver } from "./driver.js";
 
@@ -243,6 +243,7 @@ export function runSimulation(settings, rng = Math.random) {
     fuel4time, fuel4pct, fuel5time, fuel5pct, fuel6time, fuel6pct,
   };
   const fingerDesired = calcFingerDesired(fingerWeight, rng);
+  const fingerSpeedMult = calcFingerSpeedMult(fingerWeight);
   const pumpMixtureScale = calcPumpMixtureScale(garageFuelPumpGpm);
   const disciplineDeficit = Math.max(0, 1 - garageDriverDisciplineMult);
   const effectiveDriverShutoffFt = Math.min(1000, driverShutoffFt + disciplineDeficit * DRIVER_DISCIPLINE_OVERSHOOT_FT);
@@ -291,7 +292,7 @@ export function runSimulation(settings, rng = Math.random) {
   while (x < 1000 && t < MAX_T) {
     const xBefore = x;
     const target = activeSetpoint(t, stages);
-    const speed = activeSpeed(t, stages);
+    const speed = activeSpeed(t, stages) * fingerSpeedMult;
     bearingPos = stepBearingPos(bearingPos, target, speed, DT);
     let heatBoost = 1 + Math.min(clutchTemp / 100, 1) * HEAT_CAP_BOOST;
     if (clutchTemp > HEAT_GLAZE_START) {
@@ -594,11 +595,28 @@ export function runSimulation(settings, rng = Math.random) {
     > WHEELIE_RISK_THRESHOLD;
   const frontWingHuntRisk = (frontWingPct / 100) * (mph / FRONT_WING_HUNT_REF_MPH) > FRONT_WING_HUNT_THRESHOLD;
 
+  // heatDamage/leanDamage/foulDamage only ever grow (never reset mid-run),
+  // so whatever they end at IS the run's peak - reading it here, even off
+  // an early driver-commanded shutoff (a deliberate partial pass to 330ft/
+  // 660ft to check how the tune is behaving before committing to a full
+  // 1000ft), reflects real accumulated risk up to wherever the run
+  // actually stopped, not just a pass/fail at the very end. Normalized
+  // against the two thresholds that actually gate the two outcomes they
+  // drive (ENGINE_FAILURE_THRESHOLD for heat/lean, CYLINDER_DROP_THRESHOLD
+  // for fouling, since foulDamage's own ceiling never goes further than
+  // that) so 100% lines up exactly with the moment each one bites, not an
+  // arbitrary scale - a crew chief watching this climb toward 100% between
+  // rounds gets the same early warning the accumulator itself always had,
+  // instead of only ever seeing a sudden binary "cylinder dropped" or
+  // "motor kapot" with nothing in between.
+  const engineDamagePct = Math.min(100, ((heatDamage + leanDamage) / ENGINE_FAILURE_THRESHOLD) * 100);
+  const foulDamagePct = Math.min(100, (foulDamage / CYLINDER_DROP_THRESHOLD) * 100);
+
   return {
     finished, et, mph, et60, et330, et660, mph660, trace, densityAltitude,
     clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk, nitroIllegal, tireShakeRisk,
     peakFuelGpm, fuelConsumedGal, engineFailed, engineFailTime, engineFailCause, fuelStarved,
-    cylindersDropped, cylinderDropTime, cylinderDropCause,
+    cylindersDropped, cylinderDropTime, cylinderDropCause, engineDamagePct, foulDamagePct,
     clutchFailed, clutchFailTime,
     driverLifted: driverState.lifted, driverLiftTime: driverState.liftTime, driverLiftReason: driverState.liftReason, pedalCount: driverState.pedalCount,
     clutchWearLockupGainPct: peakWornGain * 100,

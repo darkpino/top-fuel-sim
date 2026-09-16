@@ -473,16 +473,29 @@ export function unequipPart(config, part) {
 // MULT) - this is a slow background drift, not a second failure system.
 const WEAR_PER_RUN_PCT = 1.5;
 
+// On top of that flat baseline, a run that actually beat on a part hard -
+// ran hot, lean, or fouled toward a cylinder drop; a clutch worked deep
+// into its own failure clock - leaves more of a mark than a clean one, so
+// the persistent condition readout (garage.js's estimatePartCondition)
+// isn't stuck showing "als nieuw" the run right after a cylinder just
+// dropped. severityByPart (0-1 per part, e.g. run-simulator.js's
+// engineDamagePct/foulDamagePct or bearingWear normalized to 0-1) scales
+// this extra chunk; 0 (the default, and what a clean run's severity
+// naturally works out to) reproduces the exact old flat-1.5% behavior.
+const WEAR_SEVERITY_EXTRA_PCT = 8;
+
 // Every actual pass down the strip - a Testrun-tab lap included, not just
 // a paid qualifying/elimination run - puts real hours on the engine,
 // heads, blower and clutch simultaneously (they're either all in the car
-// racing or none of them are), so a single run adds the same wear to all
-// four equipped units at once. A part with no unit equipped is simply
-// skipped (isPartOwned guards it) - nothing to wear on an empty mount.
-export function addRunWear(config) {
+// racing or none of them are), so a single run adds wear to every
+// equipped unit at once - the flat baseline always, plus each part's own
+// severity share on top. A part with no unit equipped is simply skipped
+// (isPartOwned guards it) - nothing to wear on an empty mount.
+export function addRunWear(config, severityByPart = {}) {
   Object.keys(PARTS).forEach((part) => {
     if (!isPartOwned(config, part)) return;
-    config[part + "Wear"] = Math.min(100, (config[part + "Wear"] || 0) + WEAR_PER_RUN_PCT);
+    const severity = Math.max(0, Math.min(1, severityByPart[part] || 0));
+    config[part + "Wear"] = Math.min(100, (config[part + "Wear"] || 0) + WEAR_PER_RUN_PCT + severity * WEAR_SEVERITY_EXTRA_PCT);
   });
 }
 

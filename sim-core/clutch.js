@@ -71,6 +71,29 @@ export function calcFingerDesired(fingerWeight, rng = Math.random) {
   return base + (1 - base) * randomDraw;
 }
 
+// The OTHER half of finger weight's effect, and arguably the more visible
+// one: lighter fingers generate less centrifugal force at a given RPM, so
+// they push the bearing out toward each stage's target more SLOWLY, not
+// just to a lower eventual ceiling (calcFingerDesired above). Without this,
+// weight only ever showed up as a late-stage cap - the clutch came in at
+// the exact same rate through every earlier stage no matter how light the
+// fingers were, which isn't how a real centrifugal clutch behaves: less
+// weight makes it visibly softer/lazier from the very first stage, not
+// just eventually short of full lock. Applied as a flat multiplier on
+// activeSpeed's per-stage bearing speed (see run-simulator.js), so a light
+// build takes noticeably longer to catch up to whatever the tune's stage
+// timer is asking for at any given instant, not only at the end.
+// FINGER_SPEED_MULT_FLOOR=0.4 at fingerWeight 0 (still a real, if lazy,
+// clutch - never fully inert) scaling straight up to exactly 1.0 (a
+// complete no-op) at fingerWeight 100, so the calibrated default tune and
+// every 100-weight AI archetype see byte-identical bearing speed to before.
+const FINGER_SPEED_MULT_FLOOR = 0.4;
+
+export function calcFingerSpeedMult(fingerWeight) {
+  const base = fingerWeight / 100;
+  return FINGER_SPEED_MULT_FLOOR + (1 - FINGER_SPEED_MULT_FLOOR) * base;
+}
+
 const WEAR_LOCKUP_GAIN = 1.0;
 
 // As the pack wears from slip, the friction material thins and the

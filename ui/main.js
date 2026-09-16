@@ -469,6 +469,19 @@ function renderRunResult(r) {
   $("i-cyl").textContent = cylTxt;
   $("i-cyl").className = "status " + cylCls;
 
+  // The actual gradual accumulators behind engineFailed/cylindersDropped -
+  // watch these climb across a few (partial) runs instead of only ever
+  // seeing the binary cylinder-drop/motor-kapot moment with nothing in
+  // between. Monotonic within a run, so this is already the run's peak,
+  // wherever the run actually stopped (full pass, early shutoff, or an
+  // actual failure) - see run-simulator.js's engineDamagePct/foulDamagePct.
+  const engDmgCls = r.engineFailed ? "bad" : statusClass(r.engineDamagePct, 50, 100);
+  $("i-engine-damage").textContent = r.engineDamagePct.toFixed(0) + "%";
+  $("i-engine-damage").className = "status " + engDmgCls;
+  const foulDmgCls = statusClass(r.foulDamagePct, 50, 100);
+  $("i-foul-damage").textContent = r.foulDamagePct.toFixed(0) + "%";
+  $("i-foul-damage").className = "status " + foulDmgCls;
+
   const retardCls = statusClass(r.peakIgnitionRetard, 8, 15);
   $("i-retard").textContent = r.peakIgnitionRetard > 0.1 ? `${r.peakIgnitionRetard.toFixed(1)}° teruggetrokken` : "niet geactiveerd";
   $("i-retard").className = "status " + (r.peakIgnitionRetard > 0.1 ? retardCls : "ok");
@@ -489,9 +502,13 @@ $("runBtn").addEventListener("click", () => {
   // stays specific to real event runs, see chargePlayerRun), but it's
   // still a real physical run on the equipped parts - the same wear clock
   // a qualifying or elimination pass turns, see addRunWear in garage.js.
-  addRunWear(garageConfig);
+  // Run first so the wear THIS pass adds is based on how it actually went
+  // (wearSeverityByPart), not applied blind before the result exists - and
+  // so this pass's own physics sees last run's wear, not a bump from itself.
+  const r = runSimulation(readSettings());
+  addRunWear(garageConfig, wearSeverityByPart(r));
   saveGarageConfig();
-  renderRunResult(runSimulation(readSettings()));
+  renderRunResult(r);
   if (currentMode === "garage") renderGarageSummary();
 });
 
@@ -889,6 +906,59 @@ function activateLadderRound() {
       loser.eliminatedRound = roundDef.roundNumber;
       ed.results[i] = { a, b, resultA, resultB, reactA, reactB, winner };
     });
+
+    // A car that reaches eliminations still broken from qualifying (see
+    // runPlayerQualifying - a mechanical failure there no longer force-
+    // ends the event) can't line up at all: a genuine no-show, resolved
+    // right here rather than waiting on a Run click that can't happen.
+    // The one exception is the coincidental case where the bracket ALSO
+    // handed them a bye this round (purely an odd-survivor-count thing,
+    // unrelated to the car) - nothing was being contested there either
+    // way, so they still advance without needing to run.
+    if (!isCarRaceReady(garageConfig)) {
+      if (bye && bye.isPlayer) {
+        ladderState.playerHistory[ladderState.roundIndex] = { bye: true, carNotReady: true };
+        renderBracketTable(roundDef);
+        renderHistoryTable();
+        saveEventState();
+        const isFinalRound = roundDef.roundNumber === totalElimRoundsFor(ladderState.bracketSize);
+        if (isFinalRound) {
+          ladderState.playerOutcome = "champion";
+          finishEvent(
+            { qualified: true, champion: true, totalElimRounds: totalElimRoundsFor(ladderState.bracketSize) },
+            `Kampioen! Je auto was niet race-klaar, maar de laatste ronde was toch een bye - automatisch door en daarmee kampioen (${ladderState.totalEntries} auto's).`
+          );
+        } else {
+          advanceLadderRound();
+        }
+        return;
+      }
+      if (ed.playerPairIndex !== null) {
+        const opponent = ed.playerOpponent;
+        const opponentLane = pickBetterLane(ed.lanes);
+        const opponentResult = runSimulation({ ...opponent.tune, ...ed.lanes[opponentLane] });
+        const [pa, pb] = ed.pairs[ed.playerPairIndex];
+        player.eliminated = true;
+        player.eliminatedRound = roundDef.roundNumber;
+        ed.results[ed.playerPairIndex] = {
+          a: pa, b: pb,
+          resultA: pa === player ? null : opponentResult,
+          resultB: pb === player ? null : opponentResult,
+          reactA: null, reactB: null,
+          winner: opponent,
+        };
+        ladderState.playerHistory[ladderState.roundIndex] = { opponent, opponentResult, won: false, noShow: true };
+        ladderState.playerOutcome = "eliminated";
+        renderBracketTable(roundDef);
+        renderHistoryTable();
+        saveEventState();
+        finishEvent(
+          { qualified: true, champion: false, eliminatedRound: roundDef.roundNumber },
+          `Niet race-klaar toen ${roundDef.label.toLowerCase()} begon (kapot onderdeel niet op tijd gerepareerd) - automatisch verloren van ${opponent.name} (${opponent.team}), geen kans om te rijden. Het evenement is voorbij voor je team.`
+        );
+        return;
+      }
+    }
   }
   viewingRoundIndex = null;
   renderLadderRoundUi();
@@ -923,7 +993,14 @@ function renderLadderRoundUi() {
   $("elim-block").style.display = isQuali ? "none" : "block";
   $("skipQualBtn").style.display = !readOnly && isQuali ? "block" : "none";
   if (isQuali) {
-    $("runRoundBtn").style.display = readOnly ? "none" : "block";
+    // A broken/fatal part from an earlier session can't be raced on - the
+    // Run button hides until it's repaired, same gate the Testrun tab
+    // already uses (isCarRaceReady), leaving Skip as the only way past
+    // this session. See runPlayerQualifying: the time already banked from
+    // an earlier clean run stays valid either way.
+    const carNotReady = !readOnly && !isCarRaceReady(garageConfig);
+    $("runRoundBtn").style.display = readOnly || carNotReady ? "none" : "block";
+    $("quali-car-not-ready-note").style.display = carNotReady ? "block" : "none";
     $("lane-choice-block").style.display = "none";
     renderQualiTable(roundDef);
   } else {
@@ -1102,6 +1179,20 @@ function unusablePartsClause(fatalParts, brokenParts) {
   return clauses.join(", ");
 }
 
+// How hard THIS run actually beat on each part, 0-1, for addRunWear's
+// severity-scaled extra wear (garage.js) - engine/head/blower/fuelPump all
+// share the worse of engineDamagePct (heat/lean, all the way to real motor
+// failure) and foulDamagePct (rich fouling, caps out at a cylinder drop),
+// since a failure on any of the three engine-side parts can come from
+// either; the clutch gets its own already-computed bearingWear instead,
+// same clutchDamage/CLUTCH_FAILURE_THRESHOLD clock its own failure risk
+// and lockup-gain readouts already use.
+function wearSeverityByPart(r) {
+  const engineSeverity = Math.max(r.engineDamagePct, r.foulDamagePct) / 100;
+  const clutchSeverity = r.bearingWear / 100;
+  return { engine: engineSeverity, head: engineSeverity, blower: engineSeverity, fuelPump: engineSeverity, clutch: clutchSeverity };
+}
+
 // Every actual player run during an event (qualifying pass, elimination
 // pass, bye pass - not a skipped qualifying round, not a Testrun-tab
 // run, which wears the car but never costs money or triggers a failure
@@ -1119,7 +1210,7 @@ function unusablePartsClause(fatalParts, brokenParts) {
 // repairPartUnit) - both empty if the car survived clean.
 function chargePlayerRun(r) {
   chargeRunCost(financesState);
-  addRunWear(garageConfig);
+  addRunWear(garageConfig, wearSeverityByPart(r));
   const catastrophicMult = computeTeamEffects(teamConfig).teamCatastrophicMult;
   const fatalParts = [];
   const brokenParts = [];
@@ -1162,19 +1253,26 @@ function finishEvent(outcome, text) {
   renderFinalResult(text);
 }
 
+// A qualifying-round mechanical failure no longer ends the event outright -
+// whatever time was already banked (player.bestEt, updated the same way
+// runQualifyingAttempt already does it for every AI entrant) still stands
+// and still gets evaluated normally against the field once Q4 wraps up
+// (see advanceLadderRound). A broken/fatal part just means THIS run - and
+// any remaining quali round the car isn't fixed in time for - can't be
+// attempted; renderLadderRoundUi hides the Run button (forcing a skip)
+// whenever isCarRaceReady is false, so there's no way to keep racing on a
+// car that's actually out.
 function runPlayerQualifying(skip) {
   const roundDef = ladderState.rounds[ladderState.roundIndex];
   const sessionIndex = roundDef.roundNumber - 1;
   const player = ladderState.field.find(e => e.isPlayer);
   applyConditions(roundDef.conditions);
-  let fatalParts = [];
-  let brokenParts = [];
   if (!skip) {
     const r = runSimulation(readSettings());
     player.quals[sessionIndex] = r;
     if (r.finished && !r.weightIllegal && !r.engineFailed && !r.clutchFailed && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
     ladderState.playerHistory[ladderState.roundIndex] = { result: r };
-    ({ fatalParts, brokenParts } = chargePlayerRun(r));
+    chargePlayerRun(r);
     renderRunResult(r);
   } else {
     player.quals[sessionIndex] = null;
@@ -1186,14 +1284,6 @@ function runPlayerQualifying(skip) {
   renderQualiTable(roundDef);
   renderHistoryTable();
   saveEventState();
-  if (fatalParts.length || brokenParts.length) {
-    ladderState.playerOutcome = "dnq";
-    finishEvent(
-      { qualified: false },
-      `${unusablePartsClause(fatalParts, brokenParts)} tijdens de kwalificatie en niet meer inzetbaar deze ronde — het evenement is voorbij voor je team.`
-    );
-    return;
-  }
   advanceLadderRound();
 }
 
