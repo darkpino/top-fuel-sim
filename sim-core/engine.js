@@ -1,0 +1,444 @@
+// Engine module: blower/fuel/ignition/compression settings -> power
+// multiplier, and heat/detonation risk. Pure functions, no DOM access.
+
+// Nitro% and brandstoftoevoer (fuel volume) are the big power knobs (the
+// chemical energy content of the mixture). Blower and gasket/compression
+// give a comparable, smaller range. Blower additionally has diminishing
+// returns (sqrt curve): the higher the overdrive, the less extra power each
+// step gives, and the more heat it puts into the mixture.
+//
+// fuelVolPct is intentionally NOT part of this: brandstoftoevoer now runs
+// on its own fuel curve (see activeFuelPct below) that can change several
+// times during a run, while everything else here is a fixed per-run
+// setting - so this only covers the static half, and calcMult() below
+// folds in whatever the fuel curve is doing at a given instant.
+// NHRA Top Fuel is nominally capped at 90% nitromethane - that's the
+// legal reference point the "geschat piekvermogen" baseline is built
+// around, not just an arbitrary point partway up the slider. fuelFactor
+// hits exactly 1.0 there; the slider still goes to 98% for testing what
+// more nitro WOULD do, but anything past 90% is flagged illegal rather
+// than silently treated as a normal tuning knob.
+const LEGAL_NITRO_MAX = 90;
+
+// Real numbers (MSD's Joe Pando, on the actual Power Grid system): "At
+// launch, you need 60 to 65 degrees of timing to get power up" - nitro's
+// slow burn means these motors run FAR more advance than a gasoline engine
+// ever would, and there's no symmetric "optimal" advance the way a
+// gasoline tune has one - more advance simply makes more power, right up
+// to where sustained heat/cylinder pressure risks taking the engine out
+// (see IGNITION_SAFE_DEG below, and the retarder in calcIgnitionRetard).
+// Saturates at 65deg since that's the real ceiling the article gives -
+// past it there's no evidence pushing further does anything but add risk.
+export function calcIgnEff(ignitionDeg) {
+  return 0.80 + Math.min(ignitionDeg, 65) / 65 * 0.30;
+}
+
+// "Between those two lines the timing is limited to 15 degrees per second
+// of timing advance. That doesn't allow timing to come back in too fast."
+// A real, ruled rate limit - timing can drop (retard) as fast as the curve
+// or retarder call for, but climbing back up is capped, so a driver can't
+// just slam full advance back in the instant RPM dips.
+export const IGNITION_MAX_ADVANCE_RATE = 15; // deg/s
+
+// How much sustained advance the engine can take before cylinder heat
+// becomes real damage risk - this is what the retarder exists to protect
+// against. Only matters if the curve is set aggressively enough that even
+// -30deg of retard can't pull it back under this line.
+export const IGNITION_SAFE_DEG = 50;
+const IGNITION_HEAT_RATE = 0.12;
+
+export function calcIgnitionHeatDamageRate(effectiveIgnitionDeg) {
+  return Math.max(0, (effectiveIgnitionDeg - IGNITION_SAFE_DEG) / 30) * IGNITION_HEAT_RATE;
+}
+
+// Heat risk past which the mixture is genuinely detonation-prone - shared
+// between the UI-facing detonationRisk flag here and the actual damage
+// accumulation rate in run-simulator.js, so both agree on where the line
+// is. Pulled down from an earlier 0.62: that value, combined with the
+// nitro term below only starting at 88%, left a wide band where blower,
+// compression and nitro could all be pushed well past a stock tune with
+// zero consequence at all, right up to a sudden cliff into engine
+// failure - not a gradually rising risk, just "safe" then "destroyed."
+// 0.5 (with the nitro term starting earlier too) keeps a stock tune
+// comfortably under it but meaningfully shrinks how far several knobs can
+// be pushed together before real risk shows up - see run-simulator.js's
+// heatDamage accumulation, which is what actually gates on this.
+export const HEAT_RISK_THRESHOLD = 0.5;
+
+export function calcEngineFactors({ blowerOD, fuelPct, gasketThou, ignition, airDensityRatio = 1 }) {
+  const fuelFactor = 0.60 + (fuelPct - 75) / 15 * 0.40;
+  const blowerNorm = Math.max(0, (blowerOD - 20) / 50);
+  const blowerFactor = 0.85 + Math.sqrt(blowerNorm) * 0.27;
+  const ignEff = calcIgnEff(ignition);
+  const compressionFactor = 0.85 + (60 - gasketThou) / 35 * 0.27;
+  const nitroIllegal = fuelPct > LEGAL_NITRO_MAX;
+
+  // Detonation risk is mostly a blower/heat story: the faster the blower
+  // spins, the hotter the mixture gets, with compression and nitro% as
+  // amplifying factors. Denser air (airDensityRatio > 1, i.e. lower
+  // density altitude) packs more oxygen into the same blower/compression
+  // setting, which is also a hotter, more detonation-prone charge - a
+  // small nudge on top of the tune's own three terms, not a dominant one
+  // (real crew chiefs do back off some at altitude partly for this, not
+  // just for the power loss - see calcOxygenMult below for that side).
+  // The nitro term's own start (84, was 88) and rate (0.09, was 0.15)
+  // are a smaller, deliberately gentler move than the threshold above -
+  // nitro alone stays safe within the legal 75-90% range (real Top Fuel
+  // doesn't grenade from nitro% in isolation, it's always the COMBINATION
+  // with blower/compression that does it), it just no longer gets a
+  // complete free pass all the way to the illegal ceiling either.
+  const heatRisk = blowerNorm * 0.65 + Math.max(0, (compressionFactor - 1)) * 1.1 + Math.max(0, (fuelPct - 84)) / 10 * 0.09
+    + Math.max(0, airDensityRatio - 1) * 0.2;
+  const detonationRisk = heatRisk > HEAT_RISK_THRESHOLD;
+
+  return { fuelFactor, blowerNorm, blowerFactor, ignEff, compressionFactor, heatRisk, detonationRisk, nitroIllegal };
+}
+
+// Reference blower setting calcOxygenMult is centered on - matches the
+// game's baseline archetype tune (ladder.js's Balanced Pro) and the UI
+// default slider value, so a reference build at sea level sees no shift
+// from this term at all.
+const REFERENCE_BLOWER_OD = 48;
+
+// The missing half of "thinner air costs power" (see environment.js's
+// calcAirDensityRatio, which already costs raw power at altitude): a
+// Roots-type blower shoves a roughly fixed VOLUME of air through per
+// revolution (set by the overdrive pulley ratio), so more overdrive pushes
+// more volume regardless of how dense that air actually is - it's the
+// ambient density (airDensityRatio) that decides how much OXYGEN MASS is
+// in that volume. Compression adds a smaller assist on top (more cylinder
+// pressure squeezed out of whatever charge made it in). This doesn't
+// change how much POWER blower/compression make (that's already just a
+// product of factors, so dialing either up already claws back power lost
+// to altitude) - it changes how much OXYGEN is actually present for the
+// fuel curve to match: thin air/low blower/low compression means less
+// oxygen than a reference build sees, so the SAME fuel curve is now
+// feeding too much fuel for what's there (reads rich) unless backed off;
+// dense air/high blower/high compression is the reverse (reads lean).
+export function calcOxygenMult({ blowerOD, compressionFactor, airDensityRatio }) {
+  const blowerRatio = blowerOD / REFERENCE_BLOWER_OD;
+  return airDensityRatio * (0.7 + blowerRatio * 0.3) * compressionFactor;
+}
+
+// The fuelVolPct-dependent half of the power multiplier, computed
+// separately so it can be re-evaluated at whatever point the fuel curve is
+// at each timestep while the rest of calcEngineFactors() is computed once
+// per run.
+export function calcMult({ fuelFactor, fuelVolPct, blowerFactor, ignEff, compressionFactor, powerMult }) {
+  const fuelVolFactor = 0.60 + (fuelVolPct - 40) / 60 * 0.80;
+  const mult = fuelFactor * fuelVolFactor * blowerFactor * ignEff * compressionFactor * powerMult;
+  return { fuelVolFactor, mult };
+}
+
+// Solve for the fuelPct that restores the same effective power as a 90%
+// tune at reference (sea-level) conditions - used for the "recommended
+// nitro%" hint.
+export function calcRecommendedNitro(powerMultNow) {
+  const fuelFactor90 = 1.0; // fuelFactor is defined to hit exactly 1.0 at the 90% legal max
+  const powerMultRef = 1;
+  const targetFuelFactor = fuelFactor90 * (powerMultRef / powerMultNow);
+  const recommendedNitro = 75 + 15 * (targetFuelFactor - 0.60) / 0.40;
+  return Math.max(75, Math.min(98, Math.round(recommendedNitro)));
+}
+
+// Engine RPM: informational channel (same status as "geschat piekvermogen"),
+// not a calibrated output like ET/mph. Top Fuel runs no gearbox - the
+// clutch is the ONLY thing between engine and wheel, which means once it's
+// actually locked up, engine RPM and wheel RPM are the same curve (a rigid
+// 1:1 mechanical link through the fixed final drive), not two things that
+// happen to be tuned to look similar. So this is now a genuine blend
+// between two regimes rather than one authored band with bumps layered on:
+// - Not locked (lf near 0): the engine free-revs, decoupled from wheel
+//   speed - it climbs off the line toward its own band, and flares further
+//   above that band whenever the tire was slipping the previous instant
+//   (the launch spike real telemetry shows at the hit, before the tire
+//   hooks and the clutch takes hold).
+// - Locked (lf near 1): RPM IS wheel speed through the fixed gear
+//   constant below - no band, no plateau, it just follows however fast
+//   the car is actually going, for as long as it's going that fast.
+// calcEngineRpm blends the two by lf (today's actual lockup fraction, not
+// an authored stage timeline), so the transition - and its depth - falls
+// out of the real clutch curve instead of a separately hand-tuned dip:
+// grabbing lockup while wheel speed hasn't caught up to the free-revving
+// band yet pulls RPM DOWN toward the (lower) locked-equivalent value, the
+// real "pulldown" moment - and after that, RPM keeps climbing right along
+// with ground speed for the rest of the run instead of holding flat,
+// which is also why the overspeed retarder (engine.js further down) isn't
+// guaranteed to fire on every single run: whether locked-RPM actually
+// climbs past the 7,900rpm redline before the finish now depends on the
+// tune and the run's speed, not on an always-above-redline authored plateau.
+const STAGING_RPM = 3000; // idling, staged, before the tree drops
+const LAUNCH_RPM = 8600; // free-revving band the engine climbs to before lockup
+const RISE_DURATION = 0.3; // s - how fast RPM climbs off the line to that band
+const FLARE_RPM_PER_SLIP_PCT = 26; // rpm flare per 1% of tire slip, pre-lockup only
+const GEAR_RPM_PER_FTS = 16.2; // rpm per ft/s of wheel speed once fully locked - the fixed final-drive ratio
+// lf (effective lockup fraction) is a torque-capacity number, not a "is the
+// clutch mechanically rigid yet" flag - a slipper clutch is DESIGNED to
+// still be slipping internally well before lf gets anywhere near 1.0
+// (that's the entire point of staging lockup instead of an on/off switch).
+// A real launch clutch also snaps to its first-stage position (s1pct, in a
+// few tenths of a second) long before the car is actually moving at all -
+// that initial clamp is deliberate and does NOT yet mean the engine is
+// being dragged down, since wheel speed hasn't caught up to anything yet.
+// So the pulldown can't just track lf from 0 - it needs a start point past
+// that initial clamp - but it also shouldn't be squeezed into one final
+// sliver of lf either: real telemetry (see clutch.js's note on
+// activeSetpoint) shows a multi-stage affair - a dip as drag catches up,
+// then a climb to the peak right as lockup completes - so LOCK_ENGAGE_START
+// is set well below the old 0.9, covering the tune's later staged
+// increases (not just its very last step) so the sag plays out gradually
+// over those stages instead of arriving as one near-vertical drop in the
+// last hundredth of a second of lockup. lockRemap is additionally eased
+// (smoothstep) rather than linear, so the blend has no sharp corner where
+// it starts or finishes either - both together are what turn the old cliff
+// into a gradual, multi-tenths-of-a-second pull.
+const LOCK_ENGAGE_START = 0.8;
+
+function smoothstep01(x) {
+  const c = Math.max(0, Math.min(1, x));
+  return c * c * (3 - 2 * c);
+}
+
+// The pulldown, as a single 0-1 "how far along is it" number shared by
+// stepEngineRpm (which uses it to blend actual RPM) and, via
+// run-simulator.js, activeFuelPct's fuel-curve richening (see the note on
+// activeFuelPct below) - both need to agree on when the clutch has
+// actually started meaningfully dragging the engine down off its free-rev
+// band, not just on the same lf INPUT recomputed twice.
+export function calcPulldownFrac(lf) {
+  return smoothstep01((lf - LOCK_ENGAGE_START) / (1 - LOCK_ENGAGE_START));
+}
+
+// Off-throttle RPM fall: once locked (pulldownFrac > 0.5) RPM already
+// correctly tracks wheel speed, which decelerates on its own once
+// appliedForce cuts - no extra handling needed there. But while still
+// free-revving/unlocked, the formula above has no throttle term at all, so
+// a lift used to be completely invisible on the RPM trace: the free-rev
+// band just kept climbing (or holding at redline) regardless of whether
+// the driver had already lifted. stepEngineRpm is stateful specifically to
+// fix that - off throttle and not yet locked, nothing is still driving the
+// engine up, so it falls back toward idle at a real (fast, but not
+// instant) rate instead of silently continuing to track the full-throttle
+// target.
+const ENGINE_RPM_FALL_RATE_OFF_THROTTLE = 12000; // rpm/s
+const ENGINE_IDLE_RPM = 1200;
+const ENGINE_RPM_THROTTLE_TRACK_THRESHOLD = 0.5;
+
+// Real clutch curves are staged (see clutch.js's activeSetpoint): a
+// common shape is a hard early clamp, a held plateau while speed catches
+// up, then a fast final bite to full lock. Recomputing targetRpm fresh
+// every tick from that staged lf tracks the plateau faithfully too - the
+// target genuinely firms back up while lf holds flat and wheel speed
+// keeps climbing under it - and then the final fast bite yanks it back
+// down hard, right after. On the RPM trace that reads as two separate
+// drops with a brief recovery in between ("zakt hij nog 2x na de
+// pulldown"), not the one continuous pulldown a real engine would show.
+// A real engine can't do that either way - its own rotational inertia
+// won't let RPM snap to a freshly recomputed target in one tick, it has
+// to physically speed up or slow down at a bounded rate. Rate-limiting
+// the approach to targetRpm once the pulldown has actually started
+// (pulldownFrac > 0) reproduces that without a full torque/inertia
+// model: it folds the plateau's small bump and the final bite's big drop
+// into one smooth decline spread over the real time the transition takes,
+// the same idea the off-throttle fall below already uses, just active
+// during the pulldown itself instead of only after a lift.
+const ENGINE_RPM_PULLDOWN_RATE = 3000; // rpm/s
+
+// Returns { rpm, pulldownFrac } - pulldownFrac is exposed so the fuel
+// curve (activeFuelPct, called from run-simulator.js right after this)
+// richens on the exact same signal that's actually pulling RPM down,
+// instead of recomputing its own approximation of it.
+export function stepEngineRpm(prevRpm, { t, wheelSpeedFtS, lf, priorSlipPct, throttle }, dt) {
+  const riseFrac = Math.min(1, t / RISE_DURATION);
+  const freeRpm = STAGING_RPM + (LAUNCH_RPM - STAGING_RPM) * riseFrac + FLARE_RPM_PER_SLIP_PCT * Math.max(0, priorSlipPct || 0);
+  const lockedRpm = GEAR_RPM_PER_FTS * wheelSpeedFtS;
+  const pulldownFrac = calcPulldownFrac(lf);
+  const targetRpm = freeRpm * (1 - pulldownFrac) + lockedRpm * pulldownFrac;
+  if (throttle > ENGINE_RPM_THROTTLE_TRACK_THRESHOLD || pulldownFrac > ENGINE_RPM_THROTTLE_TRACK_THRESHOLD) {
+    if (pulldownFrac <= 0) {
+      // Still purely free-revving: track the target directly, same as
+      // the old formula (no rate limit - the engine responds instantly
+      // to the load it's actually seeing, and freeRpm's own RISE_DURATION
+      // ramp already makes this smooth). Untouched by the rate limit
+      // above, which only applies once a real pulldown is underway.
+      return { rpm: targetRpm, pulldownFrac };
+    }
+    const maxDelta = ENGINE_RPM_PULLDOWN_RATE * dt;
+    const delta = Math.max(-maxDelta, Math.min(maxDelta, targetRpm - prevRpm));
+    return { rpm: prevRpm + delta, pulldownFrac };
+  }
+  const fallTarget = Math.max(ENGINE_IDLE_RPM, lockedRpm);
+  return { rpm: Math.max(fallTarget, prevRpm - ENGINE_RPM_FALL_RATE_OFF_THROTTLE * dt), pulldownFrac };
+}
+
+// Fuel flow: a nitro fuel pump is a positive-displacement gear pump driven
+// directly off the blower, so flow scales with engine RPM rather than load;
+// the barrel valve / fuel curve (fuelVolFactor) sets how much of that flow
+// actually reaches the injectors. pumpRatedGpm is the equipped pump's own
+// rated capacity (garage.js's FUEL_PUMP_BRANDS, via computeGarageEffects'
+// garageFuelPumpGpm) - 100% open on a 90gpm pump is not the same flow as
+// 100% open on a 120gpm one. Defaults to the old flat 90gpm baseline so
+// any caller that hasn't been updated to pass a real pump rating still
+// gets the exact prior behavior.
+export const FUEL_FLOW_BASE_GPM = 90;
+
+// fuelVolFactor and the rpm/LAUNCH_RPM ratio can each individually run above
+// 1.0 (a high-percentage fuel curve setting, or an RPM flare above LAUNCH_RPM
+// during wheelspin) - uncapped, their product could push flow well past what
+// the equipped pump can actually deliver, defeating the entire point of a
+// rated capacity (a "90gpm pump" quietly flowing 120gpm under the right
+// conditions). The pump's own rating is a hard ceiling: it can only ever put
+// out AT MOST pumpRatedGpm, however far past 100% the demand from the curve/
+// RPM combination goes.
+export function calcFuelFlowGpm(rpm, fuelVolFactor, pumpRatedGpm = FUEL_FLOW_BASE_GPM) {
+  return pumpRatedGpm * Math.min(1, fuelVolFactor * (rpm / LAUNCH_RPM));
+}
+
+// Ideal fuel curve: since the pump's own flow already rises and falls with
+// RPM, holding the barrel valve at a fixed opening does NOT hold the
+// mixture constant - it over-fuels (rich) whenever RPM is above the
+// reference and under-fuels (lean) whenever RPM sags below it, exactly the
+// "pulldown" moment where the motor is under the most load and can least
+// afford to go lean. This is the target curve a crew chief is chasing with
+// timed fuel stages: open the valve further when RPM sags, pull it back
+// when RPM climbs, to keep the delivered mixture roughly constant despite
+// the pump's own RPM-driven swings.
+// Floored well above idle (unlike the old ~STAGING_RPM floor) because the
+// mechanical pulldown now genuinely tracks wheel speed once locked (see
+// stepEngineRpm above) and can swing much lower than the old authored dip
+// ever did - a full-throttle car that hooks up hard right after a modest
+// speed can see engine rpm sag a long way below the free-revving band for
+// real. Below this floor there's no more fuel-curve slider room to chase
+// it anyway (the valve is already maxed out well before rpm gets that
+// low), so flooring the RICHNESS TARGET here isn't hiding the dip - the
+// dip still shows up in full on the RPM channel itself - it just stops
+// demanding fuel% beyond what's physically settable, the same way the
+// engine's compression/nitro/blower factors are physical numbers rather
+// than blank checks.
+const IDEAL_FUEL_RPM_FLOOR = 7200;
+
+export function calcIdealFuelPct(rpm, referenceFuelPct, oxygenMult = 1) {
+  return referenceFuelPct * (LAUNCH_RPM / Math.max(rpm, IDEAL_FUEL_RPM_FLOOR)) * oxygenMult;
+}
+
+// Deviation between what's actually being fed in and what the RPM at that
+// instant calls for - positive means running rich, negative means lean.
+export function calcMixtureRichness(actualFuelPct, idealFuelPct) {
+  return (actualFuelPct - idealFuelPct) / 100;
+}
+
+// The dial (fuelVolPct) only tells the barrel valve how far to open - what
+// mixture that ACTUALLY produces depends on how much fuel the pump behind
+// it can put out. Every fuel curve number in this sim (calcIdealFuelPct's
+// target included) was authored and tuned assuming the FUEL_FLOW_BASE_GPM
+// reference pump, so a bigger pump delivers proportionally MORE than the
+// dial setting implies at that reference (running richer for the same
+// dial%), and a smaller one proportionally less (running leaner) - not
+// just less overall flow (calcFuelFlowGpm/fuelConsumedGal), but a real
+// shift in the mixture calcMixtureRichness sees, which is what actually
+// drives lean/rich engine damage. Pinned to exactly 1.0 (a complete no-op)
+// at the reference pump size, so every calibrated tune and every AI
+// archetype - all of which implicitly run the reference pump - keeps its
+// exact prior richness behavior; only an actually-different pump choice
+// shifts anything.
+export function calcPumpMixtureScale(pumpRatedGpm) {
+  return pumpRatedGpm / FUEL_FLOW_BASE_GPM;
+}
+
+// Fuel curve: brandstoftoevoer is now a 6-stage timer of its own, same
+// shape as the clutch's 6-stage model (see clutch.js's activeSetpoint) -
+// each stage times out into the next rather than sharing the clutch's own
+// s2time/s6time boundaries, so the fuel curve can be shaped independently
+// (open longer through the pulldown, close sooner or later after lockup,
+// etc.) instead of being locked to whatever the clutch tune happens to do.
+// Unlike the clutch's bearing, fuel volume has no travel/ramp dynamics to
+// model - it's a direct step to each stage's target, same as the old
+// 3-stage version, just with more points to shape the curve.
+const FUEL_STAGE_NUMBERS = [1, 2, 3, 4, 5, 6];
+
+// The 6 fuelNtime sliders are still a plan on the clock (a crew chief
+// still schedules them in seconds, same UI, same saved setups) - but the
+// REASON later stages open richer is to cover the pulldown (see the note
+// above calcIdealFuelPct), and the pulldown itself is a clutch-lockup
+// event, not a clock event: it happens whenever the clutch actually starts
+// dragging RPM down, which can be earlier or later than the time-based
+// plan expected depending on the tune. Blending the planned stage value
+// toward fuel1pct by pulldownFrac (stepEngineRpm's own calcPulldownFrac
+// output - the exact same 0-1 number that's actually pulling RPM down that
+// instant, not a separate approximation of it) means a later stage's
+// richer setting only fully lands once the pulldown it was meant for has
+// actually started, instead of firing early off the clock and running
+// rich for no reason while the motor is still free-revving.
+export function activeFuelPct(t, fuelStages, pulldownFrac = 1) {
+  let planned = fuelStages.fuel6pct;
+  for (const n of FUEL_STAGE_NUMBERS) {
+    if (t < fuelStages[`fuel${n}time`]) { planned = fuelStages[`fuel${n}pct`]; break; }
+  }
+  return fuelStages.fuel1pct + (planned - fuelStages.fuel1pct) * pulldownFrac;
+}
+
+// Generic breakpoint-curve sampler: points is an array of {t, v} sorted by
+// t. Linearly interpolates between the two bracketing points; clamps to the
+// first/last value outside the covered range. Shared by any curve that's
+// dialed in as a handful of (time, value) points rather than a formula.
+export function sampleCurve(t, points) {
+  if (t <= points[0].t) return points[0].v;
+  for (let i = 1; i < points.length; i++) {
+    if (t <= points[i].t) {
+      const a = points[i - 1], b = points[i];
+      const frac = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
+      return a.v + (b.v - a.v) * frac;
+    }
+  }
+  return points[points.length - 1].v;
+}
+
+// Ontsteking is now a 6-point curve like the fuel/clutch timers, sampled at
+// fixed checkpoints through the run rather than one static number for the
+// whole pass - real ignition boxes (MSD Power Grid and similar) step timing
+// through several programmed points, not just launch-vs-cruise. 2.75s is
+// deliberately one of the checkpoints: that's also where the retard system
+// below arms itself, so a crew chief can see and shape exactly what the
+// curve is doing right as the safety system comes online.
+export const IGNITION_CURVE_TIMES = [0, 0.5, 1.0, 1.5, 2.75, 4.0];
+
+export function activeIgnition(t, ignitionCurve) {
+  const points = IGNITION_CURVE_TIMES.map((ct, i) => ({ t: ct, v: ignitionCurve[i] }));
+  return sampleCurve(t, points);
+}
+
+// Real Top Fuel ignition boxes (e.g. MSD's Power Grid) carry a built-in
+// overspeed protection: time-blocked for the first couple seconds so it
+// can't interfere with normal launch wheelspin, then arms itself and pulls
+// timing out (dynamically, up to a hard cap) any time RPM creeps past the
+// class redline. This is NOT a tuning knob the driver dials in - it's
+// safety equipment that kicks in on top of whatever ignition curve was
+// set, same as it does in the real car.
+export const IGNITION_RETARD_ARM_TIME = 2.75; // s - blocked before this
+export const IGNITION_REDLINE_RPM = 7900; // NHRA Top Fuel max
+export const IGNITION_MAX_RETARD_DEG = 30; // hard cap on pull-out
+// This is a RAMP, not a lookup: retard builds up over time rather than
+// jumping straight to whatever a stateless "current rpm overage" formula
+// would say the instant the system arms - a car already well over redline
+// right at 2.75s should NOT see the full corresponding retard slam in
+// within one timestep, it should see the pull start right away and build.
+// IGNITION_RETARD_BASE_RATE is that starting pull the moment rpm first
+// crosses redline (so it engages EARLY, right at the threshold, not only
+// once a large overage has built up); IGNITION_RETARD_RATE_GAIN then adds
+// to that rate the further over redline rpm actually is, so a run that
+// keeps climbing despite the initial pull gets pulled out faster, not at
+// the same flat rate - the corrective action escalates with the problem.
+// Dropping back under redline releases the ramp immediately (no lag on
+// the way down); how fast the ACTUAL ignition timing can then climb back
+// out is still capped by IGNITION_MAX_ADVANCE_RATE above, so there's no
+// separate "sudden full advance back" risk to guard against here.
+const IGNITION_RETARD_BASE_RATE = 4; // deg/s, right at the 7900 threshold
+const IGNITION_RETARD_RATE_GAIN = 0.011; // additional deg/s per rpm over redline
+
+export function calcIgnitionRetard(t, rpm, priorRetardDeg, dt) {
+  if (t < IGNITION_RETARD_ARM_TIME) return 0;
+  const over = Math.max(0, rpm - IGNITION_REDLINE_RPM);
+  if (over <= 0) return 0;
+  const pullRate = IGNITION_RETARD_BASE_RATE + over * IGNITION_RETARD_RATE_GAIN;
+  return Math.min(IGNITION_MAX_RETARD_DEG, priorRetardDeg + pullRate * dt);
+}

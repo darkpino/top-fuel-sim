@@ -114,3 +114,12 @@ consistent.
 - Hoeveel "raw" wil je de UI (rauwe getallen als crew chief) vs. gestileerde dashboards?
 - Willen we een enkele speler-tegen-de-klok modus, of ook AI-tegenstanders (andere teams) voor events?
 - Random events (mechanisch falen, "blower explosion", track conditions die veranderen tussen runs) — hoeveel RNG vs. puur deterministisch op basis van instellingen?
+
+## Later op te pakken — team-module (v3)
+- **Rijder houdt de auto "in de groove"**: hoe goed de rijder de auto op de
+  gegroefde lijn van de baan houdt, is een eigen vaardigheid/factor. Rijdt
+  de auto uit de groove, dan verliest hij eerder grip en gaat de auto
+  sneller "up in smoke" (vergelijkbaar met het bestaande bandenrook-/
+  pedal-systeem in driver.js, maar dan getriggerd door baanpositie i.p.v.
+  alleen slip%). Hoort bij de rijder-eigenschappen die de team-module gaat
+  uitbreiden (naast agressiviteit), nog niet geïmplementeerd.

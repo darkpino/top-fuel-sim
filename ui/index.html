@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top Fuel Crew Chief — Run Sim v0.22</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Top Fuel Crew Chief — Run Sim</h1>
+  <p class="sub">v0.3 prototype · 1000 ft · realistischere telemetrie: wheel speed vs ground speed + split-markers</p>
+
+  <div class="app-layout">
+    <aside class="sidebar">
+      <nav class="side-nav">
+        <button class="nav-btn active" id="tabTest">Testrun</button>
+        <button class="nav-btn" id="tabEvent">Evenement</button>
+        <button class="nav-btn" id="tabFinance">Financiën</button>
+        <button class="nav-btn" id="tabGarage">Auto bouwen</button>
+        <button class="nav-btn" id="tabTeam">Team bouwen</button>
+      </nav>
+      <div class="sidebar-io">
+        <button class="secondary" id="exportGameBtn" type="button">Spel exporteren</button>
+        <button class="secondary" id="importGameBtn" type="button">Spel importeren</button>
+        <input type="file" id="importGameFile" accept="application/json" hidden>
+        <p class="note" id="io-status" style="margin-top:4px;">Exporteert/importeert budget, garage, team en een lopend evenement als één bestand - een back-up, of om over te zetten naar een andere browser/computer. De automatische opslag hierboven blijft alleen lokaal in deze browser.</p>
+        <button class="secondary" id="newGameBtn" type="button" style="margin-top:12px;">Nieuw spel starten</button>
+        <p class="note" style="margin-top:4px;">Wist budget, garage, team, tweedehandsmarkt en een lopend evenement, en begint weer bij een lege garage met het startbudget. Opgeslagen setups blijven bewaard. Exporteer eerst als je dit spel later terug wilt kunnen halen.</p>
+      </div>
+    </aside>
+
+    <div class="app-main">
+
+  <div class="panel" id="eventPanel" style="display:none;">
+    <div class="sec-title">Evenement</div>
+    <p class="note" style="margin-top:0;" id="event-status">Nog geen evenement gestart. Kies het aantal auto's en start: 4 kwalificatierondes bepalen de ladder, het bovenste deel (macht van 2) gaat door naar de eliminatie. Elke ronde heeft eigen gesimuleerde omstandigheden - het hele veld rijdt onder dezelfde condities als jij.</p>
+
+    <div id="event-setup">
+      <div class="row">
+        <label>Circuit</label>
+        <select id="trackSelect"></select>
+      </div>
+      <p class="note" style="margin-top:0;">Elk circuit heeft zijn eigen hoogte en klimaat - dat verandert de density altitude (zie Omgeving) voor het hele evenement: hoger en heter kost vermogen (dunnere lucht, minder zuurstof) maar scheelt ook iets in luchtweerstand. Denver ligt bv. hoog en droog, Las Vegas en Phoenix zijn hete woestijnbanen, Gainesville en Houston juist heet en vochtig.</p>
+      <div class="row">
+        <label>Aantal auto's (incl. jij)</label>
+        <select id="fieldSizeSelect">
+          <option value="8">8</option>
+          <option value="12">12</option>
+          <option value="16" selected>16</option>
+          <option value="20">20</option>
+          <option value="24">24</option>
+          <option value="32">32</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="event-active" style="display:none;">
+      <p class="note" style="margin-top:0;" id="event-track-label">--</p>
+      <p class="note" style="margin-top:0; display:none;" id="event-round-label">--</p>
+      <button class="secondary" id="backToCurrentRoundBtn" style="display:none;">← Terug naar huidige ronde</button>
+
+      <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:0;">Jouw rondes</div>
+      <p class="note" style="margin-top:0;">Weer en resultaat per ronde die je al hebt gereden - vergelijk de conditie van een nieuwe ronde met een eerdere om je tune bij te stellen.</p>
+      <div style="overflow-x:auto;">
+        <table class="event-table" id="history-table">
+          <thead><tr><th>Ronde</th><th>Lucht</th><th>Vocht</th><th>Druk</th><th>Baan</th><th>VHT</th><th>60ft</th><th>ET</th><th>mph</th><th>Status</th></tr></thead>
+          <tbody id="history-table-body"></tbody>
+        </table>
+      </div>
+
+      <div id="quali-block" style="display:none;">
+        <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:0;">Kwalificatiestand</div>
+        <p class="note" style="margin-top:0;">"Tijd deze sessie" laat zien wie er onder de huidige omstandigheden al voor je is gegaan - gebruik dat voor last-minute aanpassingen (koppeling, ontsteking) voor je zelf rijdt.</p>
+        <div style="overflow-x:auto;">
+          <table class="event-table" id="quali-table">
+            <thead><tr><th>Pos</th><th>Naam</th><th>Team</th><th>Tijd deze sessie</th><th>Beste ET</th><th>mph</th><th>Status</th></tr></thead>
+            <tbody id="quali-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="elim-block" style="display:none;">
+        <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:0;">Bracket dit rondje</div>
+        <p class="note" style="margin-top:0;" id="opponent-info">--</p>
+        <div style="overflow-x:auto;">
+          <table class="event-table" id="bracket-table">
+            <thead><tr><th>Auto A</th><th>Tijd A</th><th>Auto B</th><th>Tijd B</th><th>Resultaat</th></tr></thead>
+            <tbody id="bracket-table-body"></tbody>
+          </table>
+        </div>
+        <div id="lane-choice-block" style="display:none;">
+          <p class="note" style="margin-top:0;">Jij bent hoger gekwalificeerd dan je tegenstander - kies je baan voor dit rondje. De twee banen wijken licht af in grip en baantemperatuur, hetzelfde stel banen voor de hele ronde.</p>
+          <button class="secondary" id="chooseLaneA">Baan A — grip <span id="laneA-grip">--</span>%, baan <span id="laneA-track">--</span>°C</button>
+          <button class="secondary" id="chooseLaneB">Baan B — grip <span id="laneB-grip">--</span>%, baan <span id="laneB-track">--</span>°C</button>
+        </div>
+      </div>
+
+      <button class="run" id="runRoundBtn" style="display:none;">Run deze ronde</button>
+      <button class="secondary" id="skipQualBtn" style="display:none;">Sla deze kwalificatieronde over</button>
+    </div>
+
+    <div id="event-result" style="display:none;">
+      <p class="note" style="margin-top:0; font-weight:700;" id="event-final-result">--</p>
+    </div>
+
+    <button class="run" id="startEventBtn">Start evenement</button>
+    <button class="secondary" id="newEventBtn" style="display:none;">Nieuw evenement</button>
+  </div>
+
+  <div class="panel" id="financePanel" style="display:none;">
+    <div class="sec-title">Financiën</div>
+    <div class="results-grid" style="grid-template-columns:1fr;">
+      <div class="stat"><div class="lbl">Budget</div><div class="num" id="fin-budget">--</div></div>
+    </div>
+    <div id="sponsor-offers"></div>
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:16px;">Transacties</div>
+    <p class="note" style="margin-top:0;">Inschrijfgeld en runkosten (brandstof, crew) gaan er per evenement af, prijzengeld en sponsorbijdragen komen erbij. Testruns op het Testrun-tabblad kosten niets - alleen echte kwalificatie- en eliminatierondes tellen mee.</p>
+    <div style="overflow-x:auto;">
+      <table class="event-table" id="finance-table">
+        <thead><tr><th>Omschrijving</th><th>Bedrag</th><th>Saldo</th></tr></thead>
+        <tbody id="finance-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel" id="garagePanel" style="display:none;">
+    <div class="sec-title">Auto bouwen</div>
+    <p class="note" style="margin-top:0;">Onderdelen en chassiskeuzes die worden opgeslagen en meegenomen naar elke run (test en evenement). Duurdere merken maken meer vermogen én zijn betrouwbaarder (de motor gaat minder snel kapot); tweedehands is goedkoper maar minder betrouwbaar zonder aan vermogen in te leveren. Zie "Vermogen" en "Betrouwbaarheid" hieronder voor het effect van je huidige bouw.</p>
+    <p class="note" style="margin-top:0;">Een nieuw team begint met een lege garage - niets is gemonteerd, er is geen trailer. Koop bij elk onderdeel hieronder je eerste exemplaar (dat wordt meteen gemonteerd); een volgende aankoop van hetzelfde onderdeel is een reserve, tot de capaciteit van je trailer vol zit.</p>
+    <p class="note" id="garage-readiness-note" style="margin-top:0;"></p>
+
+    <p class="note" style="margin-top:0;">Klik op een onderdeel in de tekening om direct naar de bijbehorende instellingen te springen.</p>
+    <svg class="dragster-diagram" id="dragster-diagram" viewBox="0 0 960 240" role="img" aria-label="Zijaanzicht van de dragster - klik op een onderdeel om naar de instellingen te springen">
+      <!-- Grond -->
+      <line x1="0" y1="207" x2="960" y2="207" stroke="var(--border)" stroke-width="1"></line>
+
+      <!-- Chassis / body (vangt klikken op wat niet specifieker is: bodywork, wielen, vleugels, wheeliebar) -->
+      <g class="diagram-part" data-target="garage-sec-chassis">
+        <title>Chassis</title>
+        <path d="M70,150 C110,120 190,108 300,108 L560,108 C610,108 650,118 680,140 L680,160 L120,160 C95,160 78,156 70,150 Z" fill="var(--panel-alt)" stroke="var(--amber)"></path>
+        <!-- Cockpit bubble -->
+        <path d="M175,108 C185,84 240,78 290,80 C320,82 335,96 335,108 Z" fill="var(--panel-alt)" stroke="var(--amber)"></path>
+        <!-- Voorvleugel -->
+        <rect x="20" y="192" width="70" height="8" rx="2" fill="var(--panel-alt)" stroke="var(--border)"></rect>
+        <!-- Wheeliebar -->
+        <path d="M760,168 L900,192 L900,200 L888,200 L756,175 Z" fill="var(--panel-alt)" stroke="var(--border)"></path>
+        <!-- Achtervleugel steunen + vleugel -->
+        <line x1="700" y1="150" x2="740" y2="70" stroke="var(--border)" stroke-width="4"></line>
+        <line x1="740" y1="150" x2="775" y2="70" stroke="var(--border)" stroke-width="4"></line>
+        <rect x="700" y="55" width="110" height="16" rx="3" fill="var(--panel-alt)" stroke="var(--border)"></rect>
+      </g>
+
+      <!-- Voorwiel (decoratief, geen eigen instelling) -->
+      <g pointer-events="none">
+        <circle cx="120" cy="185" r="22" fill="var(--panel)" stroke="var(--muted)" stroke-width="3"></circle>
+        <circle cx="120" cy="185" r="6" fill="var(--muted)"></circle>
+      </g>
+
+      <!-- Brandstoftank -->
+      <g class="diagram-part" data-target="garage-sec-tank">
+        <title>Brandstoftank</title>
+        <rect x="345" y="118" width="65" height="38" rx="10" fill="var(--panel-alt)" stroke="var(--amber)"></rect>
+      </g>
+
+      <!-- Motorblok -->
+      <g class="diagram-part" data-target="garage-sec-engine">
+        <title>Motor</title>
+        <path d="M460,118 L610,118 L630,160 L440,160 Z" fill="var(--panel-alt)" stroke="var(--amber)"></path>
+        <!-- Uitlaatpijpen -->
+        <path d="M600,150 L640,175 M612,155 L654,178 M624,158 L666,180" stroke="var(--amber-dim)" stroke-width="5" fill="none" stroke-linecap="round" pointer-events="none"></path>
+      </g>
+
+      <!-- Cilinderkoppen (dunne strook boven het blok) -->
+      <g class="diagram-part" data-target="garage-sec-heads">
+        <title>Cilinderkoppen</title>
+        <rect x="460" y="106" width="150" height="14" rx="3" fill="var(--panel-alt)" stroke="var(--amber)"></rect>
+      </g>
+
+      <!-- Blower + injector hat -->
+      <g class="diagram-part" data-target="garage-sec-blower">
+        <title>Blower</title>
+        <rect x="495" y="55" width="80" height="52" rx="4" fill="var(--panel-alt)" stroke="var(--amber)"></rect>
+        <path d="M515,55 L555,55 L548,38 L522,38 Z" fill="var(--panel-alt)" stroke="var(--amber)"></path>
+        <line x1="535" y1="107" x2="535" y2="122" stroke="var(--border)" stroke-width="4" pointer-events="none"></line>
+      </g>
+
+      <!-- Koppeling / bellhousing -->
+      <g class="diagram-part" data-target="garage-sec-clutch">
+        <title>Koppeling</title>
+        <rect x="630" y="128" width="42" height="32" rx="6" fill="var(--panel-alt)" stroke="var(--amber)"></rect>
+      </g>
+
+      <!-- Achterwiel (decoratief, geen eigen instelling) -->
+      <g pointer-events="none">
+        <circle cx="760" cy="175" r="48" fill="var(--panel)" stroke="var(--muted)" stroke-width="5"></circle>
+        <circle cx="760" cy="175" r="12" fill="var(--muted)"></circle>
+      </g>
+    </svg>
+
+    <div class="garage-section" id="garage-sec-engine">
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Motor</div>
+    <p class="note" style="margin-top:0;" id="g-engine-equipped">Geen motorblok gemonteerd.</p>
+    <p class="note" style="margin-top:0;" id="g-engine-condition"></p>
+    <button class="secondary" id="g-repair-engine" type="button" style="display:none;">Motorblok repareren</button>
+    <div id="g-engine-inventory-list"></div>
+    <div class="row"><label>Merk (nieuw)</label><select id="g-engine-spare-brand"></select></div>
+    <button class="secondary" id="g-buy-engine-spare" type="button">Motorblok kopen</button>
+    <p class="note">Elke run - test of echt - slijt het gemonteerde motorblok een beetje (zie Conditie hierboven, met opzet een ruwe schatting, geen exact getal). Motorschade tijdens een evenement raakt niet altijd het blok zelf - een te hete run kan net zo goed de blower laten klappen, een te mager mengsel juist een cilinderkop, en soms allebei tegelijk (zie ook Cilinderkoppen en Blower hieronder). Heb je een reserve voor het geraakte onderdeel, dan monteert de crew 'm meteen (tegen montagekosten - niet meer gratis); zonder reserve blijft het kapot gemonteerd zitten - niet meer inzetbaar, geen automatische reparatie - tot je 'm hierboven zelf (en tegen betaling) repareert, wat ook meteen de slijtage terugzet. Bij een heftige klapper is de schade soms te groot voor zelfs een reserve om aan de baan te redden - dat onderdeel is dan total loss en moet sowieso vervangen worden, en dit evenement is voorbij ongeacht wat er in de trailer ligt.</p>
+    <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
+    <p class="note" style="margin-top:0;">Wisselend aanbod, per merk een eigen leeftijd - hoe ouder, hoe goedkoper maar ook hoe minder betrouwbaar. Kopen monteert het direct (het huidige onderdeel gaat naar de reservevoorraad, niet weg) - dit is dus een bewuste vervanging, geen extra reserve erbij. Ververst bij elk nieuw evenement.</p>
+    <div id="g-engine-market-list"></div>
+    </div>
+
+    <div class="garage-section" id="garage-sec-heads">
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Cilinderkoppen</div>
+    <p class="note" style="margin-top:0;" id="g-head-equipped">Geen cilinderkoppen gemonteerd.</p>
+    <p class="note" style="margin-top:0;" id="g-head-condition"></p>
+    <button class="secondary" id="g-repair-head" type="button" style="display:none;">Cilinderkoppen repareren</button>
+    <div id="g-head-inventory-list"></div>
+    <div class="row"><label>Merk (nieuw)</label><select id="g-head-spare-brand"></select></div>
+    <button class="secondary" id="g-buy-head-spare" type="button">Cilinderkoppen kopen</button>
+    <p class="note">Slijt mee met elke run (test of echt), en kan ook geraakt worden door motorschade elders (zie Motor hierboven) - vooral bij een te mager mengsel, niet alleen door eigen slijtage. Kapot betekent kapot tot je 'm zelf repareert - geen automatische fix.</p>
+    <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
+    <p class="note" style="margin-top:0;">Wisselend aanbod, per merk een eigen leeftijd - hoe ouder, hoe goedkoper maar ook hoe minder betrouwbaar. Kopen monteert het direct (het huidige onderdeel gaat naar de reservevoorraad, niet weg) - dit is dus een bewuste vervanging, geen extra reserve erbij. Ververst bij elk nieuw evenement.</p>
+    <div id="g-head-market-list"></div>
+    </div>
+
+    <div class="garage-section" id="garage-sec-blower">
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Blower</div>
+    <p class="note" style="margin-top:0;" id="g-blower-equipped">Geen blower gemonteerd.</p>
+    <p class="note" style="margin-top:0;" id="g-blower-condition"></p>
+    <button class="secondary" id="g-repair-blower" type="button" style="display:none;">Blower repareren</button>
+    <div class="row"><label>Type</label>
+      <select id="g-blower-type">
+        <option value="conventional">Gewone blower (goedkoper)</option>
+        <option value="setback">Setback blower (meer vermogen, betrouwbaarder, duurder)</option>
+      </select>
+    </div>
+    <p class="note" style="margin-top:0;">Ombouwen tussen type kost echt geld (het prijsverschil, zie Type hierboven) - geen gratis knopje meer, in beide richtingen.</p>
+    <div id="g-blower-inventory-list"></div>
+    <div class="row"><label>Merk (nieuw)</label><select id="g-blower-spare-brand"></select></div>
+    <button class="secondary" id="g-buy-blower-spare" type="button">Blower kopen</button>
+    <p class="note">Slijt mee met elke run (test of echt), en kan ook geraakt worden door motorschade elders (zie Motor hierboven) - vooral bij een te hete run, niet alleen door eigen slijtage. Kapot betekent kapot tot je 'm zelf repareert - geen automatische fix.</p>
+    <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
+    <p class="note" style="margin-top:0;">Wisselend aanbod, per merk een eigen leeftijd - hoe ouder, hoe goedkoper maar ook hoe minder betrouwbaar. Kopen monteert het direct (het huidige onderdeel gaat naar de reservevoorraad, niet weg) - dit is dus een bewuste vervanging, geen extra reserve erbij. Ververst bij elk nieuw evenement.</p>
+    <div id="g-blower-market-list"></div>
+    </div>
+
+    <div class="garage-section" id="garage-sec-clutch">
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Koppeling</div>
+    <p class="note" style="margin-top:0;" id="g-clutch-equipped">Geen koppeling gemonteerd.</p>
+    <p class="note" style="margin-top:0;" id="g-clutch-condition"></p>
+    <button class="secondary" id="g-repair-clutch" type="button" style="display:none;">Koppeling repareren</button>
+    <p class="note" style="margin-top:0;">Plaatenaantal en warmteopbouw tijdens slippen zitten in het merk gebakken - een goedkope 5-plaats wordt heter tijdens slippen (minder tolerant), duurdere 6-plaats-modellen koeler en betrouwbaarder. Elk merk heeft ook een eigen grens aan hoeveel vermogen het pakket kan vasthouden: maakt de motor meer dan die koppeling aankan, dan rijdt hij er letterlijk doorheen - hij blijft slippen, ook bij volledige lockup - en kookt zichzelf op tot hij vastloopt. Een goedkopere koppeling bij een fors vermogen is dus een reëel risico, niet alleen een betrouwbaarheidscijfer op papier.</p>
+    <div id="g-clutch-inventory-list"></div>
+    <div class="row"><label>Merk (nieuw)</label><select id="g-clutch-spare-brand"></select></div>
+    <button class="secondary" id="g-buy-clutch-spare" type="button">Koppeling kopen</button>
+    <p class="note">Slijt mee met elke run (test of echt - zie Conditie hierboven, met opzet een ruwe schatting). Met reserve monteert de crew 'm bij koppelingsschade (tegen montagekosten - niet meer gratis); zonder reserve blijft ze kapot gemonteerd zitten tot je 'm zelf repareert (geen automatische reparatie meer) - dit evenement ben je er in elk geval klaar mee. Bij een heftige klapper is de koppeling soms total loss, ook mét reserve op de trailer - dan moet 'm alsnog vervangen worden en is dit evenement sowieso voorbij.</p>
+    <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
+    <p class="note" style="margin-top:0;">Wisselend aanbod, per merk een eigen leeftijd - hoe ouder, hoe goedkoper maar ook hoe minder betrouwbaar. Kopen monteert het direct (het huidige onderdeel gaat naar de reservevoorraad, niet weg) - dit is dus een bewuste vervanging, geen extra reserve erbij. Ververst bij elk nieuw evenement.</p>
+    <div id="g-clutch-market-list"></div>
+    </div>
+
+    <div class="garage-section" id="garage-sec-fuelpump">
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Brandstofpomp</div>
+    <p class="note" style="margin-top:0;" id="g-fuelPump-equipped">Geen brandstofpomp gemonteerd.</p>
+    <p class="note" style="margin-top:0;" id="g-fuelPump-condition"></p>
+    <button class="secondary" id="g-repair-fuelPump" type="button" style="display:none;">Brandstofpomp repareren</button>
+    <p class="note" style="margin-top:0;">De pomp draait mechanisch mee met de motor en bepaalt wat 100% op de brandstofcurve daadwerkelijk aan debiet levert - een pomp van 90 gpm en eentje van 120 gpm leveren bij dezelfde standknop een heel andere hoeveelheid brandstof (zie het brandstofdebiet in de motorgrafiek). Zonder gemonteerde pomp kun je niet racen, net als bij motor, koppen, blower en koppeling.</p>
+    <div id="g-fuelPump-inventory-list"></div>
+    <div class="row"><label>Merk (nieuw)</label><select id="g-fuelPump-spare-brand"></select></div>
+    <button class="secondary" id="g-buy-fuelPump-spare" type="button">Brandstofpomp kopen</button>
+    <p class="note">Slijt mee met elke run (test of echt - zie Conditie hierboven), en kan bij motorschade ook zelf meegenomen worden (vooral bij een te mager mengsel). Zonder reserve blijft ze kapot gemonteerd zitten tot je 'm zelf repareert - geen automatische fix.</p>
+    <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
+    <p class="note" style="margin-top:0;">Wisselend aanbod, per merk een eigen leeftijd - hoe ouder, hoe goedkoper maar ook hoe minder betrouwbaar. Kopen monteert het direct (het huidige onderdeel gaat naar de reservevoorraad, niet weg) - dit is dus een bewuste vervanging, geen extra reserve erbij. Ververst bij elk nieuw evenement.</p>
+    <div id="g-fuelPump-market-list"></div>
+    </div>
+
+    <div class="garage-section" id="garage-sec-trailer">
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Trailer</div>
+    <p class="note" style="margin-top:0;" id="g-trailer-equipped">Geen trailer.</p>
+    <div class="row"><label>Type</label><select id="g-trailer-select"></select></div>
+    <button class="secondary" id="g-buy-trailer" type="button">Trailer kopen</button>
+    <p class="note">Zonder trailer kun je niet naar een evenement - en zonder trailer past er ook geen enkel reserve-onderdeel mee. Een fifth-wheel (achter een pickup) is het goedkoopst maar heeft weinig laadruimte over voor reserves; een boxtrailer of volledige semi-oplegger kost meer maar neemt veel meer reserve-onderdelen mee.</p>
+    </div>
+
+    <div class="garage-section" id="garage-sec-chassis">
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Chassis</div>
+    <p class="note" style="margin-top:0;" id="g-chassis-equipped">Geen chassis gemonteerd.</p>
+
+    <div id="g-chassis-build-block">
+    <div class="row"><label>Chassislengte <span class="val" id="v-g-chassis-length">300"</span></label>
+      <input type="range" id="g-chassis-length" min="280" max="320" value="300" step="1"></div>
+    <p class="note" style="margin-top:0;">Lengte binnen het NHRA-reglement (280"-320") - alleen bij zelf laten bouwen kies je 'm zelf; eenmaal gebouwd (of tweedehands gekocht) ligt de lengte vast, ook als je later de body nog vervangt.</p>
+    <div class="row"><label>Bodytype (nieuwbouw)</label>
+      <select id="g-chassis-build-body">
+        <option value="aluminium">Aluminium</option>
+        <option value="carbon">Carbon (duurder, lichter)</option>
+      </select>
+    </div>
+    <button class="secondary" id="g-build-chassis" type="button">Chassis laten bouwen</button>
+    <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
+    <p class="note" style="margin-top:0;">Tweedehands chassis hebben al een vaste lengte en body, bepaald door de vorige eigenaar - goedkoper dan zelf laten bouwen, maar geen keuze in lengte. Ververst bij elk nieuw evenement.</p>
+    <div id="g-chassis-market-list"></div>
+    </div>
+
+    <div id="g-chassis-owned-block" style="display:none;">
+    <div class="row"><label>Bodytype</label>
+      <select id="g-body-material">
+        <option value="aluminium">Aluminium</option>
+        <option value="carbon">Carbon (duurder, lichter)</option>
+      </select>
+    </div>
+    <button class="secondary" id="g-buy-body" type="button">Nieuwe body kopen</button>
+    <p class="note">De body kan op elk moment vervangen worden, los van de vastliggende chassislengte - carbon is duurder maar lichter.</p>
+    </div>
+
+    <div class="row"><label><input type="checkbox" id="g-mudflaps"> Mudflaps gemonteerd</label></div>
+    <p class="note" style="margin-top:0;">Mudflaps zijn achter de achterbanden gemonteerd platen: geven ~5% extra downforce (schonere luchtstroom van de banden af) tegen ~5 kg extra gewicht en iets meer luchtweerstand.</p>
+    <div class="row"><label>Motorpositie (setback) <span class="val" id="v-g-engine-position">0</span></label>
+      <input type="range" id="g-engine-position" min="-3" max="3" value="0" step="1"></div>
+    <p class="note" style="margin-top:0;">Motor naar voren (negatief) legt meer gewicht op de neus (minder wheelie-risico), naar achteren (positief) juist minder - net als bij ballast, maar dan zonder het gewicht zelf toe te voegen.</p>
+    </div>
+
+    <div class="garage-section" id="garage-sec-tank">
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Brandstoftank</div>
+    <div class="row"><label>Tankgrootte <span class="val" id="v-g-tank-size">55 gal</span></label>
+      <input type="range" id="g-tank-size" min="45" max="75" value="55" step="1"></div>
+    <p class="note" id="g-tank-capacity-hint" style="margin-top:0;">--</p>
+    <div class="row"><label>Tankpositie</label>
+      <select id="g-tank-position">
+        <option value="forward">Vooraan</option>
+        <option value="neutral" selected>Midden</option>
+        <option value="rearward">Achteraan</option>
+      </select>
+    </div>
+    <p class="note" style="margin-top:0;">Grotere tank is zwaarder maar zit langer vol; positie schuift een deel van dat gewicht mee richting neus of achteras (zie Gewicht per band hieronder) - net als motorpositie, maar dan met de tank. Slechts een deel van de tankinhoud is bruikbare wedstrijdbrandstof - loopt de tank tijdens een run leeg, dan explodeert de motor direct (kurkdroog en compleet mager op het zwaarst belaste moment), met dezelfde gevolgen als elke andere ernstige motorschade (reserve, reparatie, of total loss - zie Motor hierboven).</p>
+    </div>
+
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Overzicht</div>
+    <div class="results-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="stat"><div class="lbl">Totale investering</div><div class="num" id="g-build-value">--</div></div>
+      <div class="stat"><div class="lbl">Gewichtsverschil</div><div class="num" id="g-weight-delta">--</div></div>
+      <div class="stat"><div class="lbl">Reservecapaciteit</div><div class="num" id="g-spare-capacity">--</div></div>
+    </div>
+    <div class="results-grid second" style="grid-template-columns:repeat(3,1fr);">
+      <div class="stat"><div class="lbl">Vermogen</div><div class="num" id="g-power-mult">--</div></div>
+      <div class="stat"><div class="lbl">Betrouwbaarheid motor</div><div class="num" id="g-reliability-mult">--</div></div>
+      <div class="stat"><div class="lbl">Betrouwbaarheid koppeling</div><div class="num" id="g-clutch-reliability-mult">--</div></div>
+    </div>
+    <div class="results-grid second" style="grid-template-columns:1fr;">
+      <div class="stat"><div class="lbl">Brandstofpomp debiet (100% op de curve)</div><div class="num" id="g-fuelpump-gpm">--</div></div>
+    </div>
+    <p class="note" style="margin-top:0;">Betrouwbaarheid boven 100% betekent dat het onderdeel langzamer schade opbouwt dan de standaardbouw (kan dus meer hebben voor het kapot gaat), eronder juist sneller - stem je brandstof- en ontstekingscurve bij een minder betrouwbare motor voorzichtiger af, en houd bij een minder betrouwbare koppeling meer marge tot oververhitting aan. Betrouwbaarheid motor telt de brandstofpomp inmiddels ook mee. Het debiet bepaalt wat 100% op de brandstofcurve daadwerkelijk levert - dezelfde standknop geeft met een grotere pomp meer brandstof.</p>
+
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Gewicht per band</div>
+    <div class="results-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="stat"><div class="lbl">Totaalgewicht</div><div class="num" id="g-total-weight">--</div></div>
+      <div class="stat"><div class="lbl">Voor (2 banden)</div><div class="num" id="g-front-weight">--</div></div>
+      <div class="stat"><div class="lbl">Achter (2 banden)</div><div class="num" id="g-rear-weight">--</div></div>
+    </div>
+    <p class="note" id="g-weight-legal-note" style="margin-top:0;"></p>
+    <p class="note" style="margin-top:0;">Inclusief ballast (Chassis/setup-paneel) en motorpositie hierboven - schuif daar om hier het effect op de asverdeling en het totaalgewicht terug te zien.</p>
+    <p class="note" id="garage-status"></p>
+  </div>
+
+  <div class="panel" id="teamPanel" style="display:none;">
+    <div class="sec-title">Team bouwen</div>
+    <p class="note" style="margin-top:0;">De mensen om de auto heen, los van de onderdelen zelf. Elke rol kost (of levert, bij een pay driver) een vast salaris per evenement - geen aankoopprijs, en op elk moment te vervangen zonder ontslagvergoeding. Een nieuw team begint zonder iemand aangenomen; alles hieronder is dan een exacte 1.0×/geen-invloed-nulwaarde, precies zoals de fysica zonder team werkte.</p>
+
+    <div class="garage-section" id="team-sec-driver">
+      <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Rijder</div>
+      <p class="note" style="margin-top:0;" id="team-driver-status">Geen rijder aangenomen.</p>
+      <p class="note" style="margin-top:0;">Reactietijd (op de boom), autobeheersing (hoe goed hij de auto in de groove houdt bij bandenrook - pedalt hij 'm capabel terug of niet) en precisie/discipline (luistert hij naar het ingestelde afschakelpunt, of mist hij het) zijn drie losse eigenschappen. Een pay driver is goedkoop of brengt zelfs geld mee (sponsorgeld via zijn eigen netwerk), maar is vaak zwakker en minder gedisciplineerd - hij rijdt met wat de tune hem geeft, maar luistert minder precies naar de instructies. Er zijn ook pay drivers die gewoon goed zijn, dat is geen garantie de andere kant op.</p>
+      <div class="row"><label><span class="name">Kandidaat</span></label><select id="team-driver-select"></select></div>
+      <button class="secondary" data-hire-role="driver" type="button">Aannemen</button>
+      <button class="secondary" id="team-driver-fire" data-fire-role="driver" type="button" style="display:none;">Ontslaan</button>
+    </div>
+
+    <div class="garage-section" id="team-sec-carchief">
+      <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Car chief</div>
+      <p class="note" style="margin-top:0;" id="team-carChief-status">Geen car chief aangenomen.</p>
+      <p class="note" style="margin-top:0;">Zorgt dat de auto zelf goed in elkaar zit - correcte specs, verse bevestigingen, een nette opbouw - los van welke merken er gemonteerd zijn (zie Auto bouwen). Een scherpere car chief laat motor en koppeling langzamer schade opbouwen, én verkleint de kans dat een klapper meteen total loss is in plaats van iets dat de crew aan de baan kan repareren.</p>
+      <div class="row"><label><span class="name">Kandidaat</span></label><select id="team-carChief-select"></select></div>
+      <button class="secondary" data-hire-role="carChief" type="button">Aannemen</button>
+      <button class="secondary" id="team-carChief-fire" data-fire-role="carChief" type="button" style="display:none;">Ontslaan</button>
+    </div>
+
+    <div class="garage-section" id="team-sec-scout">
+      <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Sponsor-scout</div>
+      <p class="note" style="margin-top:0;" id="team-scout-status">Geen sponsor-scout aangenomen.</p>
+      <p class="note" style="margin-top:0;">Zoekt actief naar sponsors tussen evenementen door - raakt niet aan de auto. Een beter genetwerkte scout levert na een evenement niet alleen méér sponsorvoorstellen op (zie Financiën), maar ook gemiddeld gulle(re) bedragen.</p>
+      <div class="row"><label><span class="name">Kandidaat</span></label><select id="team-scout-select"></select></div>
+      <button class="secondary" data-hire-role="scout" type="button">Aannemen</button>
+      <button class="secondary" id="team-scout-fire" data-fire-role="scout" type="button" style="display:none;">Ontslaan</button>
+    </div>
+
+    <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Overzicht</div>
+    <div class="results-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="stat"><div class="lbl">Reactietijd rijder</div><div class="num" id="team-reaction-mult">--</div></div>
+      <div class="stat"><div class="lbl">Autobeheersing rijder</div><div class="num" id="team-carcontrol-mult">--</div></div>
+      <div class="stat"><div class="lbl">Discipline rijder</div><div class="num" id="team-discipline-mult">--</div></div>
+    </div>
+    <div class="results-grid second" style="grid-template-columns:repeat(3,1fr);">
+      <div class="stat"><div class="lbl">Motorschade car chief</div><div class="num" id="team-engine-damage-mult">--</div></div>
+      <div class="stat"><div class="lbl">Koppelingsschade car chief</div><div class="num" id="team-clutch-damage-mult">--</div></div>
+      <div class="stat"><div class="lbl">Total-loss-kans car chief</div><div class="num" id="team-catastrophic-mult">--</div></div>
+    </div>
+    <div class="results-grid second" style="grid-template-columns:repeat(2,1fr);">
+      <div class="stat"><div class="lbl">Extra sponsorvoorstellen</div><div class="num" id="team-scout-count">--</div></div>
+      <div class="stat"><div class="lbl">Sponsorbedrag scout</div><div class="num" id="team-scout-amount">--</div></div>
+    </div>
+    <p class="note" style="margin-top:0;">Totale teamsalarissen: <span id="team-wages">--</span>, verrekend bij inschrijving voor een evenement (samen met het inschrijfgeld), niet bij een losse testrun.</p>
+  </div>
+
+  <div class="grid" id="settingsGrid">
+    <div>
+      <div class="panel collapsible" id="setupPanel" data-collapse-key="setup">
+        <div class="sec-title">Setup</div>
+        <div class="panel-body">
+        <div class="row">
+          <label>Opgeslagen setups</label>
+          <select id="setupSelect"><option value="">— kies een setup —</option></select>
+        </div>
+        <button class="secondary" id="loadSetupBtn">Laden</button>
+        <button class="secondary" id="deleteSetupBtn">Verwijderen</button>
+        <div class="row" style="margin-top:14px;">
+          <label>Naam voor nieuwe setup</label>
+          <input type="text" id="setupName" placeholder="bijv. Denver hete middag">
+        </div>
+        <button class="run" id="saveSetupBtn">Setup opslaan</button>
+        <p class="note" id="setup-status">Setups worden lokaal in je browser bewaard (niet gesynchroniseerd tussen apparaten of gedeeld). Omvat motor, koppeling, chassis en rijder - niet de omgevingscondities (die stel je apart in, of komen uit de actieve evenement-ronde).</p>
+        </div>
+      </div>
+
+      <div class="panel collapsible" data-collapse-key="environment">
+        <div class="sec-title">Environment</div>
+        <div class="panel-body">
+        <div class="row"><label>Luchttemperatuur <span class="val" id="v-airtemp">30°C</span></label><input type="range" id="airtemp" min="10" max="45" value="30" step="1"></div>
+        <div class="row"><label>Luchtvochtigheid <span class="val" id="v-hum">40%</span></label><input type="range" id="hum" min="0" max="100" value="40" step="1"></div>
+        <div class="row"><label>Luchtdruk <span class="val" id="v-baro">29.90 inHg</span></label><input type="range" id="baro" min="2880" max="3020" value="2990" step="1"></div>
+        <div class="row"><label>Baan temperatuur <span class="val" id="v-track">28°C</span></label><input type="range" id="track" min="15" max="65" value="28" step="1"></div>
+        <div class="row"><label>VHT / baanprep <span class="val" id="v-grip">70%</span></label><input type="range" id="grip" min="0" max="100" value="70" step="1"></div>
+        <p class="note" id="da-hint">Density altitude: -- ft</p>
+        <p class="note" id="grip-hint">Effectieve grip: -- (uitkomst van VHT% + baantemperatuur + bandenspanning)</p>
+        <p class="note" id="event-env-note" style="display:none;">Tijdens een evenement worden deze vijf bepaald door de actieve ronde (zie het Evenement-paneel hierboven), niet door jou.</p>
+        </div>
+      </div>
+
+      <div class="panel collapsible" data-collapse-key="engine">
+        <div class="sec-title">Engine</div>
+        <div class="panel-body">
+        <div class="row"><label>Blower overdrive <span class="val" id="v-blower">48%</span></label><input type="range" id="blower" min="20" max="70" value="48" step="1"></div>
+        <div class="row"><label>Nitro percentage <span class="val" id="v-fuel">90%</span></label><input type="range" id="fuel" min="75" max="98" value="90" step="1"></div>
+        <p class="note" id="nitro-hint">Richtwaarde voor dit weer: 90% (rondom 90% is de norm; bij warmere, ijlere lucht wat meer, bij koude dichte lucht wat minder)</p>
+        <p class="flag" id="nitro-illegal-flag" hidden>Boven 90% nitro is buiten het NHRA-reglement - alleen voor testdoeleinden, dit levert meer vermogen dan een legale tune ooit mag maken.</p>
+        <div class="row"><label>Brandstof stage 1 tijd <span class="val" id="v-fuel1t">0.80s</span></label><input type="range" id="fuel1t" min="0" max="150" value="80" step="5"></div>
+        <div class="row"><label>Brandstof stage 1 toevoer <span class="val" id="v-fuel1p">70%</span></label><input type="range" id="fuel1p" min="40" max="100" value="70" step="1"></div>
+        <div class="row"><label>Brandstof stage 2 tijd <span class="val" id="v-fuel2t">1.25s</span></label><input type="range" id="fuel2t" min="50" max="200" value="125" step="5"></div>
+        <div class="row"><label>Brandstof stage 2 toevoer <span class="val" id="v-fuel2p">78%</span></label><input type="range" id="fuel2p" min="40" max="100" value="78" step="1"></div>
+        <div class="row"><label>Brandstof stage 3 tijd <span class="val" id="v-fuel3t">1.75s</span></label><input type="range" id="fuel3t" min="100" max="250" value="175" step="5"></div>
+        <div class="row"><label>Brandstof stage 3 toevoer <span class="val" id="v-fuel3p">90%</span></label><input type="range" id="fuel3p" min="40" max="100" value="90" step="1"></div>
+        <div class="row"><label>Brandstof stage 4 tijd <span class="val" id="v-fuel4t">2.95s</span></label><input type="range" id="fuel4t" min="150" max="350" value="295" step="5"></div>
+        <div class="row"><label>Brandstof stage 4 toevoer <span class="val" id="v-fuel4p">90%</span></label><input type="range" id="fuel4p" min="40" max="100" value="90" step="1"></div>
+        <div class="row"><label>Brandstof stage 5 tijd <span class="val" id="v-fuel5t">3.60s</span></label><input type="range" id="fuel5t" min="250" max="450" value="360" step="5"></div>
+        <div class="row"><label>Brandstof stage 5 toevoer <span class="val" id="v-fuel5p">88%</span></label><input type="range" id="fuel5p" min="40" max="100" value="88" step="1"></div>
+        <div class="row"><label>Brandstof stage 6 tijd <span class="val" id="v-fuel6t">4.20s</span></label><input type="range" id="fuel6t" min="300" max="600" value="420" step="5"></div>
+        <div class="row"><label>Brandstof stage 6 toevoer <span class="val" id="v-fuel6p">85%</span></label><input type="range" id="fuel6p" min="40" max="100" value="85" step="1"></div>
+        <p class="note">Brandstofpomp draait mee met de motor, dus die levert vanzelf meer bij hoger toerental en minder bij lager toerental. Top Fuel heeft geen versnellingsbak - zodra de koppeling écht vastpakt (stage 6 dicht bij 100%) zijn motor- en wieltoerental letterlijk 1:1, dus het toerental zakt bij die volledige lockup fors weg (de auto rijdt op dat moment nog niet snel genoeg voor het toerental dat de vaste overbrenging daar "wil") en klimt daarna pas geleidelijk weer op met de snelheid mee - dat duurt beduidend langer dan de lockup zelf. De curve moet dus niet alleen tijdens de lockup zelf open staan, maar ook nog een tijd erna, anders loopt hij te mager en blaas je 'm op. Pas als het toerental echt weer richting de 8.600 klimt, mag de curve weer dicht. Zes eigen stages, net als de koppeling hierboven - elke stage heeft zijn eigen tijd én toevoerpercentage, los van de koppelingstijden.</p>
+        <div class="row"><label>Koppakking dikte <span class="val" id="v-gasket">0.040"</span></label><input type="range" id="gasket" min="25" max="60" value="40" step="1"></div>
+        <div class="row"><label>Ontsteking @0.0s <span class="val" id="v-ign1">62°</span></label><input type="range" id="ign1" min="20" max="75" value="62" step="1"></div>
+        <div class="row"><label>Ontsteking @0.5s <span class="val" id="v-ign2">58°</span></label><input type="range" id="ign2" min="20" max="75" value="58" step="1"></div>
+        <div class="row"><label>Ontsteking @1.0s <span class="val" id="v-ign3">52°</span></label><input type="range" id="ign3" min="20" max="75" value="52" step="1"></div>
+        <div class="row"><label>Ontsteking @1.5s <span class="val" id="v-ign4">46°</span></label><input type="range" id="ign4" min="20" max="75" value="46" step="1"></div>
+        <div class="row"><label>Ontsteking @2.75s <span class="val" id="v-ign5">42°</span></label><input type="range" id="ign5" min="20" max="75" value="42" step="1"></div>
+        <div class="row"><label>Ontsteking @4.0s <span class="val" id="v-ign6">38°</span></label><input type="range" id="ign6" min="20" max="75" value="38" step="1"></div>
+        <p class="note">Ontsteking is een curve met 6 punten, zoals brandstof en koppeling. Nitro's trage verbranding vraagt véél meer voorontsteking dan benzine - op de launch 60-65° om het vermogen op te bouwen (MSD), daarna trekt de crew chief 'm terug naarmate de koppeling verder aankomt. Boven 65° levert meer graden geen extra vermogen meer op, alleen extra hitterisico. Vanaf 2,75s bewaakt een ingebouwde retarder het toerental: zodra het boven 7.900 rpm komt begint de box direct (maar geleidelijk) terug te trekken, en hoe verder het toerental daarboven blijft klimmen, hoe sneller hij verder terugtrekt - tot een plafond van 30° (max 15°/s terug omhoog), los van wat jij hier instelt - veiligheidsapparatuur, geen tuning-knop. Blijft de effectieve ontsteking ook ná die terugtrekking te hoog, dan loopt de motor alsnog heet risico.</p>
+        <p class="note" id="power-hint">Geschat piekvermogen: -- pk</p>
+        </div>
+      </div>
+
+      <div class="panel collapsible" data-collapse-key="clutch">
+        <div class="sec-title">Clutch</div>
+        <div class="panel-body">
+        <div class="row"><label>Stage 1 tijd <span class="val" id="v-s1t">0.80s</span></label><input type="range" id="s1t" min="0" max="100" value="80" step="5"></div>
+        <div class="row"><label>Stage 1 max lockup <span class="val" id="v-s1p">65%</span></label><input type="range" id="s1p" min="10" max="90" value="65" step="1"></div>
+        <div class="row"><label>Stage 1 lager snelheid <span class="val" id="v-s1speed">500%/s</span></label><input type="range" id="s1speed" min="20" max="800" value="500" step="5"></div>
+        <div class="row"><label>Stage 2 tijd <span class="val" id="v-s2t">1.25s</span></label><input type="range" id="s2t" min="50" max="150" value="125" step="5"></div>
+        <div class="row"><label>Stage 2 max lockup <span class="val" id="v-s2p">67%</span></label><input type="range" id="s2p" min="10" max="90" value="67" step="1"></div>
+        <div class="row"><label>Stage 2 lager snelheid <span class="val" id="v-s2speed">20%/s</span></label><input type="range" id="s2speed" min="5" max="400" value="20" step="5"></div>
+        <div class="row"><label>Stage 3 tijd <span class="val" id="v-s3t">1.75s</span></label><input type="range" id="s3t" min="100" max="200" value="175" step="5"></div>
+        <div class="row"><label>Stage 3 max lockup <span class="val" id="v-s3p">69%</span></label><input type="range" id="s3p" min="10" max="95" value="69" step="1"></div>
+        <div class="row"><label>Stage 3 lager snelheid <span class="val" id="v-s3speed">10%/s</span></label><input type="range" id="s3speed" min="5" max="400" value="10" step="5"></div>
+        <div class="row"><label>Stage 4 tijd <span class="val" id="v-s4t">2.20s</span></label><input type="range" id="s4t" min="150" max="250" value="220" step="5"></div>
+        <div class="row"><label>Stage 4 max lockup <span class="val" id="v-s4p">73%</span></label><input type="range" id="s4p" min="10" max="97" value="73" step="1"></div>
+        <div class="row"><label>Stage 4 lager snelheid <span class="val" id="v-s4speed">20%/s</span></label><input type="range" id="s4speed" min="5" max="400" value="20" step="5"></div>
+        <div class="row"><label>Stage 5 tijd <span class="val" id="v-s5t">2.60s</span></label><input type="range" id="s5t" min="180" max="300" value="260" step="5"></div>
+        <div class="row"><label>Stage 5 max lockup <span class="val" id="v-s5p">85%</span></label><input type="range" id="s5p" min="10" max="99" value="85" step="1"></div>
+        <div class="row"><label>Stage 5 lager snelheid <span class="val" id="v-s5speed">80%/s</span></label><input type="range" id="s5speed" min="20" max="800" value="80" step="5"></div>
+        <div class="row"><label>Stage 6 tijd <span class="val" id="v-s6t">2.95s</span></label><input type="range" id="s6t" min="200" max="350" value="295" step="5"></div>
+        <div class="row"><label>Stage 6 max lockup <span class="val" id="v-s6p">100%</span></label><input type="range" id="s6p" min="10" max="100" value="100" step="1"></div>
+        <div class="row"><label>Stage 6 lager snelheid <span class="val" id="v-s6speed">160%/s</span></label><input type="range" id="s6speed" min="20" max="800" value="160" step="5"></div>
+        <div class="row"><label>Vingergewicht (gewenste lockup) <span class="val" id="v-fw">100</span></label><input type="range" id="fw" min="0" max="100" value="100" step="1"></div>
+        <p class="note" style="margin-top:0;">Zwaardere vingers duwen door middelpuntvliedende kracht harder naar buiten - lichtere vingers maken de koppeling minder agressief én minder voorspelbaar: bij weinig vingergewicht is volledige lockup niet onmogelijk, maar wel minder waarschijnlijk en wisselt het van run tot run. Op 100 blijft dit exact zoals voorheen (altijd volledige lockup haalbaar).</p>
+        <p class="note" id="clutch-reach-hint">Haalbare lockup per stage: --</p>
+        <p class="note">Elke stage heeft zijn eigen lager snelheid (hydraulische bleed rate) - de koppeling beweegt dus rustig naar elk setpoint toe in plaats van te springen, en met 6 in plaats van 3 momenten kan die overgang veel geleidelijker verlopen dan de vrij verticale lijn die 3 stappen gaf. Stage 6 is het plafond voor de rest van de run (géén automatische sprong naar 100% erna): op 100% geeft dat moment in echte telemetrie de piek-G, niet de launch. Zet het lager om de koppeling bewust te laten slippen wanneer de baan geen volledige lockup aankan - dat beschermt de banden, maar de koppeling zelf betaalt de rekening (oververhit en uiteindelijk kapot als je het te lang of te ver volhoudt). De koppelingslager is een eenrichtingsmechaniek: hij kan alleen naar méér lockup toe bewegen, nooit terug. Stage-percentages moeten dus oplopend zijn (of gelijk aan de vorige) om effect te hebben - een lager percentage dan al bereikt is, doet niets (de lager houdt gewoon vast waar hij al is). De 60ft-tijd bescherm je dus door in de eerste stages bewust nog niet naar hoge lockup te gaan, niet door na een piek weer terug te vallen.</p>
+        </div>
+      </div>
+
+      <div class="panel collapsible" data-collapse-key="chassis">
+        <div class="sec-title">Chassis &amp; banden</div>
+        <div class="panel-body">
+        <div class="row"><label>Bandenspanning <span class="val" id="v-tpsi">7.5 psi</span></label><input type="range" id="tpsi" min="60" max="90" value="75" step="1"></div>
+        <div class="row"><label>Vleugelhoek (trim) <span class="val" id="v-wing">0.0°</span></label><input type="range" id="wing" min="-20" max="10" value="0" step="1"></div>
+        <p class="note">Bandenspanning: NHRA Top Fuel loopt doorgaans 6–9 psi. Vleugeltrim is volgens het reglement asymmetrisch begrensd: maximaal +1° positief en -2° negatief ten opzichte van vlak (in Denver geldt geen maximum).</p>
+        <div class="row"><label>Voorvleugel <span class="val" id="v-fwing">50%</span></label><input type="range" id="fwing" min="0" max="100" value="50" step="5"></div>
+        <p class="note">Het reglement begrenst de voorvleugel op breedte (max 63") en bodemspeling van de spoiler (max 5.00"), niet op een graden-hoek zoals de achtervleugel - dit is dus een relatieve instelling, geen letterlijk aantal graden. Weinig voorvleugel geeft weinig grip vóór: bij een harde launch willen de voorwielen dan te veel omhoog. Veel voorvleugel houdt de neus juist stevig laag, maar een té agressieve stand op hoge snelheid maakt de besturing "zoekend" (de neus gaat lichtjes heen en weer i.p.v. strak recht te lopen) in plaats van stabieler.</p>
+        <div class="row"><label>Wheeliebar hoogte <span class="val" id="v-wbar">2.5"</span></label><input type="range" id="wbar" min="10" max="40" value="25" step="1"></div>
+        <p class="note">Hoogte van wegdek tot onderkant wielen; het reglement staat maximaal 4 inch toe. Lager geeft meer hefboom tegen wheelies (stabieler bij een harde hit), hoger laat de neus verder los komen.</p>
+        <div class="row"><label>Ballast — neus (voorvleugelbuis) <span class="val" id="v-ballfront">0 lb</span></label><input type="range" id="ballfront" min="0" max="250" value="0" step="5"></div>
+        <div class="row"><label>Ballast — overig (vrij te plaatsen) <span class="val" id="v-ballrear">0 lb</span></label><input type="range" id="ballrear" min="0" max="150" value="0" step="5"></div>
+        <p class="note">Het reglement staat maximaal 250 lb ballast toe, standaard gemonteerd in de voorvleugelbuis - dat is de eerste schuif. Los daarvan mag je verder in de auto nog vrij extra ballast plaatsen (bijv. om het zwaartepunt te verschuiven); dat is de tweede schuif. Beide tellen gewoon mee in het totaalgewicht - meer ballast is altijd een tijdoffer, maar neus-ballast houdt de voorwielen wel beter aan de grond. Minimumgewicht is 2320 lb (NHRA-reglement) - kom je daaronder (bijv. door een lichte carbon body of dure lichte onderdelen zonder genoeg ballast), dan is dat een DQ. Zie "Gewicht per band" in Auto bouwen voor het totaalgewicht en de asverdeling.</p>
+        </div>
+      </div>
+
+      <div class="panel collapsible" data-collapse-key="rijder">
+        <div class="sec-title">Rijder</div>
+        <div class="panel-body">
+        <p class="note" id="rijder-team-note" style="margin-top:0;">--</p>
+        <div class="row"><label>Agressiviteit <span class="val" id="v-aggro">70</span></label><input type="range" id="aggro" min="0" max="100" value="70" step="5"></div>
+        <p class="note">Bij aanhoudende bandenrook (&gt;~55% slip) pedalt de rijder de auto (korte gas-tik om de banden weer te laten grippen) voor hij het opgeeft - hoe vaak hangt af van agressiviteit: onder 20 helemaal niet (meteen van het gas), 20-49 één keer, 50-79 twee keer, vanaf 80 tot 3 keer.</p>
+        <div class="row">
+          <label>Reageert tot</label>
+          <select id="watchft">
+            <option value="60">60 ft (alleen de launch)</option>
+            <option value="330">330 ft</option>
+            <option value="660">660 ft (1/8 mile)</option>
+            <option value="1000" selected>1000 ft (hele run)</option>
+          </select>
+        </div>
+        <p class="note">Tot hoever de rijder actief probeert een bui bandenrook te redden met pedaaltechniek. Voorbij dit punt probeert hij dat niet meer - maar bij aanhoudende rook gaat hij dan gewoon van het gas (lift), in plaats van blind door te rijden.</p>
+        <div class="row"><label>Gas dicht op <span class="val" id="v-shutoff">1000</span> ft</label><input type="range" id="shutoff" min="60" max="1000" value="1000" step="10"></div>
+        <p class="note">Vast, vooraf ingesteld afschakelpunt (zoals een delay box). Hier gaat de rijder altijd van het gas, los van rook en agressiviteit - dit staat los van het rook-reactiesysteem hierboven.</p>
+        </div>
+      </div>
+
+      <button class="run" id="runBtn">Run it</button>
+    </div>
+
+    <div>
+      <div class="panel" id="resultsPanel">
+        <div class="sec-title">Resultaat</div>
+        <div id="placeholder" class="placeholder">Stel je tune in en druk op "Run it"</div>
+        <div id="resultsContent" style="display:none;">
+          <div class="results-grid">
+            <div class="stat"><div class="lbl">60 ft</div><div class="num" id="r-60">--</div></div>
+            <div class="stat"><div class="lbl">330 ft</div><div class="num" id="r-330">--</div></div>
+            <div class="stat"><div class="lbl">660 ft (1/8)</div><div class="num" id="r-660">--</div></div>
+          </div>
+          <div class="results-grid second">
+            <div class="stat"><div class="lbl">660 ft snelheid</div><div class="num" id="r-660mph">--</div></div>
+            <div class="stat"><div class="lbl">ET (1000 ft)</div><div class="num" id="r-et">--</div></div>
+            <div class="stat"><div class="lbl">Trap snelheid</div><div class="num" id="r-mph">--</div></div>
+          </div>
+          <svg id="traceChart" viewBox="0 0 640 260"></svg>
+          <div class="legend">
+            <span><span class="dot" style="background:#f2a71b"></span>ground speed (mph)</span>
+            <span><span class="dot" style="background:#c23b32"></span>wheel speed (mph)</span>
+            <span><span class="dot" style="background:#7a8fae"></span>lagerpositie (werkelijk, %, rechteras)</span>
+            <span><span class="dot" style="background:#8bc98b"></span>effectieve lockup (na vingergewicht+warmte, %, rechteras)</span>
+          </div>
+          <div id="spinFlag"></div>
+
+          <div class="sec-title" style="margin-top:18px;">Motor: toerental, ontsteking &amp; brandstof</div>
+          <p class="note" style="margin-top:0;">Alle drie indicatieve kanalen, geen gekalibreerde uitkomsten (zoals "geschat piekvermogen") - hier gecombineerd in één grafiek omdat ze onderling samenhangen. Elk kanaal heeft zijn eigen schaal (toerental links in paars, ontsteking rechts-binnen in oranje, brandstofdebiet rechts-buiten in cyaan), dus lees op kleur, niet op absolute hoogte tussen kanalen. Top Fuel heeft geen versnellingsbak - zolang de koppeling nog slipt jaagt de motor vrij op (met een piek bij de launch zodra de band doorslipt), maar zodra hij écht vastpakt (stage 6 dicht bij 100%) zijn motor- en wieltoerental 1:1 verbonden: het toerental zakt dan fors weg ("pulldown", want de auto rijdt op dat moment nog niet snel genoeg) en klimt daarna mee met de snelheid tot aan de finish. Brandstofpomp is motorgedreven en volgt het toerental direct. Ontsteking toont de ingestelde curve (gestippeld) tegenover de effectieve waarde na de retarder (doorgetrokken); voor 2,75s zijn ze gelijk, erna grijpt de retarder pas in zodra het toerental daadwerkelijk boven 7.900 rpm uitkomt - bij een rustige tune gebeurt dat soms helemaal niet.</p>
+          <svg id="engineChart" viewBox="0 0 640 200" role="img" aria-label="Motortoerental, ontsteking en brandstofdebiet over tijd"></svg>
+          <div class="legend">
+            <span><span class="dot" style="background:#b98ee0"></span>toerental (rpm)</span>
+            <span><span class="dot" style="background:#7a8fae"></span>ontsteking ingesteld (°)</span>
+            <span><span class="dot" style="background:#e0704a"></span>ontsteking effectief (°)</span>
+            <span><span class="dot" style="background:#5ec8d8"></span>brandstofdebiet (gpm)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="inspPanel" style="display:none;">
+        <div class="sec-title">Inspectie na de run</div>
+        <div class="insp-grid">
+          <div class="insp"><div class="lbl">Koppelingswarmte</div><div class="status" id="i-clutch">--</div></div>
+          <div class="insp"><div class="lbl">Geschatte slip</div><div class="status" id="i-slip">--</div></div>
+          <div class="insp"><div class="lbl">Bougies (mengsel)</div><div class="status" id="i-plugs">--</div></div>
+          <div class="insp"><div class="lbl">Lagerslijtage</div><div class="status" id="i-bearing">--</div></div>
+          <div class="insp"><div class="lbl">Koppakking</div><div class="status" id="i-gasket">--</div></div>
+          <div class="insp"><div class="lbl">Bandenslijtage</div><div class="status" id="i-tire">--</div></div>
+          <div class="insp"><div class="lbl">Density altitude</div><div class="status" id="i-da">--</div></div>
+          <div class="insp"><div class="lbl">Piek brandstofdebiet</div><div class="status" id="i-fuelpeak">--</div></div>
+          <div class="insp"><div class="lbl">Brandstofverbruik</div><div class="status" id="i-fuelused">--</div></div>
+          <div class="insp"><div class="lbl">Rijdersactie</div><div class="status" id="i-driver">--</div></div>
+          <div class="insp"><div class="lbl">Cilinders</div><div class="status" id="i-cyl">--</div></div>
+          <div class="insp"><div class="lbl">Ontstekingsretarder</div><div class="status" id="i-retard">--</div></div>
+          <div class="insp"><div class="lbl">Totaalgewicht</div><div class="status" id="i-weight">--</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="io-modal" id="exportModal" hidden>
+  <div class="io-modal-inner">
+    <div class="sec-title" style="border-top:none; padding-top:0; margin-top:0;">Spel exporteren</div>
+    <p class="note" style="margin-top:0;" id="exportModalNote">Bestand wordt gedownload als topfuel-save.json.</p>
+    <textarea id="exportModalText" rows="8" readonly></textarea>
+    <button class="secondary" id="exportModalCopy" type="button">Kopieer naar klembord</button>
+    <button class="secondary" id="exportModalClose" type="button">Sluiten</button>
+  </div>
+</div>
+
+<div class="io-modal" id="newGameModal" hidden>
+  <div class="io-modal-inner">
+    <div class="sec-title" style="border-top:none; padding-top:0; margin-top:0;">Nieuw spel starten</div>
+    <p class="note" style="margin-top:0;">Budget, garage, team, tweedehandsmarkt en een lopend evenement worden gewist en je begint weer bij een lege garage met het startbudget. Opgeslagen setups blijven bewaard. Dit kan niet ongedaan gemaakt worden - exporteer eerst (zie hierboven) als je dit spel later terug wilt kunnen halen.</p>
+    <button class="run" id="newGameConfirmBtn" type="button">Ja, nieuw spel starten</button>
+    <button class="secondary" id="newGameCancelBtn" type="button">Annuleren</button>
+  </div>
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>
