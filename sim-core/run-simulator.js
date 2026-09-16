@@ -142,6 +142,21 @@ const FOUL_DAMAGE_RATE = 0.15;
 // HEAT_RISK_THRESHOLD in engine.js.
 const CYLINDER_DROP_THRESHOLD = 0.065;
 const ENGINE_FAILURE_THRESHOLD = 0.13;
+// Detonation - from either end of the mixture (too hot from blower/
+// compression/nitro, or too lean under load) - doesn't just burn a
+// cylinder down over time the way heatDamage/leanDamage's slower clock
+// does: a nitro engine that detonates hard enough typically spins a
+// connecting-rod bearing first, a sudden bottom-end event distinct from
+// (and often faster than) the top-end cylinder damage those two track.
+// Squared on the excess (unlike heatDamage/leanDamage, which are linear)
+// so a mild overage barely touches it while a severe one escalates fast -
+// shock loading on a bearing scales much more steeply with detonation
+// severity than gradual cylinder erosion does. A stock default tune
+// stays under HEAT_RISK_THRESHOLD and keeps richness inside the lean
+// band, so this is an exact 0 there, same guarantee as heatDamage/
+// leanDamage.
+const ROD_BEARING_DAMAGE_RATE = 8;
+const ROD_BEARING_FAILURE_THRESHOLD = 0.10;
 // Hydraulic lock: too much liquid fuel pooling in a cylinder doesn't fully
 // vaporize/burn before the piston reaches it - and liquid doesn't
 // compress, so something mechanical gives (a bent rod, worse) rather than
@@ -265,6 +280,7 @@ export function runSimulation(settings, rng = Math.random) {
   let heatDamage = 0;
   let leanDamage = 0;
   let foulDamage = 0;
+  let rodBearingDamage = 0;
   let engineFailed = false;
   let engineFailTime = null;
   let engineFailCause = null;
@@ -465,6 +481,15 @@ export function runSimulation(settings, rng = Math.random) {
     foulDamage += Math.max(0, richness) * FOUL_DAMAGE_RATE * throttle * DT;
     const engineDamage = heatDamage + leanDamage;
 
+    // Detonation risk (from either end - too hot, or too lean under load,
+    // same two signals heatDamage/leanDamage above already track) hammers
+    // the rod bearings, not the cylinders - see ROD_BEARING_DAMAGE_RATE's
+    // comment above for why it's squared instead of linear.
+    const detonationHeatExcess = Math.max(0, heatRisk - HEAT_RISK_THRESHOLD);
+    const detonationLeanExcess = Math.max(0, -richness) * lf;
+    rodBearingDamage += (detonationHeatExcess * detonationHeatExcess + detonationLeanExcess * detonationLeanExcess)
+      * ROD_BEARING_DAMAGE_RATE * loadHeatMult * garageEngineDamageMult * throttle * DT;
+
     if (!cylindersDropped && (engineDamage > CYLINDER_DROP_THRESHOLD || foulDamage > CYLINDER_DROP_THRESHOLD)) {
       cylindersDropped = true;
       cylinderDropTime = t;
@@ -474,6 +499,11 @@ export function runSimulation(settings, rng = Math.random) {
       engineFailed = true;
       engineFailTime = t;
       engineFailCause = heatDamage >= leanDamage ? "heat" : "lean";
+    }
+    if (!engineFailed && rodBearingDamage > ROD_BEARING_FAILURE_THRESHOLD) {
+      engineFailed = true;
+      engineFailTime = t;
+      engineFailCause = "bearing";
     }
     if (!engineFailed && richness > HYDROLOCK_RICHNESS_THRESHOLD) {
       engineFailed = true;
@@ -568,8 +598,11 @@ export function runSimulation(settings, rng = Math.random) {
   const avgRichness = richnessIntegral / Math.max(et, 0.001);
   const avgIgnEff = ignEffIntegral / Math.max(et, 0.001);
   const plugBalance = avgRichness + (compressionFactor - 1) * 0.3 - (avgIgnEff - 1) * 0.5;
-  // Bearing wear now tracks the same clutchDamage clock that drives
-  // failure risk AND the widening finger-to-bearing gap (see
+  // This is the CLUTCH's own throw-out bearing (clutchDamage - slip heat),
+  // not an engine part - see rodBearingDamagePct below for actual engine
+  // (connecting-rod) bearing damage, a mechanically unrelated failure on
+  // the other end of the driveline. Tracks the same clutchDamage clock
+  // that drives failure risk AND the widening finger-to-bearing gap (see
   // calcWornFingerDesired) - it's the direct readout of how much extra
   // lockup ceiling sustained slip has quietly bought the clutch.
   const bearingWear = Math.min(100, (clutchDamage / CLUTCH_FAILURE_THRESHOLD) * 100);
@@ -611,12 +644,18 @@ export function runSimulation(settings, rng = Math.random) {
   // "motor kapot" with nothing in between.
   const engineDamagePct = Math.min(100, ((heatDamage + leanDamage) / ENGINE_FAILURE_THRESHOLD) * 100);
   const foulDamagePct = Math.min(100, (foulDamage / CYLINDER_DROP_THRESHOLD) * 100);
+  // Same read-the-accumulator-directly approach as engineDamagePct/
+  // foulDamagePct above, against rodBearingDamage's own failure line -
+  // this is real engine (connecting-rod) bearing wear, NOT the clutch's
+  // own bearingWear above (see that field's comment): two mechanically
+  // unrelated bearings, on opposite ends of the driveline.
+  const rodBearingDamagePct = Math.min(100, (rodBearingDamage / ROD_BEARING_FAILURE_THRESHOLD) * 100);
 
   return {
     finished, et, mph, et60, et330, et660, mph660, trace, densityAltitude,
     clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk, nitroIllegal, tireShakeRisk,
     peakFuelGpm, fuelConsumedGal, engineFailed, engineFailTime, engineFailCause, fuelStarved,
-    cylindersDropped, cylinderDropTime, cylinderDropCause, engineDamagePct, foulDamagePct,
+    cylindersDropped, cylinderDropTime, cylinderDropCause, engineDamagePct, foulDamagePct, rodBearingDamagePct,
     clutchFailed, clutchFailTime,
     driverLifted: driverState.lifted, driverLiftTime: driverState.liftTime, driverLiftReason: driverState.liftReason, pedalCount: driverState.pedalCount,
     clutchWearLockupGainPct: peakWornGain * 100,

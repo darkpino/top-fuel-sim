@@ -75,23 +75,29 @@ export function chargeTeamWages(state, totalWagesPerEvent) {
 // piston or a burnt head as "the engine" in the abstract, and a lean
 // burn-down can just as easily be the fuel pump itself giving out under
 // it rather than a tuning mistake. cause comes straight from run-
-// simulator.js's engineFailCause ("heat", "lean", or "hydrolock") - heat-
-// side failures skew toward the blower, lean-side skew toward the heads
-// (the PRIMARY roll below is still just engine/head/blower, unchanged),
-// hydrolock is overwhelmingly a bent-rod/short-block event (a liquid-
-// locked cylinder hits the crank and rod, not the heads, blower, or
-// pump), and any of the three primaries can (SECONDARY_FAILURE_CHANCE)
-// take a second part with it - now possibly the fuel pump too. Returns 1
-// or 2 part names from {engine, head, blower, fuelPump}; the actual
-// charge for each happens separately via chargePartFailure so a spare
-// (or lack of one) is checked per part, independently.
+// simulator.js's engineFailCause ("heat", "lean", "bearing", or
+// "hydrolock") - heat-side failures skew toward the blower, lean-side
+// skew toward the heads (the PRIMARY roll below is still just engine/
+// head/blower, unchanged), hydrolock and bearing are both overwhelmingly
+// bottom-end/short-block events (a liquid-locked cylinder, or a spun
+// connecting-rod bearing from detonation, hits the crank and rod, not
+// the heads, blower, or pump) - unlike hydrolock's instant mechanical
+// event, "bearing" is what a SUSTAINED detonation-risk clock (heat or
+// lean, see rodBearingDamage) actually escalates to, so it gets the same
+// bottom-end skew - and any of the three primaries can
+// (SECONDARY_FAILURE_CHANCE) take a second part with it - now possibly
+// the fuel pump too. Returns 1 or 2 part names from {engine, head,
+// blower, fuelPump}; the actual charge for each happens separately via
+// chargePartFailure so a spare (or lack of one) is checked per part,
+// independently.
 const ENGINE_SIDE_PARTS = ["engine", "head", "blower", "fuelPump"];
 const SECONDARY_FAILURE_CHANCE = 0.25;
+const BOTTOM_END_CAUSES = ["hydrolock", "bearing"];
 
 export function rollEnginePartsFailed(cause, rng = Math.random) {
   const primary = cause === "heat"
     ? (rng() < 0.6 ? "blower" : "engine")
-    : cause === "hydrolock"
+    : BOTTOM_END_CAUSES.includes(cause)
     ? (rng() < 0.85 ? "engine" : "head")
     : (rng() < 0.55 ? "head" : "engine");
   const parts = [primary];

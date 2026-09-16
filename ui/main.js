@@ -37,7 +37,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "79";
+const APP_BUILD = "80";
 const APP_BUILD_DATE = "2026-09-16";
 $("app-version-note").textContent = `Build ${APP_BUILD} · ${APP_BUILD_DATE}`;
 
@@ -372,6 +372,8 @@ function renderRunResult(r) {
       ? `<div class="flag">Motor explodeert na ${r.engineFailTime.toFixed(2)}s — de tank liep leeg midden in de run, de motor viel in één klap kurkdroog en compleet mager. Zet een grotere tank, of stem de brandstofcurve zuiniger af.</div>`
       : r.engineFailCause === "hydrolock"
       ? `<div class="flag">Hydraulic lock na ${r.engineFailTime.toFixed(2)}s — veel te veel brandstof in de cilinder, kon niet op tijd verbranden of verdampen. Vloeistof comprimeert niet: de zuiger kon de slag niet voltooien en de motor is direct kapot. Zet de brandstofcurve fors terug.</div>`
+      : r.engineFailCause === "bearing"
+      ? `<div class="flag">Lager doorgeslagen na ${r.engineFailTime.toFixed(2)}s — aanhoudende detonatie (te heet of te mager onder belasting) heeft een drijfstanglager laten doorslaan. Een plotselinge mechanische klapper aan de onderkant van de motor, los van de cilinders zelf. Neem meer marge op blower/compressie/nitro of de brandstofcurve.</div>`
       : r.engineFailCause === "lean"
       ? `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Zet stage 2 (lockup) verder open.</div>`
       : `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% was te heet om vol te houden.</div>`;
@@ -491,6 +493,12 @@ function renderRunResult(r) {
   const foulDmgCls = statusClass(r.foulDamagePct, 50, 100);
   $("i-foul-damage").textContent = r.foulDamagePct.toFixed(0) + "%";
   $("i-foul-damage").className = "status " + foulDmgCls;
+  // Real engine (connecting-rod) bearing damage from detonation - NOT
+  // the clutch's own bearingWear (i-bearing/"Koppelingsslijtage" below,
+  // a mechanically unrelated part on the other end of the driveline).
+  const rodBearingCls = (r.engineFailed && r.engineFailCause === "bearing") ? "bad" : statusClass(r.rodBearingDamagePct, 50, 100);
+  $("i-rod-bearing").textContent = r.rodBearingDamagePct.toFixed(0) + "%";
+  $("i-rod-bearing").className = "status " + rodBearingCls;
 
   const retardCls = statusClass(r.peakIgnitionRetard, 8, 15);
   $("i-retard").textContent = r.peakIgnitionRetard > 0.1 ? `${r.peakIgnitionRetard.toFixed(1)}° teruggetrokken` : "niet geactiveerd";
@@ -1198,7 +1206,7 @@ function unusablePartsClause(fatalParts, brokenParts) {
 // same clutchDamage/CLUTCH_FAILURE_THRESHOLD clock its own failure risk
 // and lockup-gain readouts already use.
 function wearSeverityByPart(r) {
-  const engineSeverity = Math.max(r.engineDamagePct, r.foulDamagePct) / 100;
+  const engineSeverity = Math.max(r.engineDamagePct, r.foulDamagePct, r.rodBearingDamagePct) / 100;
   const clutchSeverity = r.bearingWear / 100;
   return { engine: engineSeverity, head: engineSeverity, blower: engineSeverity, fuelPump: engineSeverity, clutch: clutchSeverity };
 }
@@ -1226,10 +1234,11 @@ function chargePlayerRun(r) {
   const brokenParts = [];
   if (r.engineFailed) {
     const parts = rollEnginePartsFailed(r.engineFailCause, ladderState.rng);
-    // A liquid-locked cylinder bending a rod is almost never something a
-    // trackside crew repairs - it's overwhelmingly a write-off, on top of
+    // A liquid-locked cylinder bending a rod, or a connecting-rod bearing
+    // spinning from detonation, is almost never something a trackside
+    // crew repairs - both are overwhelmingly a write-off, on top of
     // whatever the car chief's own catastrophicMult already says.
-    const engineCatastrophicMult = catastrophicMult * (r.engineFailCause === "hydrolock" ? 2.5 : 1);
+    const engineCatastrophicMult = catastrophicMult * ((r.engineFailCause === "hydrolock" || r.engineFailCause === "bearing") ? 2.5 : 1);
     parts.forEach((part) => {
       const outcome = chargePartFailure(financesState, garageConfig, part, ladderState.rng, engineCatastrophicMult);
       if (outcome === "fatal") fatalParts.push(part);
