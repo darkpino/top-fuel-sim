@@ -565,6 +565,11 @@
             <div class="stat"><div class="lbl">ET (1000 ft)</div><div class="num" id="r-et">--</div></div>
             <div class="stat"><div class="lbl">Trap snelheid</div><div class="num" id="r-mph">--</div></div>
           </div>
+          <div class="results-grid second" style="grid-template-columns:repeat(2,1fr);">
+            <div class="stat"><div class="lbl">Reactietijd</div><div class="num" id="r-rt">--</div></div>
+            <div class="stat"><div class="lbl">Pakkettijd (RT+ET)</div><div class="num" id="r-package">--</div></div>
+          </div>
+          <p class="note" style="margin-top:0;">Reactietijd is los van ET - net als in het echt telt 'm niet mee voor je kwalificatietijd, alleen voor wie een eliminatieduel wint (RT+ET, "pakkettijd").</p>
           <svg id="traceChart" viewBox="0 0 640 260"></svg>
           <div class="legend">
             <span><span class="dot" style="background:#f2a71b"></span>ground speed (mph)</span>
@@ -592,7 +597,6 @@
           <div class="insp"><div class="lbl">Koppelingswarmte</div><div class="status" id="i-clutch">--</div></div>
           <div class="insp"><div class="lbl">Geschatte slip</div><div class="status" id="i-slip">--</div></div>
           <div class="insp"><div class="lbl">Bougies (mengsel)</div><div class="status" id="i-plugs">--</div></div>
-          <div class="insp"><div class="lbl">Koppelingsslijtage</div><div class="status" id="i-bearing">--</div></div>
           <div class="insp"><div class="lbl">Koppakking</div><div class="status" id="i-gasket">--</div></div>
           <div class="insp"><div class="lbl">Bandenslijtage</div><div class="status" id="i-tire">--</div></div>
           <div class="insp"><div class="lbl">Density altitude</div><div class="status" id="i-da">--</div></div>
@@ -600,13 +604,11 @@
           <div class="insp"><div class="lbl">Brandstofverbruik</div><div class="status" id="i-fuelused">--</div></div>
           <div class="insp"><div class="lbl">Rijdersactie</div><div class="status" id="i-driver">--</div></div>
           <div class="insp"><div class="lbl">Cilinders</div><div class="status" id="i-cyl">--</div></div>
-          <div class="insp"><div class="lbl">Motorschade (hitte/arm)</div><div class="status" id="i-engine-damage">--</div></div>
-          <div class="insp"><div class="lbl">Vervuiling (rijk)</div><div class="status" id="i-foul-damage">--</div></div>
           <div class="insp"><div class="lbl">Lagerschade (drijfstangen)</div><div class="status" id="i-rod-bearing">--</div></div>
           <div class="insp"><div class="lbl">Ontstekingsretarder</div><div class="status" id="i-retard">--</div></div>
           <div class="insp"><div class="lbl">Totaalgewicht</div><div class="status" id="i-weight">--</div></div>
         </div>
-        <p class="note" style="margin-top:0;">Motorschade, vervuiling en lagerschade zijn opbouwende klokken, geen momentopnames - ze lopen al op ruim voor een cilinder wegvalt of de motor kapot gaat, dus 100% op "Cilinders" is niet de eerste waarschuwing, het is het moment dat het al misgaat. Een deel-run (afschakelpunt op 330ft of 660ft zetten) laat je die lezen zonder de volle 1000ft te riskeren. Motorschade (hitte/arm) loopt door tot een cilinder gaat missen en uiteindelijk motorschade; vervuiling (te rijk) kost hooguit een cilinder, nooit de hele motor. Lagerschade (drijfstangen) is een ander, sneller mechanisme - aanhoudende detonatie (te heet óf te mager) slaat een drijfstanglager door, een plotselinge klapper aan de onderkant van de motor los van de cilinders. Dat is iets anders dan Koppelingsslijtage hierboven - dat lager zit in de koppeling, niet in de motor.</p>
+        <p class="note" style="margin-top:0;">Lagerschade (drijfstangen) is een opbouwende klok, geen momentopname - loopt al op ruim voor de motor er echt mee stopt. Aanhoudende detonatie (te heet blower/compressie/nitro, óf te mager onder belasting) slaat een drijfstanglager door: een plotselinge klapper aan de onderkant van de motor, los van de cilinders zelf. Een deel-run (afschakelpunt op 330ft of 660ft zetten) laat je 'm oplopen zien zonder de volle 1000ft te riskeren.</p>
       </div>
     </div>
   </div>

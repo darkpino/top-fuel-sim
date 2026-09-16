@@ -114,6 +114,17 @@ const MAX_T = 10.0;
 const CLUTCH_SLIP_HEAT_RATE = 0.0025;
 const CLUTCH_DAMAGE_RATE = 0.006;
 const CLUTCH_FAILURE_THRESHOLD = 0.15;
+// A clutch that fails - either from sustained heat-soak (clutchDamage
+// above) or from acute overpower (clutchWeldDamage, right below) - doesn't
+// just go limp and stop transmitting. What was slipping and generating all
+// that heat/friction WELDS the discs together: a sudden, violent jump to
+// full mechanical lockup, not a disconnect. See where clutchFailed is
+// checked further down for the actual bearingPos override that models
+// this. ~2s of sustained, serious (~35-40%) overpower crosses
+// CLUTCH_WELD_THRESHOLD, matching how fast a genuinely mismatched pack
+// actually cooks in real nitro use - not indefinitely, and not instantly.
+const CLUTCH_WELD_RATE = 1.25;
+const CLUTCH_WELD_THRESHOLD = 1.0;
 // Sustained lean-under-load (not enough fuel curve to cover the RPM the
 // pump is losing) accumulates damage on the SAME clock as heat-risk damage
 // below - both represent "you are killing this engine," just from opposite
@@ -291,8 +302,10 @@ export function runSimulation(settings, rng = Math.random) {
   let cylinderDropTime = null;
   let cylinderDropCause = null;
   let clutchDamage = 0;
+  let clutchWeldDamage = 0;
   let clutchFailed = false;
   let clutchFailTime = null;
+  let clutchFailCause = null;
   let richnessIntegral = 0;
   const driverState = createDriverState();
   let lastSlipPct = 0;
@@ -307,9 +320,19 @@ export function runSimulation(settings, rng = Math.random) {
 
   while (x < 1000 && t < MAX_T) {
     const xBefore = x;
-    const target = activeSetpoint(t, stages);
-    const speed = activeSpeed(t, stages) * fingerSpeedMult;
-    bearingPos = stepBearingPos(bearingPos, target, speed, DT);
+    // A failed clutch (heat-soaked or welded from overpower, see
+    // clutchFailed below) doesn't ease off the stage timer's curve from
+    // here on - it's WELDED, mechanically locked at 100% regardless of
+    // what the tune is still asking for, one tick after the failure is
+    // detected (clutchFailed itself is set later this same tick, off last
+    // tick's bearingPos - see the comment there).
+    if (clutchFailed) {
+      bearingPos = 1.0;
+    } else {
+      const target = activeSetpoint(t, stages);
+      const speed = activeSpeed(t, stages) * fingerSpeedMult;
+      bearingPos = stepBearingPos(bearingPos, target, speed, DT);
+    }
     let heatBoost = 1 + Math.min(clutchTemp / 100, 1) * HEAT_CAP_BOOST;
     if (clutchTemp > HEAT_GLAZE_START) {
       const glazeFrac = Math.min(1, (clutchTemp - HEAT_GLAZE_START) / (100 - HEAT_GLAZE_START));
@@ -320,7 +343,12 @@ export function runSimulation(settings, rng = Math.random) {
     // circular dependency (this step's damage is added further down).
     const wornFingerDesired = calcWornFingerDesired(fingerDesired, clutchDamage);
     peakWornGain = Math.max(peakWornGain, wornFingerDesired - fingerDesired);
-    const lf = Math.min(wornFingerDesired, bearingPos) * heatBoost;
+    // A welded clutch bypasses the finger/bearing mechanism entirely - the
+    // discs are physically fused, not centrifugally pressed - so it's a
+    // flat 100%, not capped by wornFingerDesired (irrelevant once welded)
+    // or boosted/glazed by heatBoost (that's a slipping-pack effect, and a
+    // welded pack isn't slipping anymore).
+    const lf = clutchFailed ? 1.0 : Math.min(wornFingerDesired, bearingPos) * heatBoost;
     // Computed here (ahead of engine RPM) because stepEngineRpm now needs
     // it too - whether the driver is still on the gas this instant is what
     // decides whether the free-revving engine keeps climbing/holding or
@@ -390,7 +418,19 @@ export function runSimulation(settings, rng = Math.random) {
     // a tune genuinely out-powers the clutch that's mounted.
     const clutchCapacityForce = LAUNCH_CAP * garageClutchCapacityMult;
     if (engineForce > clutchCapacityForce) {
-      peakClutchOverForce = Math.max(peakClutchOverForce, engineForce - clutchCapacityForce);
+      const overForce = engineForce - clutchCapacityForce;
+      peakClutchOverForce = Math.max(peakClutchOverForce, overForce);
+      // A pack genuinely fighting more torque than it can hold isn't just
+      // soaking heat (that's clutchDamage/clutchTemp below, still gated on
+      // sustained overall warmth) - it's grinding discs against each other
+      // under real mechanical overload right now, a faster and more acute
+      // kind of damage. Scales with how far over the ceiling (a 10%
+      // mismatch barely counts, 40%+ adds up in a couple of seconds) -
+      // exactly 0 whenever engineForce never exceeds clutchCapacityForce,
+      // which is guaranteed at the calibrated default clutch (capacityMult
+      // 1.0 sets clutchCapacityForce == LAUNCH_CAP, engineForce's own
+      // ceiling) - a complete no-op there, same guarantee as clutchDamage.
+      clutchWeldDamage += (overForce / clutchCapacityForce) * CLUTCH_WELD_RATE * throttle * DT;
       engineForce = clutchCapacityForce;
     }
     // What the motor could send through a FULLY locked clutch right now,
@@ -456,6 +496,12 @@ export function runSimulation(settings, rng = Math.random) {
     if (!clutchFailed && clutchDamage > CLUTCH_FAILURE_THRESHOLD) {
       clutchFailed = true;
       clutchFailTime = t;
+      clutchFailCause = "heat";
+    }
+    if (!clutchFailed && clutchWeldDamage > CLUTCH_WELD_THRESHOLD) {
+      clutchFailed = true;
+      clutchFailTime = t;
+      clutchFailCause = "weld";
     }
 
     // All three damage clocks below are combustion-event stress - heat
@@ -510,7 +556,14 @@ export function runSimulation(settings, rng = Math.random) {
       engineFailTime = t;
       engineFailCause = "hydrolock";
     }
-    if (engineFailed || clutchFailed) appliedForce = 0;
+    // A welded clutch (clutchFailed) is NOT a disconnect - it's mechanically
+    // locked at 100% (see the bearingPos override at the top of the loop)
+    // and keeps transmitting whatever the engine makes, same as any other
+    // fully-locked clutch - what actually costs time is that sudden jump
+    // to full lockup overwhelming the tires (the existing wheelspin/slip
+    // math below already handles that shock, nothing extra needed here).
+    // Only a dead ENGINE (engineFailed) actually zeroes propulsion.
+    if (engineFailed) appliedForce = 0;
     else if (cylindersDropped) appliedForce *= CYLINDER_DROP_FORCE_PENALTY;
 
     const drag = 0.5 * RHO_REF * airDensityRatio * CDA * garageDragCdaMult * v * v;
@@ -656,7 +709,7 @@ export function runSimulation(settings, rng = Math.random) {
     clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk, nitroIllegal, tireShakeRisk,
     peakFuelGpm, fuelConsumedGal, engineFailed, engineFailTime, engineFailCause, fuelStarved,
     cylindersDropped, cylinderDropTime, cylinderDropCause, engineDamagePct, foulDamagePct, rodBearingDamagePct,
-    clutchFailed, clutchFailTime,
+    clutchFailed, clutchFailTime, clutchFailCause,
     driverLifted: driverState.lifted, driverLiftTime: driverState.liftTime, driverLiftReason: driverState.liftReason, pedalCount: driverState.pedalCount,
     clutchWearLockupGainPct: peakWornGain * 100,
     clutchOverpowered: peakClutchOverForce > 0,

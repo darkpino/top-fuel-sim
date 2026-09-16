@@ -37,7 +37,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "80";
+const APP_BUILD = "81";
 const APP_BUILD_DATE = "2026-09-16";
 $("app-version-note").textContent = `Build ${APP_BUILD} · ${APP_BUILD_DATE}`;
 
@@ -343,7 +343,7 @@ function readSettings() {
   };
 }
 
-function renderRunResult(r) {
+function renderRunResult(r, reactionTime = null) {
   $("placeholder").style.display = "none";
   $("resultsContent").style.display = "block";
   $("inspPanel").style.display = "block";
@@ -355,6 +355,30 @@ function renderRunResult(r) {
   $("r-et").textContent = r.finished ? r.et.toFixed(3) + "s" : (r.engineFailed ? "MOTOR" : (r.clutchFailed ? "KOPPELING" : (r.driverLifted ? (r.driverLiftReason === "shutoff" ? "UIT" : "LIFT") : "DNF")));
   $("r-et").style.color = r.finished ? "var(--text)" : "var(--red)";
   $("r-mph").textContent = r.mph.toFixed(1) + " mph";
+
+  // Reaction time is a driver/tree concept, not part of the physics run
+  // itself - rolled by the caller (Testrun tab, kwalificatie, bye or
+  // eliminatie) and passed in purely for display here. Never folded into
+  // r.et or bestEt (see runPlayerQualifying/computeQualifyingLadder) -
+  // same as real NHRA, it only decides an eliminatie duel (see
+  // resolveHeadToHead), not qualifying position.
+  if (reactionTime !== null) {
+    const foul = reactionTime < 0;
+    $("r-rt").textContent = (foul ? "" : "+") + reactionTime.toFixed(3) + "s" + (foul ? " (rood!)" : "");
+    $("r-rt").style.color = foul ? "var(--red)" : "var(--text)";
+    if (r.finished && !foul) {
+      $("r-package").textContent = (reactionTime + r.et).toFixed(3) + "s";
+      $("r-package").style.color = "var(--text)";
+    } else {
+      $("r-package").textContent = "n.v.t.";
+      $("r-package").style.color = "var(--text)";
+    }
+  } else {
+    $("r-rt").textContent = "--";
+    $("r-rt").style.color = "var(--text)";
+    $("r-package").textContent = "--";
+    $("r-package").style.color = "var(--text)";
+  }
 
   const splits = [
     { label: "60'", t: r.et60 },
@@ -378,7 +402,9 @@ function renderRunResult(r) {
       ? `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Zet stage 2 (lockup) verder open.</div>`
       : `<div class="flag">Motor kapot na ${r.engineFailTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% was te heet om vol te houden.</div>`;
   }
-  else if (r.clutchFailed) flags += `<div class="flag">Koppeling kapot na ${r.clutchFailTime.toFixed(2)}s — te lang te ver teruggehouden onder te veel vermogen. Dat beschermde de banden, maar de koppeling zelf hield het niet vol. Geef 'm iets meer lockup, of neem er genoegen mee dat dit 'm kost.</div>`;
+  else if (r.clutchFailed) flags += r.clutchFailCause === "weld"
+    ? `<div class="flag">Koppeling vastgelast na ${r.clutchFailTime.toFixed(2)}s — de motor maakte fors meer vermogen dan het pakket kon vasthouden, en is er letterlijk doorheen blijven rijden tot de platen aan elkaar smolten. Vanaf dat moment zit de koppeling mechanisch potdicht op 100%, ongeacht de koppelingscurve - een plotselinge, harde grip die zomaar wielspin kan geven. Kies een sterkere koppeling, of temper het vermogen.</div>`
+    : `<div class="flag">Koppeling vastgelast na ${r.clutchFailTime.toFixed(2)}s — te lang te ver teruggehouden onder te veel vermogen, tot de platen door de opgebouwde hitte aan elkaar smolten. Vanaf dat moment zit de koppeling mechanisch potdicht op 100%, ongeacht de koppelingscurve. Geef 'm iets meer lockup, of neem er genoegen mee dat dit 'm kost.</div>`;
   else if (r.driverLifted && r.driverLiftReason === "shutoff" && !r.finished) flags += `<div class="flag">Rijder heeft het ingestelde afschakelpunt bereikt op ${r.driverLiftTime.toFixed(2)}s en is van het gas gegaan — geplande shutoff, geen paniek. De auto heeft de 1000 ft niet op momentum gehaald.</div>`;
   else if (r.driverLifted && !r.finished) flags += `<div class="flag">Rijder is van het gas gegaan na aanhoudende bandenrook op ${r.driverLiftTime.toFixed(2)}s — run afgebroken. Verhoog de rijder-agressiviteit als hij vaker moet doorpedalen, of pak de tune aan voor minder wielspin.</div>`;
   else if (!r.finished) flags += `<div class="flag">Auto bereikte de 1000 ft niet binnen ${r.et.toFixed(1)}s — te weinig grip/vermogen om op snelheid te komen. Draai bij.</div>`;
@@ -403,7 +429,7 @@ function renderRunResult(r) {
 
   const ch = r.clutchHeat;
   if (r.clutchFailed) {
-    $("i-clutch").textContent = `kapot @ ${r.clutchFailTime.toFixed(2)}s`;
+    $("i-clutch").textContent = `vastgelast @ ${r.clutchFailTime.toFixed(2)}s`;
     $("i-clutch").className = "status bad";
   } else {
     const chCls = statusClass(ch, 45, 70);
@@ -442,11 +468,6 @@ function renderRunResult(r) {
   $("i-plugs").textContent = plugTxt;
   $("i-plugs").className = "status " + plugCls;
 
-  const bw = r.bearingWear;
-  const bwCls = statusClass(bw, 40, 70);
-  $("i-bearing").textContent = bw.toFixed(0) + "% slijtage";
-  $("i-bearing").className = "status " + bwCls;
-
   $("i-gasket").textContent = r.detonationRisk ? "risico op doorslaan" : "intact";
   $("i-gasket").className = "status " + (r.detonationRisk ? "bad" : "ok");
 
@@ -481,21 +502,14 @@ function renderRunResult(r) {
   $("i-cyl").textContent = cylTxt;
   $("i-cyl").className = "status " + cylCls;
 
-  // The actual gradual accumulators behind engineFailed/cylindersDropped -
-  // watch these climb across a few (partial) runs instead of only ever
-  // seeing the binary cylinder-drop/motor-kapot moment with nothing in
-  // between. Monotonic within a run, so this is already the run's peak,
-  // wherever the run actually stopped (full pass, early shutoff, or an
-  // actual failure) - see run-simulator.js's engineDamagePct/foulDamagePct.
-  const engDmgCls = r.engineFailed ? "bad" : statusClass(r.engineDamagePct, 50, 100);
-  $("i-engine-damage").textContent = r.engineDamagePct.toFixed(0) + "%";
-  $("i-engine-damage").className = "status " + engDmgCls;
-  const foulDmgCls = statusClass(r.foulDamagePct, 50, 100);
-  $("i-foul-damage").textContent = r.foulDamagePct.toFixed(0) + "%";
-  $("i-foul-damage").className = "status " + foulDmgCls;
-  // Real engine (connecting-rod) bearing damage from detonation - NOT
-  // the clutch's own bearingWear (i-bearing/"Koppelingsslijtage" below,
-  // a mechanically unrelated part on the other end of the driveline).
+  // The actual gradual accumulator behind engineFailed's "bearing" cause -
+  // watch this climb across a few (partial) runs instead of only ever
+  // seeing the binary motor-kapot moment with nothing in between.
+  // Monotonic within a run, so this is already the run's peak, wherever
+  // the run actually stopped (full pass, early shutoff, or an actual
+  // failure) - see run-simulator.js's rodBearingDamagePct. NOT the
+  // clutch's own bearingWear - a mechanically unrelated part on the
+  // other end of the driveline.
   const rodBearingCls = (r.engineFailed && r.engineFailCause === "bearing") ? "bad" : statusClass(r.rodBearingDamagePct, 50, 100);
   $("i-rod-bearing").textContent = r.rodBearingDamagePct.toFixed(0) + "%";
   $("i-rod-bearing").className = "status " + rodBearingCls;
@@ -526,7 +540,8 @@ $("runBtn").addEventListener("click", () => {
   const r = runSimulation(readSettings());
   addRunWear(garageConfig, wearSeverityByPart(r));
   saveGarageConfig();
-  renderRunResult(r);
+  const rt = calcReactionTime(+$("aggro").value, Math.random, computeTeamEffects(teamConfig).teamReactionMult);
+  renderRunResult(r, rt);
   if (currentMode === "garage") renderGarageSummary();
 });
 
@@ -777,7 +792,7 @@ function roundResultText(result) {
   if (!result) return "--";
   if (result.finished) return `${result.et.toFixed(3)}s @ ${result.mph.toFixed(1)} mph`;
   if (result.engineFailed) return "motor kapot";
-  if (result.clutchFailed) return "koppeling kapot";
+  if (result.clutchFailed) return "koppeling vastgelast";
   return "DNF";
 }
 function entrantLabel(e) { return escapeHtml(e.name) + (e.isPlayer ? " (jij)" : ""); }
@@ -1292,7 +1307,10 @@ function runPlayerQualifying(skip) {
     if (r.finished && !r.weightIllegal && !r.engineFailed && !r.clutchFailed && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
     ladderState.playerHistory[ladderState.roundIndex] = { result: r };
     chargePlayerRun(r);
-    renderRunResult(r);
+    // Rolled and shown same as any other run, but never folded into r.et/
+    // bestEt above - qualifying position is ET alone, same as real NHRA.
+    const rt = calcReactionTime(+$("aggro").value, ladderState.rng, computeTeamEffects(teamConfig).teamReactionMult);
+    renderRunResult(r, rt);
   } else {
     player.quals[sessionIndex] = null;
     ladderState.playerHistory[ladderState.roundIndex] = { skipped: true };
@@ -1315,7 +1333,8 @@ function runPlayerBye() {
   ladderState.elimRounds[ladderState.roundIndex].byeResult = r;
   ladderState.playerHistory[ladderState.roundIndex] = { result: r, bye: true };
   const { fatalParts, brokenParts } = chargePlayerRun(r);
-  renderRunResult(r);
+  const rt = calcReactionTime(+$("aggro").value, ladderState.rng, computeTeamEffects(teamConfig).teamReactionMult);
+  renderRunResult(r, rt);
   renderBracketTable(roundDef);
   renderHistoryTable();
   const isFinalRound = roundDef.roundNumber === totalElimRoundsFor(ladderState.bracketSize);
@@ -1367,7 +1386,7 @@ function runPlayerElimination() {
   ladderState.playerHistory[ladderState.roundIndex] = { result: rPlayer, opponent, opponentResult: rOpponent, won: winner.isPlayer };
 
   const { fatalParts, brokenParts } = chargePlayerRun(rPlayer);
-  renderRunResult(rPlayer);
+  renderRunResult(rPlayer, reactPlayer);
   renderBracketTable(roundDef);
   renderHistoryTable();
 
