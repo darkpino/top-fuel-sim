@@ -38,7 +38,7 @@ function $(id) { return document.getElementById(id); }
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
 const APP_BUILD = "84";
-const APP_BUILD_DATE = "2026-09-16";
+const APP_BUILD_DATE = "2026-09-17";
 $("app-version-note").textContent = `Build ${APP_BUILD} · ${APP_BUILD_DATE}`;
 
 // The track's physical elevation isn't a slider (it's fixed for the
