@@ -37,7 +37,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "83";
+const APP_BUILD = "84";
 const APP_BUILD_DATE = "2026-09-16";
 $("app-version-note").textContent = `Build ${APP_BUILD} · ${APP_BUILD_DATE}`;
 

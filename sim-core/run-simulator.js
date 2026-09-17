@@ -626,7 +626,17 @@ export function runSimulation(settings, rng = Math.random) {
       earlyLoadCount++;
     }
 
-    const fuelGpm = calcFuelFlowGpm(rpm, fuelVolFactor, garageFuelPumpGpm);
+    // Gated by throttle same as the damage clocks below (heatDamage et al) -
+    // a lifted driver (smoke, or a planned shutoff) isn't just withholding
+    // propulsive force, the combustion event itself has stopped, so fuel
+    // flow needs to drop with it. Without this a run the driver already
+    // aborted kept burning fuel at the full tune-curve rate for however
+    // long the sim kept ticking (up to MAX_T, or coasting the rest of the
+    // 1000ft on momentum), which could drain the tank and trigger a
+    // fuelStarved lean failure on a pass that was already over - the
+    // opposite of real behavior, where backing off the throttle burns
+    // dramatically LESS fuel, not the same amount.
+    const fuelGpm = calcFuelFlowGpm(rpm, fuelVolFactor, garageFuelPumpGpm) * throttle;
     fuelConsumedGal += fuelGpm * (DT / 60); // gpm is gallons per MINUTE, DT is seconds
     if (!engineFailed && !fuelStarved && fuelConsumedGal > garageTankUsableGal) {
       // Running dry mid-pass isn't a gentle sputter - the pump goes instantly
