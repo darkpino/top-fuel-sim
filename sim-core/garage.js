@@ -686,6 +686,18 @@ export function computeGarageEffects(config) {
   const wheelieRiskBallastEquivLb = tankPositionShiftLb
     - config.enginePositionIn * ENGINE_POSITION_BALLAST_EQUIV_PER_IN
     + (config.chassisLengthIn - CHASSIS_LENGTH_BASELINE_IN) * CHASSIS_WHEELIE_RELIEF_LB_PER_IN;
+  // The other side of the same weight shift the wheelie-risk term above
+  // already tracks: more weight actually sitting on the rear (driven)
+  // wheels is more launch traction, not just less wheelie risk - a real
+  // rear-engine dragster's grip comes overwhelmingly from what's over the
+  // back axle. Same inputs, same ENGINE_POSITION_WEIGHT_SHIFT_PER_IN rate
+  // computeWeightDistribution's display breakdown already uses (so the
+  // "Achter (2 banden)" readout and this stay numerically consistent),
+  // opposite sign from the wheelie term since more rear weight is LESS
+  // wheelie risk but MORE grip. Zero at enginePositionIn=0/tank neutral -
+  // a complete no-op for the default build, same guarantee as every other
+  // garage effect here.
+  const rearWeightShiftLb = config.enginePositionIn * ENGINE_POSITION_WEIGHT_SHIFT_PER_IN - tankPositionShiftLb;
 
   // Higher reliability means the engine (or clutch) should accumulate
   // damage MORE SLOWLY, so the damage-rate multiplier run-simulator.js
@@ -696,6 +708,7 @@ export function computeGarageEffects(config) {
   return {
     garageWeightDeltaLb: weightDeltaLb,
     garageWheelieRiskBallastEquivLb: wheelieRiskBallastEquivLb,
+    garageRearWeightShiftLb: rearWeightShiftLb,
     garageTankPositionShiftLb: tankPositionShiftLb,
     garageTankUsableGal: config.tankSizeGal * TANK_USABLE_FRACTION,
     garageDragCdaMult: config.mudflaps ? 1 : 0.99,

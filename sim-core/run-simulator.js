@@ -200,7 +200,8 @@ export function runSimulation(settings, rng = Math.random) {
     fuel4time, fuel4pct, fuel5time, fuel5pct, fuel6time, fuel6pct,
     fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt, driverShutoffFt,
     ballastFrontLb, ballastRearLb, frontWingPct, wheelieBarHeightIn,
-    garageWeightDeltaLb = 0, garageWheelieRiskBallastEquivLb = 0, garageDragCdaMult = 1, garageDownforceMult = 1,
+    garageWeightDeltaLb = 0, garageWheelieRiskBallastEquivLb = 0, garageRearWeightShiftLb = 0,
+    garageDragCdaMult = 1, garageDownforceMult = 1,
     garageClutchHeatRateMult = 1, garageClutchDamageMult = 1, garageClutchCapacityMult = 1,
     garageTractionMult = 1, garagePowerMult = 1, garageEngineDamageMult = 1,
     // Infinity: without a configured tank (AI opponents, or any caller that
@@ -481,7 +482,15 @@ export function runSimulation(settings, rng = Math.random) {
     richnessIntegral += richness * DT;
 
     const wingDownforce = WING_K * v * v;
-    const maxTraction = (weightLb + wingDownforce) * baseGripCoeff * (1 + TIRE_PEAK_GRIP_BONUS) * garageTractionMult;
+    // Traction comes from what's actually pressing down on the DRIVEN
+    // (rear) wheels, not the car's total weight - weightLb itself stays
+    // untouched (F=ma needs the whole mass, regardless of where it sits),
+    // but the grip ceiling specifically should track garageRearWeightShiftLb
+    // (see computeGarageEffects - engine setback and tank position both
+    // shift real weight onto/off the rear axle). Zero for AI opponents and
+    // any build with the engine/tank at their baseline position, so this
+    // is a complete no-op there.
+    const maxTraction = (weightLb + garageRearWeightShiftLb + wingDownforce) * baseGripCoeff * (1 + TIRE_PEAK_GRIP_BONUS) * garageTractionMult;
     const loadRatio = engineForce / maxTraction;
     let appliedForce, slipPct, slipping;
     if (engineForce > maxTraction) {
