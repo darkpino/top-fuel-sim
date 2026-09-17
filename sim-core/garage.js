@@ -180,6 +180,17 @@ export const CHASSIS_LENGTH_MIN_IN = 280;
 export const CHASSIS_LENGTH_MAX_IN = 320;
 export const CHASSIS_LENGTH_BASELINE_IN = 300;
 export const CHASSIS_WEIGHT_PER_IN_LB = 3;
+// A longer wheelbase is more wheelie-resistant on its own, independent of
+// ballast/wing - the same vertical load at the same distance from the
+// rear axle needs more torque to lift the nose the further back that
+// axle sits relative to the CG, i.e. a longer chassis has more natural
+// leverage against the same launch load. Modeled the same way real
+// ballast/wing already are (a lb-equivalent feeding the shared
+// wheelieRiskBallastEquivLb term in computeGarageEffects below) so a
+// longer chassis genuinely earns back some ballast/wing/engine-position
+// margin instead of needing just as much as a short one. Zero at the
+// CHASSIS_LENGTH_BASELINE_IN default (300") - a complete no-op there.
+export const CHASSIS_WHEELIE_RELIEF_LB_PER_IN = 6;
 
 // The bare frame itself, before a body material (BODY_MATERIALS above) is
 // even picked - a custom build ("zelf laten bouwen") pays this PLUS the
@@ -673,7 +684,8 @@ export function computeGarageEffects(config) {
   const tankWeightDeltaLb = (config.tankSizeGal - TANK_SIZE_BASELINE_GAL) * TANK_WEIGHT_PER_GAL_LB;
   const tankPositionShiftLb = tankWeightDeltaLb * TANK_POSITION_SIGN[config.tankPosition] * TANK_POSITION_SHIFT_FRACTION;
   const wheelieRiskBallastEquivLb = tankPositionShiftLb
-    - config.enginePositionIn * ENGINE_POSITION_BALLAST_EQUIV_PER_IN;
+    - config.enginePositionIn * ENGINE_POSITION_BALLAST_EQUIV_PER_IN
+    + (config.chassisLengthIn - CHASSIS_LENGTH_BASELINE_IN) * CHASSIS_WHEELIE_RELIEF_LB_PER_IN;
 
   // Higher reliability means the engine (or clutch) should accumulate
   // damage MORE SLOWLY, so the damage-rate multiplier run-simulator.js

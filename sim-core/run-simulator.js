@@ -115,14 +115,15 @@ const CLUTCH_SLIP_HEAT_RATE = 0.0025;
 const CLUTCH_DAMAGE_RATE = 0.006;
 const CLUTCH_FAILURE_THRESHOLD = 0.15;
 // A clutch that fails - either from sustained heat-soak (clutchDamage
-// above) or from acute overpower (clutchWeldDamage, right below) - doesn't
-// just go limp and stop transmitting. What was slipping and generating all
-// that heat/friction WELDS the discs together: a sudden, violent jump to
-// full mechanical lockup, not a disconnect. See where clutchFailed is
-// checked further down for the actual bearingPos override that models
-// this. ~2s of sustained, serious (~35-40%) overpower crosses
-// CLUTCH_WELD_THRESHOLD, matching how fast a genuinely mismatched pack
-// actually cooks in real nitro use - not indefinitely, and not instantly.
+// above) or from acute slip/overpower (clutchWeldDamage, see where it's
+// accumulated below) - doesn't just go limp and stop transmitting. What
+// was slipping and generating all that heat/friction WELDS the discs
+// together: a sudden, violent jump to full mechanical lockup, not a
+// disconnect. See where clutchFailed is checked further down for the
+// actual bearingPos override that models this. ~2s of sustained, serious
+// mismatch crosses CLUTCH_WELD_THRESHOLD, matching how fast a genuinely
+// mismatched pack actually cooks in real nitro use - not indefinitely,
+// and not instantly.
 const CLUTCH_WELD_RATE = 1.25;
 const CLUTCH_WELD_THRESHOLD = 1.0;
 // Sustained lean-under-load (not enough fuel curve to cover the RPM the
@@ -417,22 +418,34 @@ export function runSimulation(settings, rng = Math.random) {
     // this is a complete no-op for the default build - it only bites once
     // a tune genuinely out-powers the clutch that's mounted.
     const clutchCapacityForce = LAUNCH_CAP * garageClutchCapacityMult;
+    let capacityOverFrac = 0;
     if (engineForce > clutchCapacityForce) {
       const overForce = engineForce - clutchCapacityForce;
       peakClutchOverForce = Math.max(peakClutchOverForce, overForce);
-      // A pack genuinely fighting more torque than it can hold isn't just
-      // soaking heat (that's clutchDamage/clutchTemp below, still gated on
-      // sustained overall warmth) - it's grinding discs against each other
-      // under real mechanical overload right now, a faster and more acute
-      // kind of damage. Scales with how far over the ceiling (a 10%
-      // mismatch barely counts, 40%+ adds up in a couple of seconds) -
-      // exactly 0 whenever engineForce never exceeds clutchCapacityForce,
-      // which is guaranteed at the calibrated default clutch (capacityMult
-      // 1.0 sets clutchCapacityForce == LAUNCH_CAP, engineForce's own
-      // ceiling) - a complete no-op there, same guarantee as clutchDamage.
-      clutchWeldDamage += (overForce / clutchCapacityForce) * CLUTCH_WELD_RATE * throttle * DT;
+      capacityOverFrac = overForce / clutchCapacityForce;
       engineForce = clutchCapacityForce;
     }
+    // Welding is a SLIP problem, not just a torque-ceiling problem - a
+    // pack that's genuinely fighting an RPM mismatch (the engine turning
+    // faster than what's actually getting transmitted) grinds itself hot
+    // regardless of WHY that mismatch exists. Two distinct real causes,
+    // both folded in here:
+    //  - capacityOverFrac above: the pack's rated capacity (clutch brand)
+    //    can't hold what the motor's making even at full lockup.
+    //  - fingerSlipGap: the hydraulic bearing (bearingPos, driven purely
+    //    by the tune's own stage timer) has already moved further than
+    //    LIGHT fingers can actually grip at this rpm - wornFingerDesired
+    //    trailing behind it is a real, chronic gap between what the timer
+    //    is commanding and what centrifugal force is delivering, not a
+    //    tune choice. Exactly 0 at fingerWeight 100 (wornFingerDesired is
+    //    always exactly 1.0 there - see calcWornFingerDesired/
+    //    calcFingerDesired - so it can never trail bearingPos), same
+    //    automatic-zero guarantee as capacityOverFrac at the default
+    //    clutch. Both are separate from the finger SPEED multiplier
+    //    (fingerSpeedMult, how fast lockup approaches each stage's own
+    //    target) - this is about never being ABLE to reach it at all.
+    const fingerSlipGap = Math.max(0, bearingPos - wornFingerDesired);
+    clutchWeldDamage += (capacityOverFrac + fingerSlipGap) * CLUTCH_WELD_RATE * throttle * DT;
     // What the motor could send through a FULLY locked clutch right now,
     // vs. what's actually getting through at the current lockup fraction -
     // the gap is torque the clutch is holding back, dissipated as heat in
