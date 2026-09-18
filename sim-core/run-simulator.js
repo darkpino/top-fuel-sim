@@ -9,7 +9,7 @@ import {
   IGNITION_MAX_ADVANCE_RATE, calcIgnitionHeatDamageRate, HEAT_RISK_THRESHOLD,
   calcPumpMixtureScale,
 } from "./engine.js";
-import { activeSetpoint, activeSpeed, calcFingerDesired, calcFingerSpeedMult, calcWornFingerDesired, stepBearingPos } from "./clutch.js";
+import { activeSetpoint, activeSpeed, calcFingerCapacityMult, calcFingerSpeedMult, calcMaxFingerTravel, stepBearingPos } from "./clutch.js";
 import { calcOptimalPsi, calcPsiPenalty, calcTireWear } from "./tires.js";
 import { createDriverState, stepDriver } from "./driver.js";
 
@@ -203,6 +203,7 @@ export function runSimulation(settings, rng = Math.random) {
     garageWeightDeltaLb = 0, garageWheelieRiskBallastEquivLb = 0, garageRearWeightShiftLb = 0,
     garageDragCdaMult = 1, garageDownforceMult = 1,
     garageClutchHeatRateMult = 1, garageClutchDamageMult = 1, garageClutchCapacityMult = 1,
+    garageClutchPackThicknessSteps = 0, garageClutchBearingAdjSteps = 0,
     garageTractionMult = 1, garagePowerMult = 1, garageEngineDamageMult = 1,
     // Infinity: without a configured tank (AI opponents, or any caller that
     // doesn't pass this) there's no capacity ceiling to run afoul of - only
@@ -270,8 +271,12 @@ export function runSimulation(settings, rng = Math.random) {
     fuel1time, fuel1pct, fuel2time, fuel2pct, fuel3time, fuel3pct,
     fuel4time, fuel4pct, fuel5time, fuel5pct, fuel6time, fuel6pct,
   };
-  const fingerDesired = calcFingerDesired(fingerWeight, rng);
   const fingerSpeedMult = calcFingerSpeedMult(fingerWeight);
+  const fingerCapacityMult = calcFingerCapacityMult(fingerWeight);
+  // Wear-gain tracking (see clutchWearLockupGainPct below) needs a fixed
+  // reference point: the pack's own mechanical ceiling with zero slip
+  // damage, before any wear this run adds back on top of it.
+  const baseMaxFingerTravel = calcMaxFingerTravel(garageClutchPackThicknessSteps, garageClutchBearingAdjSteps, 0);
   const pumpMixtureScale = calcPumpMixtureScale(garageFuelPumpGpm);
   const disciplineDeficit = Math.max(0, 1 - garageDriverDisciplineMult);
   const effectiveDriverShutoffFt = Math.min(1000, driverShutoffFt + disciplineDeficit * DRIVER_DISCIPLINE_OVERSHOOT_FT);
@@ -328,10 +333,22 @@ export function runSimulation(settings, rng = Math.random) {
     // what the tune is still asking for, one tick after the failure is
     // detected (clutchFailed itself is set later this same tick, off last
     // tick's bearingPos - see the comment there).
+    // clutchDamage here is last step's accumulated value - same
+    // previous-step pattern as lastSlipPct below, avoiding a same-step
+    // circular dependency (this step's damage is added further down).
+    const maxFingerTravel = calcMaxFingerTravel(garageClutchPackThicknessSteps, garageClutchBearingAdjSteps, clutchDamage);
+    peakWornGain = Math.max(peakWornGain, maxFingerTravel - baseMaxFingerTravel);
+    const rawTarget = activeSetpoint(t, stages);
     if (clutchFailed) {
       bearingPos = 1.0;
     } else {
-      const target = activeSetpoint(t, stages);
+      // The pack's own mechanical ceiling (maxFingerTravel) caps what the
+      // timer can ever command the bearing toward, same "one-way ratchet"
+      // logic stepBearingPos already applies to the timer's own target -
+      // an uncompensated thick pack means the timer can ask for 100% all
+      // it wants, the fingers simply can't get there (see packSlipGap
+      // below for what that costs the clutch itself).
+      const target = Math.min(rawTarget, maxFingerTravel);
       const speed = activeSpeed(t, stages) * fingerSpeedMult;
       bearingPos = stepBearingPos(bearingPos, target, speed, DT);
     }
@@ -340,17 +357,11 @@ export function runSimulation(settings, rng = Math.random) {
       const glazeFrac = Math.min(1, (clutchTemp - HEAT_GLAZE_START) / (100 - HEAT_GLAZE_START));
       heatBoost *= 1 - glazeFrac * HEAT_GLAZE_LOSS;
     }
-    // clutchDamage here is last step's accumulated value - same
-    // previous-step pattern as lastSlipPct below, avoiding a same-step
-    // circular dependency (this step's damage is added further down).
-    const wornFingerDesired = calcWornFingerDesired(fingerDesired, clutchDamage);
-    peakWornGain = Math.max(peakWornGain, wornFingerDesired - fingerDesired);
     // A welded clutch bypasses the finger/bearing mechanism entirely - the
     // discs are physically fused, not centrifugally pressed - so it's a
-    // flat 100%, not capped by wornFingerDesired (irrelevant once welded)
-    // or boosted/glazed by heatBoost (that's a slipping-pack effect, and a
-    // welded pack isn't slipping anymore).
-    const lf = clutchFailed ? 1.0 : Math.min(wornFingerDesired, bearingPos) * heatBoost;
+    // flat 100%, not boosted/glazed by heatBoost (that's a slipping-pack
+    // effect, and a welded pack isn't slipping anymore).
+    const lf = clutchFailed ? 1.0 : bearingPos * heatBoost;
     // Computed here (ahead of engine RPM) because stepEngineRpm now needs
     // it too - whether the driver is still on the gas this instant is what
     // decides whether the free-revving engine keeps climbing/holding or
@@ -418,7 +429,7 @@ export function runSimulation(settings, rng = Math.random) {
     // LAUNCH_CAP, which engineForce can never exceed anyway (lf <= 1), so
     // this is a complete no-op for the default build - it only bites once
     // a tune genuinely out-powers the clutch that's mounted.
-    const clutchCapacityForce = LAUNCH_CAP * garageClutchCapacityMult;
+    const clutchCapacityForce = LAUNCH_CAP * garageClutchCapacityMult * fingerCapacityMult;
     let capacityOverFrac = 0;
     if (engineForce > clutchCapacityForce) {
       const overForce = engineForce - clutchCapacityForce;
@@ -431,22 +442,23 @@ export function runSimulation(settings, rng = Math.random) {
     // faster than what's actually getting transmitted) grinds itself hot
     // regardless of WHY that mismatch exists. Two distinct real causes,
     // both folded in here:
-    //  - capacityOverFrac above: the pack's rated capacity (clutch brand)
-    //    can't hold what the motor's making even at full lockup.
-    //  - fingerSlipGap: the hydraulic bearing (bearingPos, driven purely
-    //    by the tune's own stage timer) has already moved further than
-    //    LIGHT fingers can actually grip at this rpm - wornFingerDesired
-    //    trailing behind it is a real, chronic gap between what the timer
-    //    is commanding and what centrifugal force is delivering, not a
-    //    tune choice. Exactly 0 at fingerWeight 100 (wornFingerDesired is
-    //    always exactly 1.0 there - see calcWornFingerDesired/
-    //    calcFingerDesired - so it can never trail bearingPos), same
-    //    automatic-zero guarantee as capacityOverFrac at the default
-    //    clutch. Both are separate from the finger SPEED multiplier
-    //    (fingerSpeedMult, how fast lockup approaches each stage's own
-    //    target) - this is about never being ABLE to reach it at all.
-    const fingerSlipGap = Math.max(0, bearingPos - wornFingerDesired);
-    clutchWeldDamage += (capacityOverFrac + fingerSlipGap) * CLUTCH_WELD_RATE * throttle * DT;
+    //  - capacityOverFrac above: the pack can't hold what the motor's
+    //    making even at full lockup - either the clutch brand's own rated
+    //    capacity, or light fingers delivering less clamping force
+    //    (fingerCapacityMult), or both.
+    //  - packSlipGap: the tune's own stage timer is commanding more
+    //    lockup (rawTarget) than the pack can physically reach
+    //    (maxFingerTravel) - an uncompensated thick pack chronically
+    //    slipping against a target it can never hit, not a tune choice.
+    //    Exactly 0 at the stock pack (maxFingerTravel is always exactly
+    //    1.0 there - see calcMaxFingerTravel - so it can never trail
+    //    rawTarget), same automatic-zero guarantee as capacityOverFrac at
+    //    the default clutch/finger weight. Both are separate from the
+    //    finger SPEED multiplier (fingerSpeedMult, how fast lockup
+    //    approaches each stage's own target) - this is about never being
+    //    ABLE to reach it at all.
+    const packSlipGap = Math.max(0, rawTarget - maxFingerTravel);
+    clutchWeldDamage += (capacityOverFrac + packSlipGap) * CLUTCH_WELD_RATE * throttle * DT;
     // What the motor could send through a FULLY locked clutch right now,
     // vs. what's actually getting through at the current lockup fraction -
     // the gap is torque the clutch is holding back, dissipated as heat in
@@ -687,9 +699,9 @@ export function runSimulation(settings, rng = Math.random) {
   // not an engine part - see rodBearingDamagePct below for actual engine
   // (connecting-rod) bearing damage, a mechanically unrelated failure on
   // the other end of the driveline. Tracks the same clutchDamage clock
-  // that drives failure risk AND the widening finger-to-bearing gap (see
-  // calcWornFingerDesired) - it's the direct readout of how much extra
-  // lockup ceiling sustained slip has quietly bought the clutch.
+  // that drives failure risk AND the widening mechanical lockup ceiling
+  // (see calcMaxFingerTravel) - it's the direct readout of how much extra
+  // travel sustained slip has quietly bought the pack.
   const bearingWear = Math.min(100, (clutchDamage / CLUTCH_FAILURE_THRESHOLD) * 100);
   const tireWear = calcTireWear(tirePsi, optimalPsi, slipEnergy);
   const peakFuelGpm = trace.reduce((acc, p) => Math.max(acc, p.fuel_gpm), 0);

@@ -34,41 +34,35 @@ export function activeSetpoint(t, stages) {
   return stages.s6pct;
 }
 
-// Finger-desired lockup: how far centrifugal force wants to push the
-// fingers out (assumes launch RPM is reached and roughly held through the
-// run - real cars do vary RPM, but that's a future refinement).
+// Finger weight used to also impose a per-run RANDOM ceiling on how far
+// lockup could ever reach (a rolled "desired" value almost always below
+// 1.0 once weight dropped under 100) - meaning at low weight, full lockup
+// wasn't just unlikely, it was true nearly every single run: "it just
+// never locks." Real light fingers aren't like that: they're SLOWER and
+// generate less clamping force, but given enough time at a steady RPM
+// they still reach for the same target the timer is asking for - nothing
+// about the fingers themselves puts a hard ceiling on the timer's own
+// setpoint. That's now purely a mechanical question (clutch pack
+// thickness vs. bearing adjustment - see calcMaxFingerTravel below), not
+// a finger-weight one.
 //
-// Used to be a hard deterministic ceiling scaling linearly with
-// fingerWeight (0.30 at zero weight, 1.00 at full) - meaning at low
-// weight, full lockup wasn't just unlikely, it was LITERALLY impossible
-// no matter how the rest of the run went. Real fingers don't work that
-// way: less weight makes the assembly less aggressive (lower expected
-// reach) AND less consistent (more scatter pass to pass), but it never
-// rules out a fully-locked run outright, just makes one less likely.
-//
-// Modeled here as a blend between that old deterministic ceiling (still
-// the exact result at fingerWeight 100 - base=1 zeroes out the random
-// term entirely, so the calibrated default tune and every 100-weight AI
-// archetype stay byte-identical to before) and a uniform random draw
-// between FINGER_RANDOM_FLOOR and 1.0, whose share of the blend grows as
-// fingerWeight drops. At weight 0 the result is governed entirely by that
-// draw: MORE OFTEN than not it falls well short of a full lockup (that's
-// the whole point - less weight genuinely is less aggressive on average),
-// but "sometimes it just fully locks anyway" needs to be a real, visible
-// outcome across a handful of runs, not a one-in-forty fluke - an earlier
-// version skewed the draw so hard toward the floor (Math.pow(rng(), 2.5))
-// that a full lockup was too rare to ever actually show up in play,
-// reading as "it just never locks" even though it was never literally
-// impossible. Plain rng() (no skew) plus a higher floor fixes that.
-// Rolled once per run (call site is outside the per-tick loop), not
-// per-tick - a given pass has one consistent mechanical ceiling throughout,
-// not fingers whose reach fluctuates tick to tick.
-const FINGER_RANDOM_FLOOR = 0.35;
+// What weight legitimately still governs, alongside speed
+// (calcFingerSpeedMult): how much CLAMPING FORCE the fingers deliver once
+// they get there. Lighter fingers generate less centrifugal force at a
+// given RPM, so the pack can actually hold less torque even at full
+// extension - reduces the clutch's effective capacity
+// (garageClutchCapacityMult in run-simulator.js) rather than capping how
+// far it can travel. A tune making more power than that reduced capacity
+// overpowers it the same way an underrated clutch brand would (see
+// capacityOverFrac there) - light fingers under a big enough motor can
+// still weld, just via the torque route instead of an unreachable
+// position. FINGER_CAPACITY_FLOOR=0.55 at fingerWeight 0, scaling
+// straight up to exactly 1.0 (a complete no-op) at fingerWeight 100.
+const FINGER_CAPACITY_FLOOR = 0.55;
 
-export function calcFingerDesired(fingerWeight, rng = Math.random) {
+export function calcFingerCapacityMult(fingerWeight) {
   const base = fingerWeight / 100;
-  const randomDraw = FINGER_RANDOM_FLOOR + (1 - FINGER_RANDOM_FLOOR) * rng();
-  return base + (1 - base) * randomDraw;
+  return FINGER_CAPACITY_FLOOR + (1 - FINGER_CAPACITY_FLOOR) * base;
 }
 
 // The OTHER half of finger weight's effect, and arguably the more visible
@@ -94,19 +88,31 @@ export function calcFingerSpeedMult(fingerWeight) {
   return FINGER_SPEED_MULT_FLOOR + (1 - FINGER_SPEED_MULT_FLOOR) * base;
 }
 
-const WEAR_LOCKUP_GAIN = 1.0;
+// Mechanical lockup ceiling: how far the fingers can PHYSICALLY sweep
+// outward before they run into the plate pack, independent of finger
+// weight/speed above. A thicker-than-stock pack (packThicknessSteps > 0)
+// eats into that travel unless the crew also backs the throw-out bearing
+// off to compensate (bearingAdjSteps) - only the UNCOMPENSATED remainder
+// (thickness beyond what the bearing adjustment gives back) costs travel,
+// so a matched pair is a complete no-op regardless of absolute thickness.
+// Both default to 0 (stock setup), where this is exactly 1.0 - a
+// no-op, same guarantee as every other garage build knob.
+//
+// As the pack wears from slip (clutchDamage), the friction material
+// thins and that same mechanical gap grows on its own, temporarily
+// giving back some of the travel an uncompensated thick pack cost -
+// this is what makes clutch damage dangerous beyond the eventual failure
+// it also causes: hold a tune with sustained slip and the effective
+// ceiling quietly creeps up as the run goes on. Exactly 0 effect at the
+// stock pack (already at the 1.0 cap, nothing left to gain).
+const PACK_THICKNESS_TRAVEL_LOSS_PER_STEP = 0.12;
+const MAX_FINGER_TRAVEL_FLOOR = 0.15;
+const PACK_WEAR_RELIEF_GAIN = 1.0;
 
-// As the pack wears from slip, the friction material thins and the
-// mechanical gap between the fingers and the bearing grows - the fingers
-// can now travel further than a fresh pack would allow, raising the
-// lockup ceiling beyond what was dialed in. This is what makes clutch
-// damage dangerous beyond the eventual failure it also causes: hold a
-// tune with sustained slip and the effective clutch quietly gets more
-// aggressive than intended, right when the tune was counting on it NOT
-// to - a tune that started out safely under the traction ceiling can
-// creep past it as the run goes on.
-export function calcWornFingerDesired(baseFingerDesired, clutchDamage) {
-  return Math.min(1.0, baseFingerDesired + clutchDamage * WEAR_LOCKUP_GAIN);
+export function calcMaxFingerTravel(packThicknessSteps, bearingAdjSteps, clutchDamage = 0) {
+  const netUncompensatedSteps = Math.max(0, packThicknessSteps - bearingAdjSteps);
+  const travel = 1 - netUncompensatedSteps * PACK_THICKNESS_TRAVEL_LOSS_PER_STEP + clutchDamage * PACK_WEAR_RELIEF_GAIN;
+  return Math.max(MAX_FINGER_TRAVEL_FLOOR, Math.min(1.0, travel));
 }
 
 // The bearing is a one-way ratchet: centrifugal force and the timer's

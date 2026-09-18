@@ -37,7 +37,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "84";
+const APP_BUILD = "86";
 const APP_BUILD_DATE = "2026-09-17";
 $("app-version-note").textContent = `Build ${APP_BUILD} · ${APP_BUILD_DATE}`;
 
@@ -410,7 +410,7 @@ function renderRunResult(r, reactionTime = null) {
   else if (!r.finished) flags += `<div class="flag">Auto bereikte de 1000 ft niet binnen ${r.et.toFixed(1)}s — te weinig grip/vermogen om op snelheid te komen. Draai bij.</div>`;
   else if (r.driverLifted && r.driverLiftReason === "shutoff") flags += `<div class="flag">Rijder is op het ingestelde afschakelpunt (${r.driverLiftTime.toFixed(2)}s) van het gas gegaan — geplande shutoff, de auto heeft de 1000 ft alsnog op momentum gehaald.</div>`;
   else if (r.driverLifted) flags += `<div class="flag">Rijder is na aanhoudende bandenrook op ${r.driverLiftTime.toFixed(2)}s van het gas gegaan, maar de auto heeft de 1000 ft alsnog op momentum gehaald.</div>`;
-  if (r.clutchWearLockupGainPct > 3 && !r.clutchFailed) flags += `<div class="flag">Koppelingsslijtage heeft de lockup tijdens deze run zo'n ${r.clutchWearLockupGainPct.toFixed(0)} procentpunt verder laten locken dan ingesteld — de vingers konden door slijtage van het lager verder naar buiten. Bij nog meer slip op deze tune wordt de koppeling geleidelijk agressiever dan bedoeld.</div>`;
+  if (r.clutchWearLockupGainPct > 3 && !r.clutchFailed) flags += `<div class="flag">Koppelingsslijtage heeft het mechanische plafond tijdens deze run zo'n ${r.clutchWearLockupGainPct.toFixed(0)} procentpunt verder laten oplopen — het frictiemateriaal dunt uit, waardoor de vingers verder naar buiten kunnen dan een vers pakket zou toelaten. Bij nog meer slip op deze tune wordt de koppeling geleidelijk agressiever dan bedoeld.</div>`;
   if (r.clutchOverpowered && !r.clutchFailed) flags += `<div class="flag">De motor maakt meer vermogen dan deze koppeling kan vasthouden — hij rijdt er letterlijk doorheen en blijft slippen, ook bij volledige lockup. Dat kost tijd én kookt de koppeling extra hard op. Kies een sterkere koppeling, of temper het vermogen.</div>`;
   if (r.cylindersDropped) {
     if (r.cylinderDropCause === "rich") flags += `<div class="flag">Cilinder(s) verzopen na ${r.cylinderDropTime.toFixed(2)}s — de brandstofcurve stond op dat moment te rijk voor het toerental. Kost vermogen, maar de motor overleeft het.</div>`;
@@ -1526,6 +1526,8 @@ function applyGarageConfigToForm() {
   $("g-tank-position").value = garageConfig.tankPosition;
   $("g-mudflaps").checked = garageConfig.mudflaps;
   $("g-engine-position").value = garageConfig.enginePositionIn;
+  $("g-clutch-pack").value = garageConfig.clutchPackThicknessSteps;
+  $("g-clutch-bearing").value = garageConfig.clutchBearingAdjSteps;
 }
 
 function readGarageConfigFromForm() {
@@ -1533,6 +1535,8 @@ function readGarageConfigFromForm() {
   garageConfig.tankPosition = $("g-tank-position").value;
   garageConfig.mudflaps = $("g-mudflaps").checked;
   garageConfig.enginePositionIn = +$("g-engine-position").value;
+  garageConfig.clutchPackThicknessSteps = +$("g-clutch-pack").value;
+  garageConfig.clutchBearingAdjSteps = +$("g-clutch-bearing").value;
 }
 
 // "3 mnd oud" / "2 jr 4 mnd oud" / "Nieuw" for ageMonths: 0 - shared by
@@ -1677,6 +1681,8 @@ function renderGarageSummary() {
   $("v-g-chassis-length").textContent = garageConfig.chassisLengthIn + '"';
   $("v-g-tank-size").textContent = garageConfig.tankSizeGal + " gal";
   $("v-g-engine-position").textContent = garageConfig.enginePositionIn;
+  $("v-g-clutch-pack").textContent = garageConfig.clutchPackThicknessSteps;
+  $("v-g-clutch-bearing").textContent = garageConfig.clutchBearingAdjSteps;
   PART_LIST.forEach(part => { renderPartEquippedStatus(part); renderPartInventoryList(part); renderPartMarketList(part); });
   renderChassisSection();
 
@@ -1728,6 +1734,7 @@ function renderGaragePanel() {
 const GARAGE_FORM_IDS = [
   "g-tank-size", "g-tank-position",
   "g-mudflaps", "g-engine-position",
+  "g-clutch-pack", "g-clutch-bearing",
 ];
 GARAGE_FORM_IDS.forEach(id => {
   $(id).addEventListener("input", () => {

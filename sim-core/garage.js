@@ -151,6 +151,20 @@ export const CLUTCH_BRANDS = [
   { id: "vortanclutch6", name: "Vortan Carbon 6-plaats", priceNew: 13000, plates: 6, heatRateMult: 0.82, reliabilityMult: 1.12, weightDeltaLb: -12, capacityMult: 1.30 },
 ];
 
+// Pack thickness (extra/fewer shims stacked into the mounted clutch, on
+// top of whatever plate count its brand already carries above) and the
+// throw-out bearing's own static position - a matched garage build choice,
+// not a per-run tune slider, since it's a real mechanical adjustment the
+// crew makes to the mounted unit rather than something dialed from the
+// cockpit. Positive thickness eats into how far the fingers can physically
+// sweep outward unless bearingAdjSteps compensates for it (see
+// calcMaxFingerTravel in clutch.js) - both default to 0 (stock setup),
+// a complete no-op, same guarantee as every other garage build knob.
+export const CLUTCH_PACK_THICKNESS_MIN = -3;
+export const CLUTCH_PACK_THICKNESS_MAX = 3;
+export const CLUTCH_BEARING_ADJ_MIN = -3;
+export const CLUTCH_BEARING_ADJ_MAX = 3;
+
 // Setback blowers move the supercharger's mass rearward and shorten the
 // belt run - shorter belt path and a straighter shot into the intake
 // give both a little more power AND (the direct ask) a motor that
@@ -325,6 +339,7 @@ export function defaultGarageConfig() {
     blowerBrandId: null, blowerAgeMonths: 0, blowerWear: 0, blowerBroken: false,
     blowerType: "conventional",
     clutchBrandId: null, clutchAgeMonths: 0, clutchWear: 0, clutchBroken: false,
+    clutchPackThicknessSteps: 0, clutchBearingAdjSteps: 0,
     fuelPumpBrandId: null, fuelPumpAgeMonths: 0, fuelPumpWear: 0, fuelPumpBroken: false,
     chassisOwned: false,
     chassisAgeMonths: 0,
@@ -716,6 +731,8 @@ export function computeGarageEffects(config) {
     garageClutchHeatRateMult: clutch.heatRateMult,
     garageClutchDamageMult: 1 / clutchReliabilityMult,
     garageClutchCapacityMult: clutch.capacityMult,
+    garageClutchPackThicknessSteps: config.clutchPackThicknessSteps,
+    garageClutchBearingAdjSteps: config.clutchBearingAdjSteps,
     garageTractionMult: blowerType.tractionMult,
     garagePowerMult: computeEnginePowerMult(config),
     garageEngineDamageMult: 1 / reliabilityMult,
