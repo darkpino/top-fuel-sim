@@ -4,7 +4,12 @@
 // scale with the price of the equipped part that failed (so a Vortan
 // motor costs more to fix than an Ironclad one).
 
-import { equippedPartPrice, consumeSpareOnFailure, unequipPart, spareLabel, markPartBroken, isPartRepairable, clearPartBroken } from "./garage.js";
+import {
+  equippedPartPrice, consumeSpareOnFailure, unequipPart, spareLabel, markPartBroken, isPartRepairable, clearPartBroken,
+  isPartOwned, PARTS, TRAILER_TYPES, findBrand,
+  sellEquippedUnitValue, sellSpareUnitValue, sellTrailerValue, sellChassisValue,
+  sellSpareUnit, sellTrailerUnit, sellChassisUnit,
+} from "./garage.js";
 
 export const STARTING_BUDGET = 75000;
 export const ENTRY_FEE = 150;
@@ -158,6 +163,54 @@ export function repairPartUnit(state, garageConfig, part) {
   const cost = Math.round(equippedPartPrice(garageConfig, part) * REPAIR_FRACTION[part]);
   clearPartBroken(garageConfig, part);
   addTransaction(state, `${cap}schade — reparatie`, -cost);
+  return true;
+}
+
+// Sells whatever's currently mounted - a legitimate way to cash out gear
+// the team no longer wants (downsizing, funding a better part elsewhere),
+// not just something that happens via a catastrophic failure. Leaves the
+// slot empty (unequipPart, same reset a total-loss already uses) - the
+// car simply isn't race-ready for that part until something new is
+// mounted, same as any other missing part. Works regardless of broken/
+// worn state - even scrap is worth something. No-op if nothing's mounted.
+export function sellEquippedPart(state, garageConfig, part) {
+  if (!isPartOwned(garageConfig, part)) return false;
+  const label = spareLabel(part);
+  const cap = label.charAt(0).toUpperCase() + label.slice(1);
+  const brand = findBrand(PARTS[part].brands, garageConfig[part + "BrandId"]);
+  const value = sellEquippedUnitValue(garageConfig, part);
+  unequipPart(garageConfig, part);
+  addTransaction(state, `${cap} verkocht (${brand.name})`, value);
+  return true;
+}
+
+// Sells one specific spare off the trailer, by inventory index - the
+// equipped unit (if any) is untouched.
+export function sellSparePartUnit(state, garageConfig, part, index) {
+  const unit = garageConfig[part + "Inventory"][index];
+  if (!unit) return false;
+  const label = spareLabel(part);
+  const brand = findBrand(PARTS[part].brands, unit.brandId);
+  const value = sellSpareUnitValue(part, unit);
+  sellSpareUnit(garageConfig, part, index);
+  addTransaction(state, `Reserve ${label} verkocht (${brand.name})`, value);
+  return true;
+}
+
+export function sellTrailerUnitTransaction(state, garageConfig) {
+  if (!garageConfig.trailerId) return false;
+  const trailer = findBrand(TRAILER_TYPES, garageConfig.trailerId);
+  const value = sellTrailerValue(garageConfig);
+  sellTrailerUnit(garageConfig);
+  addTransaction(state, `Trailer verkocht (${trailer.name})`, value);
+  return true;
+}
+
+export function sellChassisUnitTransaction(state, garageConfig) {
+  if (!garageConfig.chassisOwned) return false;
+  const value = sellChassisValue(garageConfig);
+  sellChassisUnit(garageConfig);
+  addTransaction(state, `Chassis verkocht`, value);
   return true;
 }
 

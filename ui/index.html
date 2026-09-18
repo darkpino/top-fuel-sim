@@ -205,6 +205,7 @@
     <p class="note" style="margin-top:0;" id="g-engine-equipped">Geen motorblok gemonteerd.</p>
     <p class="note" style="margin-top:0;" id="g-engine-condition"></p>
     <button class="secondary" id="g-repair-engine" type="button" style="display:none;">Motorblok repareren</button>
+    <button class="secondary" id="g-sell-engine" type="button" style="display:none;">Motorblok verkopen</button>
     <div id="g-engine-inventory-list"></div>
     <div class="row"><label>Merk (nieuw)</label><select id="g-engine-spare-brand"></select></div>
     <button class="secondary" id="g-buy-engine-spare" type="button">Motorblok kopen</button>
@@ -219,6 +220,7 @@
     <p class="note" style="margin-top:0;" id="g-head-equipped">Geen cilinderkoppen gemonteerd.</p>
     <p class="note" style="margin-top:0;" id="g-head-condition"></p>
     <button class="secondary" id="g-repair-head" type="button" style="display:none;">Cilinderkoppen repareren</button>
+    <button class="secondary" id="g-sell-head" type="button" style="display:none;">Cilinderkoppen verkopen</button>
     <div id="g-head-inventory-list"></div>
     <div class="row"><label>Merk (nieuw)</label><select id="g-head-spare-brand"></select></div>
     <button class="secondary" id="g-buy-head-spare" type="button">Cilinderkoppen kopen</button>
@@ -233,6 +235,7 @@
     <p class="note" style="margin-top:0;" id="g-blower-equipped">Geen blower gemonteerd.</p>
     <p class="note" style="margin-top:0;" id="g-blower-condition"></p>
     <button class="secondary" id="g-repair-blower" type="button" style="display:none;">Blower repareren</button>
+    <button class="secondary" id="g-sell-blower" type="button" style="display:none;">Blower verkopen</button>
     <div class="row"><label>Type</label>
       <select id="g-blower-type"></select>
     </div>
@@ -251,6 +254,7 @@
     <p class="note" style="margin-top:0;" id="g-clutch-equipped">Geen koppeling gemonteerd.</p>
     <p class="note" style="margin-top:0;" id="g-clutch-condition"></p>
     <button class="secondary" id="g-repair-clutch" type="button" style="display:none;">Koppeling repareren</button>
+    <button class="secondary" id="g-sell-clutch" type="button" style="display:none;">Koppeling verkopen</button>
     <p class="note" style="margin-top:0;">Plaatenaantal en warmteopbouw tijdens slippen zitten in het merk gebakken - een goedkope 5-plaats wordt heter tijdens slippen (minder tolerant), duurdere 6-plaats-modellen koeler en betrouwbaarder. Elk merk heeft ook een eigen grens aan hoeveel vermogen het pakket kan vasthouden: maakt de motor meer dan die koppeling aankan, dan rijdt hij er letterlijk doorheen - hij blijft slippen, ook bij volledige lockup - en kookt zichzelf op tot hij vastloopt. Een goedkopere koppeling bij een fors vermogen is dus een reëel risico, niet alleen een betrouwbaarheidscijfer op papier.</p>
     <div class="row"><label><span class="name">Lagerpositie / vrijloop-afstelling</span><span class="val" id="v-g-clutch-bearing">0</span></label>
       <input type="range" id="g-clutch-bearing" min="-3" max="3" value="0" step="1"></div>
@@ -273,6 +277,7 @@
     <p class="note" style="margin-top:0;" id="g-fuelPump-equipped">Geen brandstofpomp gemonteerd.</p>
     <p class="note" style="margin-top:0;" id="g-fuelPump-condition"></p>
     <button class="secondary" id="g-repair-fuelPump" type="button" style="display:none;">Brandstofpomp repareren</button>
+    <button class="secondary" id="g-sell-fuelPump" type="button" style="display:none;">Brandstofpomp verkopen</button>
     <p class="note" style="margin-top:0;">De pomp draait mechanisch mee met de motor en bepaalt wat 100% op de brandstofcurve daadwerkelijk aan debiet levert - een pomp van 90 gpm en eentje van 120 gpm leveren bij dezelfde standknop een heel andere hoeveelheid brandstof (zie het brandstofdebiet in de motorgrafiek). Zonder gemonteerde pomp kun je niet racen, net als bij motor, koppen, blower en koppeling.</p>
     <div id="g-fuelPump-inventory-list"></div>
     <div class="row"><label>Merk (nieuw)</label><select id="g-fuelPump-spare-brand"></select></div>
@@ -288,7 +293,8 @@
     <p class="note" style="margin-top:0;" id="g-trailer-equipped">Geen trailer.</p>
     <div class="row"><label>Type</label><select id="g-trailer-select"></select></div>
     <button class="secondary" id="g-buy-trailer" type="button">Trailer kopen</button>
-    <p class="note">Zonder trailer kun je niet naar een evenement - en zonder trailer past er ook geen enkel reserve-onderdeel mee. Een fifth-wheel (achter een pickup) is het goedkoopst maar heeft weinig laadruimte over voor reserves; een boxtrailer of volledige semi-oplegger kost meer maar neemt veel meer reserve-onderdelen mee.</p>
+    <button class="secondary" id="g-sell-trailer" type="button" style="display:none;">Trailer verkopen</button>
+    <p class="note">Zonder trailer kun je niet naar een evenement - en zonder trailer past er ook geen enkel reserve-onderdeel mee. Een fifth-wheel (achter een pickup) is het goedkoopst maar heeft weinig laadruimte over voor reserves; een boxtrailer of volledige semi-oplegger kost meer maar neemt veel meer reserve-onderdelen mee. Verkopen kan met reserve-onderdelen nog aan boord (die blijven gewoon in de garage) - er is dan alleen geen ruimte meer voor extra reserves tot er weer een trailer is.</p>
     </div>
 
     <div class="garage-section" id="garage-sec-chassis">
@@ -320,6 +326,8 @@
     </div>
     <button class="secondary" id="g-buy-body" type="button">Nieuwe body kopen</button>
     <p class="note">De body kan op elk moment vervangen worden, los van de vastliggende chassislengte - carbon is duurder maar lichter.</p>
+    <button class="secondary" id="g-sell-chassis" type="button">Chassis verkopen</button>
+    <p class="note">Verkopen maakt de auto niet meer race-klaar tot er een nieuw chassis is - lengte en bodytype hierboven blijven als startpunt staan voor een volgende (nieuw)bouw.</p>
     </div>
 
     <div class="row"><label><input type="checkbox" id="g-mudflaps"> Mudflaps gemonteerd</label></div>

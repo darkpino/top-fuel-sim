@@ -20,10 +20,12 @@ import {
   BLOWER_TYPES, BODY_MATERIALS, CHASSIS_LENGTH_MIN_IN, CHASSIS_LENGTH_MAX_IN,
   chassisBuildPrice, chassisListingPrice, buildNewChassis, buySecondhandChassis, buyNewBody,
   CLUTCH_BRANDS, CLUTCH_PACK_MAX_RUNS,
+  sellEquippedUnitValue, sellSpareUnitValue, sellTrailerValue, sellChassisValue,
 } from "../sim-core/garage.js";
 import {
   ENTRY_FEE, defaultFinancesState, addTransaction, chargeEntryFee, chargeRunCost, chargeTeamWages,
   rollEnginePartsFailed, chargePartFailure, repairPartUnit, REPAIR_FRACTION, awardEventPrize, generateSponsorOffers,
+  sellEquippedPart, sellSparePartUnit, sellTrailerUnitTransaction, sellChassisUnitTransaction,
 } from "../sim-core/finances.js";
 import {
   TEAM_ROLES, defaultTeamConfig, computeTeamEffects, totalTeamWagesPerEvent,
@@ -38,7 +40,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "87";
+const APP_BUILD = "88";
 const APP_BUILD_DATE = "2026-09-18";
 $("app-version-note").textContent = `Build ${APP_BUILD} · ${APP_BUILD_DATE}`;
 
@@ -1600,9 +1602,10 @@ function renderPartInventoryList(part) {
     const brand = findBrand(PARTS[part].brands, unit.brandId);
     const dikteCell = part === "clutch" ? `<td>${formatPackThickness(unit.packThicknessSteps)}</td>` : "";
     return `<tr><td>${escapeHtml(brand.name)}</td><td>${formatAgeMonths(unit.ageMonths)}</td>${dikteCell}<td>€${unitPrice(part, unit).toLocaleString("nl-NL")}</td>` +
-      `<td><button class="secondary mini-btn" type="button" data-install-part="${part}" data-install-idx="${i}">Monteer</button></td></tr>`;
+      `<td><button class="secondary mini-btn" type="button" data-install-part="${part}" data-install-idx="${i}">Monteer</button></td>` +
+      `<td><button class="secondary mini-btn" type="button" data-sell-spare-part="${part}" data-sell-spare-idx="${i}">Verkoop (+€${sellSpareUnitValue(part, unit).toLocaleString("nl-NL")})</button></td></tr>`;
   }).join("");
-  container.innerHTML = `<table class="event-table"><thead><tr><th>Merk (reserve)</th><th>Leeftijd</th>${dikteHeader}<th>Waarde</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  container.innerHTML = `<table class="event-table"><thead><tr><th>Merk (reserve)</th><th>Leeftijd</th>${dikteHeader}<th>Waarde</th><th></th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 // The used-parts market for this one part: whatever's currently listed
@@ -1643,6 +1646,7 @@ function renderPartEquippedStatus(part) {
   const capLabel = label[0].toUpperCase() + label.slice(1);
   const conditionEl = $(`g-${part}-condition`);
   const repairBtn = $(`g-repair-${part}`);
+  const sellBtn = $(`g-sell-${part}`);
   if (owned) {
     const unit = equippedUnit(garageConfig, part);
     const brand = findBrand(PARTS[part].brands, unit.brandId);
@@ -1674,6 +1678,14 @@ function renderPartEquippedStatus(part) {
     conditionEl.textContent = "";
     repairBtn.style.display = "none";
   }
+  // Sellable regardless of condition (broken, exhausted, or fine) - even
+  // scrap is worth something, see finances.js's sellEquippedPart.
+  if (owned) {
+    sellBtn.style.display = "block";
+    sellBtn.textContent = `${capLabel} verkopen (+€${sellEquippedUnitValue(garageConfig, part).toLocaleString("nl-NL")})`;
+  } else {
+    sellBtn.style.display = "none";
+  }
   $(`g-buy-${part}-spare`).textContent = owned ? `Reserve ${label} kopen (nieuw)` : `${capLabel} kopen (nieuw)`;
 }
 
@@ -1692,6 +1704,7 @@ function renderChassisSection() {
 
   if (owned) {
     $("g-chassis-equipped").textContent = `Chassis: ${garageConfig.chassisLengthIn}" — lengte ligt vast.`;
+    $("g-sell-chassis").textContent = `Chassis verkopen (+€${sellChassisValue(garageConfig).toLocaleString("nl-NL")})`;
   } else {
     $("g-chassis-equipped").textContent = "Geen chassis gemonteerd — geen run of evenement mogelijk.";
     const bodyId = $("g-chassis-build-body").value;
@@ -1735,9 +1748,12 @@ function renderGarageSummary() {
     const trailer = findBrand(TRAILER_TYPES, garageConfig.trailerId);
     $("g-trailer-equipped").textContent = `Trailer: ${trailer.name} — ${trailer.spareCapacity} reserve-onderdelen.`;
     $("g-buy-trailer").textContent = "Andere trailer kopen";
+    $("g-sell-trailer").style.display = "block";
+    $("g-sell-trailer").textContent = `Trailer verkopen (+€${sellTrailerValue(garageConfig).toLocaleString("nl-NL")})`;
   } else {
     $("g-trailer-equipped").textContent = "Geen trailer — geen evenement mogelijk, en geen ruimte voor reserve-onderdelen.";
     $("g-buy-trailer").textContent = "Trailer kopen";
+    $("g-sell-trailer").style.display = "none";
   }
   const spareCount = totalSpareCount(garageConfig);
   const spareCap = trailerSpareCapacity(garageConfig);
@@ -1898,6 +1914,15 @@ $("g-buy-body").addEventListener("click", () => {
   $("garage-status").textContent = `Nieuwe body (${BODY_MATERIALS[bodyId].name}) gekocht en gemonteerd voor €${price.toLocaleString("nl-NL")}.`;
 });
 
+$("g-sell-chassis").addEventListener("click", () => {
+  if (!sellChassisUnitTransaction(financesState, garageConfig)) return;
+  saveFinancesState();
+  saveGarageConfig();
+  renderGarageSummary();
+  renderFinancePanel();
+  $("garage-status").textContent = "Chassis verkocht.";
+});
+
 // "Monteer" and market "Kopen" buttons are both re-rendered on every
 // summary refresh, so delegate their clicks from a stable ancestor
 // instead of binding per-button.
@@ -1916,6 +1941,18 @@ $("garagePanel").addEventListener("click", (e) => {
   }
   const buyListingBtn = e.target.closest("[data-buy-listing-part]");
   if (buyListingBtn) buyUsedListing(buyListingBtn.dataset.buyListingPart, buyListingBtn.dataset.buyListingId);
+  const sellSpareBtn = e.target.closest("[data-sell-spare-part]");
+  if (sellSpareBtn) {
+    const part = sellSpareBtn.dataset.sellSparePart;
+    const idx = +sellSpareBtn.dataset.sellSpareIdx;
+    if (!sellSparePartUnit(financesState, garageConfig, part, idx)) return;
+    saveFinancesState();
+    saveGarageConfig();
+    renderGarageSummary();
+    renderFinancePanel();
+    const label = spareLabel(part);
+    $("garage-status").textContent = `Reserve ${label} verkocht.`;
+  }
 });
 
 // Buys a brand-new unit of whatever brand is picked in that part's
@@ -1972,6 +2009,20 @@ function repairPart(part) {
   $("garage-status").textContent = `${label[0].toUpperCase()}${label.slice(1)} gerepareerd — weer inzetbaar.`;
 }
 PART_LIST.forEach(part => $(`g-repair-${part}`).addEventListener("click", () => repairPart(part)));
+
+// Sells the currently mounted unit (see finances.js's sellEquippedPart) -
+// works regardless of condition, leaves the slot empty same as any other
+// missing part (isCarRaceReady already covers that).
+function sellPart(part) {
+  const label = spareLabel(part);
+  if (!sellEquippedPart(financesState, garageConfig, part)) return;
+  saveFinancesState();
+  saveGarageConfig();
+  renderGarageSummary();
+  renderFinancePanel();
+  $("garage-status").textContent = `${label[0].toUpperCase()}${label.slice(1)} verkocht.`;
+}
+PART_LIST.forEach(part => $(`g-sell-${part}`).addEventListener("click", () => sellPart(part)));
 
 // Buys a specific used listing off the market (see garage.js's
 // generateUsedMarket) - same budget/capacity gates as a new purchase, but
@@ -2030,6 +2081,15 @@ $("g-buy-trailer").addEventListener("click", () => {
   renderGarageSummary();
   renderFinancePanel();
   $("garage-status").textContent = `Trailer (${trailer.name}) gekocht voor €${trailer.priceNew.toLocaleString("nl-NL")}.`;
+});
+
+$("g-sell-trailer").addEventListener("click", () => {
+  if (!sellTrailerUnitTransaction(financesState, garageConfig)) return;
+  saveFinancesState();
+  saveGarageConfig();
+  renderGarageSummary();
+  renderFinancePanel();
+  $("garage-status").textContent = "Trailer verkocht.";
 });
 
 // ---- Team bouwen: rijder, car chief, sponsor-scout - dezelfde

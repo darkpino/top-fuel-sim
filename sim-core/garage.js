@@ -843,19 +843,66 @@ export function computeGarageEffects(config) {
 // part, to quote a repair/replacement cost), an unowned part contributes
 // nothing here - this is what the team has actually put money into, not
 // what a hypothetical fallback part would cost.
+// The chassis's own current value (build cost times its age discount, if
+// bought used) - broken out from totalBuildValue below so sellChassisValue
+// can reuse the exact same figure instead of recomputing it.
+export function chassisValue(config) {
+  if (!config.chassisOwned) return 0;
+  return Math.round(chassisBuildPrice(config.bodyMaterial) * (config.chassisAgeMonths > 0 ? usedPriceMult(config.chassisAgeMonths) : 1));
+}
+
 export function totalBuildValue(config) {
   const partsTotal = Object.keys(PARTS).reduce((sum, part) => {
     if (!isPartOwned(config, part)) return sum;
     return sum + partPrice(findBrand(PARTS[part].brands, config[part + "BrandId"]), config[part + "AgeMonths"]);
   }, 0);
   const trailerTotal = config.trailerId ? findBrand(TRAILER_TYPES, config.trailerId).priceNew : 0;
-  const chassisTotal = config.chassisOwned
-    ? Math.round(chassisBuildPrice(config.bodyMaterial) * (config.chassisAgeMonths > 0 ? usedPriceMult(config.chassisAgeMonths) : 1))
-    : 0;
   return partsTotal
     + (config.blowerBrandId ? BLOWER_TYPES[config.blowerType].priceDelta : 0)
-    + chassisTotal
+    + chassisValue(config)
     + trailerTotal;
+}
+
+// Selling anything back recovers only a fraction of its current value - a
+// real team doesn't get full buy-back on gear that's already been bolted
+// on and run, same "used is worth less" idea the market listings already
+// apply via usedPriceMult, just flattened into one simple recovery rate
+// here instead of tracking a separate depreciation curve for every
+// possible sale. Applies uniformly to every sellable item (parts, spares,
+// trailer, chassis) - condition/wear/broken state doesn't change the
+// price, same simplification repairPartUnit's flat REPAIR_FRACTION
+// already makes.
+export const SELL_FRACTION = 0.6;
+
+export function sellEquippedUnitValue(config, part) {
+  return Math.round(equippedPartPrice(config, part) * SELL_FRACTION);
+}
+export function sellSpareUnitValue(part, unit) {
+  return Math.round(unitPrice(part, unit) * SELL_FRACTION);
+}
+export function sellTrailerValue(config) {
+  if (!config.trailerId) return 0;
+  return Math.round(findBrand(TRAILER_TYPES, config.trailerId).priceNew * SELL_FRACTION);
+}
+export function sellChassisValue(config) {
+  return Math.round(chassisValue(config) * SELL_FRACTION);
+}
+
+// Mutators - garage.js stays data-only (no money changes hands here, see
+// finances.js's sellEquippedPart/sellSparePartUnit/sellTrailerUnit/
+// sellChassisUnit for the paired transaction). Selling the equipped unit
+// reuses unequipPart's exact "nothing mounted" reset (brandId/ageMonths/
+// pack fields all clear) - a sale isn't mechanically different from a
+// catastrophic write-off as far as the slot itself is concerned, both end
+// with an empty mount.
+export function sellSpareUnit(config, part, index) {
+  config[part + "Inventory"].splice(index, 1);
+}
+export function sellTrailerUnit(config) {
+  config.trailerId = null;
+}
+export function sellChassisUnit(config) {
+  config.chassisOwned = false;
 }
 
 export function equippedPartPrice(config, part) {
