@@ -4,10 +4,10 @@
 // scale with the price of the equipped part that failed (so a Vortan
 // motor costs more to fix than an Ironclad one).
 
-import { equippedPartPrice, consumeSpareOnFailure, unequipPart, spareLabel, markPartBroken, isPartBroken, clearPartBroken } from "./garage.js";
+import { equippedPartPrice, consumeSpareOnFailure, unequipPart, spareLabel, markPartBroken, isPartRepairable, clearPartBroken } from "./garage.js";
 
 export const STARTING_BUDGET = 75000;
-export const ENTRY_FEE = 2500;
+export const ENTRY_FEE = 150;
 export const RUN_COST = 850;
 
 // Repair cost (no spare on hand) as a fraction of the equipped part's
@@ -152,7 +152,7 @@ export function chargePartFailure(state, garageConfig, part, rng = Math.random, 
 // rather than a patch. No-op (returns false, charges nothing) if the part
 // isn't actually broken, so a stray call can't double-charge.
 export function repairPartUnit(state, garageConfig, part) {
-  if (!isPartBroken(garageConfig, part)) return false;
+  if (!isPartRepairable(garageConfig, part)) return false;
   const label = spareLabel(part);
   const cap = label.charAt(0).toUpperCase() + label.slice(1);
   const cost = Math.round(equippedPartPrice(garageConfig, part) * REPAIR_FRACTION[part]);

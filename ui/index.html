@@ -234,12 +234,9 @@
     <p class="note" style="margin-top:0;" id="g-blower-condition"></p>
     <button class="secondary" id="g-repair-blower" type="button" style="display:none;">Blower repareren</button>
     <div class="row"><label>Type</label>
-      <select id="g-blower-type">
-        <option value="conventional">Gewone blower (goedkoper)</option>
-        <option value="setback">Setback blower (meer vermogen, betrouwbaarder, duurder)</option>
-      </select>
+      <select id="g-blower-type"></select>
     </div>
-    <p class="note" style="margin-top:0;">Ombouwen tussen type kost echt geld (het prijsverschil, zie Type hierboven) - geen gratis knopje meer, in beide richtingen.</p>
+    <p class="note" style="margin-top:0;">Ombouwen tussen type kost echt geld (het prijsverschil, zie Type hierboven, en geldt voor het huidige gemonteerde blok - een losse aankoop van een nieuw of tweedehands blok hieronder heeft zelf geen type/prijsverschil, dat zit 'm puur in de montage) - geen gratis knopje meer, in beide richtingen.</p>
     <div id="g-blower-inventory-list"></div>
     <div class="row"><label>Merk (nieuw)</label><select id="g-blower-spare-brand"></select></div>
     <button class="secondary" id="g-buy-blower-spare" type="button">Blower kopen</button>
@@ -255,17 +252,19 @@
     <p class="note" style="margin-top:0;" id="g-clutch-condition"></p>
     <button class="secondary" id="g-repair-clutch" type="button" style="display:none;">Koppeling repareren</button>
     <p class="note" style="margin-top:0;">Plaatenaantal en warmteopbouw tijdens slippen zitten in het merk gebakken - een goedkope 5-plaats wordt heter tijdens slippen (minder tolerant), duurdere 6-plaats-modellen koeler en betrouwbaarder. Elk merk heeft ook een eigen grens aan hoeveel vermogen het pakket kan vasthouden: maakt de motor meer dan die koppeling aankan, dan rijdt hij er letterlijk doorheen - hij blijft slippen, ook bij volledige lockup - en kookt zichzelf op tot hij vastloopt. Een goedkopere koppeling bij een fors vermogen is dus een reëel risico, niet alleen een betrouwbaarheidscijfer op papier.</p>
-    <div class="row"><label><span class="name">Pakketdikte (extra platen/shims)</span><span class="val" id="v-g-clutch-pack">0</span></label>
-      <input type="range" id="g-clutch-pack" min="-3" max="3" value="0" step="1"></div>
     <div class="row"><label><span class="name">Lagerpositie / vrijloop-afstelling</span><span class="val" id="v-g-clutch-bearing">0</span></label>
       <input type="range" id="g-clutch-bearing" min="-3" max="3" value="0" step="1"></div>
-    <p class="note" style="margin-top:0;">Een dikker pakket geeft de vingers fysiek minder ruimte om naar buiten te bewegen, tenzij je de lagerpositie evenveel terugzet om dat te compenseren - alleen het niet-gecompenseerde deel (pakketdikte minus lagerpositie) kost bereikbare lockup: de koppelingstimer kan dan nog zoveel vragen, de vingers komen er simpelweg niet. Blijft de koppeling daar structureel tegenaan slippen, dan last ze uiteindelijk vast, net als bij te veel vermogen voor de klemkracht. Op 0/0 (fabrieksinstelling) is dit een exacte no-op, ongeacht wat er verder gebeurt.</p>
+    <p class="note" style="margin-top:0;">Pakketdikte is een eigenschap van het gemonteerde pakket zelf (zie hieronder, en Tweedehandsmarkt) - de lagerpositie hierboven is het losse, altijd bij te stellen tegenwicht ertegen. Een dikker pakket geeft de vingers fysiek minder ruimte om naar buiten te bewegen, tenzij de lagerpositie evenveel compenseert - alleen het niet-gecompenseerde deel (pakketdikte minus lagerpositie) kost bereikbare lockup: de koppelingstimer kan dan nog zoveel vragen, de vingers komen er simpelweg niet. Blijft de koppeling daar structureel tegenaan slippen, dan last ze uiteindelijk vast, net als bij te veel vermogen voor de klemkracht. Op dikte 0 met lagerpositie 0 is dit een exacte no-op, ongeacht wat er verder gebeurt.</p>
+    <p class="note" style="margin-top:0;">Koppelingsplaten zijn een slijtdeel los van de rest van de conditie hierboven: na <span id="clutch-max-runs-note">--</span> runs is het frictiemateriaal simpelweg op, ongeacht hoe rustig die runs verliepen - dat is niet te repareren, alleen een vers pakket (reserve, nieuwbouw, of tweedehands) lost het op.</p>
     <div id="g-clutch-inventory-list"></div>
     <div class="row"><label>Merk (nieuw)</label><select id="g-clutch-spare-brand"></select></div>
+    <div class="row"><label><span class="name">Pakketdikte (nieuw pakket)</span><span class="val" id="v-g-clutch-new-pack-thickness">0</span></label>
+      <input type="range" id="g-clutch-new-pack-thickness" min="-3" max="3" value="0" step="1"></div>
+    <p class="note" style="margin-top:0;">Alleen bij een nieuw pakket kies je zelf hoeveel shims erbij (of eraf) gaan t.o.v. het merk zijn eigen fabrieksdikte (5-plaats is van zichzelf dunner dan 6-plaats) - schuift automatisch terug naar die fabriekswaarde bij het wisselen van merk hierboven. Een tweedehands pakket heeft die keuze al vast liggen (zie Tweedehandsmarkt) - net als leeftijd is dat de vorige eigenaar zijn keuze geweest, met wat spreiding onderling.</p>
     <button class="secondary" id="g-buy-clutch-spare" type="button">Koppeling kopen</button>
-    <p class="note">Slijt mee met elke run (test of echt - zie Conditie hierboven, met opzet een ruwe schatting). Met reserve monteert de crew 'm bij koppelingsschade (tegen montagekosten - niet meer gratis); zonder reserve blijft ze kapot gemonteerd zitten tot je 'm zelf repareert (geen automatische reparatie meer) - dit evenement ben je er in elk geval klaar mee. Bij een heftige klapper is de koppeling soms total loss, ook mét reserve op de trailer - dan moet 'm alsnog vervangen worden en is dit evenement sowieso voorbij.</p>
+    <p class="note">Meerdere nieuwe pakketten met exact dezelfde gekozen dikte kopen kan gewoon - het is een bewuste instelling, geen toevalstreffer. Slijt (in warmte/conditie, los van de runs-teller hierboven) mee met elke run (test of echt - zie Conditie hierboven, met opzet een ruwe schatting). Met reserve monteert de crew 'm bij koppelingsschade (tegen montagekosten - niet meer gratis); zonder reserve blijft ze kapot gemonteerd zitten tot je 'm zelf repareert (geen automatische reparatie meer) - dit evenement ben je er in elk geval klaar mee. Bij een heftige klapper is de koppeling soms total loss, ook mét reserve op de trailer - dan moet 'm alsnog vervangen worden en is dit evenement sowieso voorbij.</p>
     <div class="sec-title" style="font-size:12px; border-top:none; padding-top:0; margin-top:12px;">Tweedehandsmarkt</div>
-    <p class="note" style="margin-top:0;">Wisselend aanbod, per merk een eigen leeftijd - hoe ouder, hoe goedkoper maar ook hoe minder betrouwbaar. Kopen monteert het direct (het huidige onderdeel gaat naar de reservevoorraad, niet weg) - dit is dus een bewuste vervanging, geen extra reserve erbij. Ververst bij elk nieuw evenement.</p>
+    <p class="note" style="margin-top:0;">Wisselend aanbod, per merk een eigen leeftijd én pakketdikte (niet zelf te kiezen, ligt al vast, met wat spreiding tussen listings onderling) - hoe ouder, hoe goedkoper maar ook hoe minder betrouwbaar. Kopen monteert het direct (het huidige onderdeel gaat naar de reservevoorraad, niet weg) - dit is dus een bewuste vervanging, geen extra reserve erbij. Ververst bij elk nieuw evenement.</p>
     <div id="g-clutch-market-list"></div>
     </div>
 
