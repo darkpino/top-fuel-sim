@@ -6,7 +6,7 @@
 
 import {
   equippedPartPrice, consumeSpareOnFailure, unequipPart, spareLabel, markPartBroken, isPartRepairable, clearPartBroken,
-  isPartOwned, PARTS, TRAILER_TYPES, findBrand,
+  isPartOwned, isPackExhausted, PARTS, TRAILER_TYPES, findBrand,
   sellEquippedUnitValue, sellSpareUnitValue, sellTrailerValue, sellChassisValue,
   sellSpareUnit, sellTrailerUnit, sellChassisUnit,
 } from "./garage.js";
@@ -145,6 +145,26 @@ export function chargePartFailure(state, garageConfig, part, rng = Math.random, 
   markPartBroken(garageConfig, part);
   addTransaction(state, `${cap}schade — kapot, nog niet gerepareerd (zie Auto bouwen)`, 0);
   return "broken";
+}
+
+// Clutch pack exhaustion (CLUTCH_PACK_MAX_RUNS - see garage.js's
+// isPackExhausted) isn't a failure roll like chargePartFailure above - it's
+// a scheduled service-life limit that lands the instant a run pushes the
+// pack's own run-count over the line, with no catastrophic/broken branch
+// (a worn-out pack was never a violent failure, and garage.js's
+// isPartRepairable already refuses to let a pack be repaired - replacing
+// it is the only fix). Called after every player run (see ui/main.js's
+// chargePlayerRun) so a spare on the trailer gets swapped in immediately,
+// the same swap-labor fee as any other spared failure, instead of the car
+// silently sitting "not race-ready" with a fresh pack unused right next to
+// it. No spare just means the crew ran out - the car stays unready until
+// the player buys and installs a new one, same as it already was.
+export function chargeClutchPackExhaustion(state, garageConfig) {
+  if (!isPackExhausted(garageConfig)) return false;
+  if (!consumeSpareOnFailure(garageConfig, "clutchPack")) return false;
+  const fee = Math.round(equippedPartPrice(garageConfig, "clutchPack") * SPARE_SWAP_LABOR_FRACTION);
+  addTransaction(state, `Koppelingspakket versleten — reserve gemonteerd (montagekosten)`, -fee);
+  return true;
 }
 
 // The explicit, player-initiated fix for a broken part (garage.js's

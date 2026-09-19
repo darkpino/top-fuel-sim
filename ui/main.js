@@ -24,7 +24,7 @@ import {
 } from "../sim-core/garage.js";
 import {
   ENTRY_FEE, defaultFinancesState, addTransaction, chargeEntryFee, chargeRunCost, chargeTeamWages,
-  rollEnginePartsFailed, chargePartFailure, repairPartUnit, REPAIR_FRACTION, awardEventPrize, generateSponsorOffers,
+  rollEnginePartsFailed, chargePartFailure, chargeClutchPackExhaustion, repairPartUnit, REPAIR_FRACTION, awardEventPrize, generateSponsorOffers,
   sellEquippedPart, sellSparePartUnit, sellTrailerUnitTransaction, sellChassisUnitTransaction,
 } from "../sim-core/finances.js";
 import {
@@ -44,7 +44,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "92";
+const APP_BUILD = "93";
 const APP_BUILD_DATE = "2026-09-19";
 
 // Real NHRA Top Fuel national events run a fixed 16-car eliminator ladder
@@ -1455,6 +1455,11 @@ function wearSeverityByPart(r) {
 function chargePlayerRun(r) {
   chargeRunCost(financesState);
   addRunWear(garageConfig, wearSeverityByPart(r));
+  // A clutch pack that just aged out on run-count (not a failure roll,
+  // see chargeClutchPackExhaustion) gets a spare swapped in right away if
+  // one's on the trailer - otherwise the car would sit "not race-ready"
+  // with a fresh pack sitting unused in inventory.
+  chargeClutchPackExhaustion(financesState, garageConfig);
   const catastrophicMult = computeTeamEffects(teamConfig).teamCatastrophicMult;
   const fatalParts = [];
   const brokenParts = [];
