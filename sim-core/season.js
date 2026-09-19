@@ -14,10 +14,19 @@ import { findTrack } from "./tracks.js";
 
 export const SEASON_MIN_RACES = 4;
 
-// Season races always run at a fixed field size rather than asking the
-// player to reconfigure it every round - keeps the "pick your races, then
-// just go" flow smooth. Matches the old default single-event field size.
-export const SEASON_FIELD_SIZE = 16;
+// How many cars actually show up to qualify at a given round - drawn
+// fresh each time the player attends (same "not decided until you show
+// up" spirit as that round's weather/opponents, also only generated at
+// attend-time), from that specific TRACK's own seasonFieldMin/Max rather
+// than a single fixed number for every venue. Keeps the player from
+// having to reconfigure a field size every round while still making
+// Indianapolis pack the show and a smaller market like Epping run thin,
+// same as the real tour.
+export function deriveSeasonFieldSize(trackId, rng = Math.random) {
+  const track = findTrack(trackId);
+  const span = track.seasonFieldMax - track.seasonFieldMin;
+  return track.seasonFieldMin + Math.floor(rng() * (span + 1));
+}
 
 // NHRA Top Fuel-style points: every eliminator round survived is worth
 // more of the total than qualifying alone, with a smaller bonus for a

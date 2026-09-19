@@ -32,8 +32,9 @@ import {
   findTeamMember, hireTeamMember, fireTeamMember,
 } from "../sim-core/team.js";
 import {
-  SEASON_MIN_RACES, SEASON_FIELD_SIZE, defaultSeasonState, addRaceToCalendar, removeRaceFromCalendar,
+  SEASON_MIN_RACES, defaultSeasonState, addRaceToCalendar, removeRaceFromCalendar,
   startSeason, recordAttendedResult, recordSkippedResult, currentSeasonRound, travelMilesFor, travelCostFor,
+  deriveSeasonFieldSize,
 } from "../sim-core/season.js";
 
 function $(id) { return document.getElementById(id); }
@@ -44,7 +45,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "93";
+const APP_BUILD = "94";
 const APP_BUILD_DATE = "2026-09-19";
 
 // Real NHRA Top Fuel national events run a fixed 16-car eliminator ladder
@@ -999,7 +1000,7 @@ function renderSeasonPanel() {
       const track = findTrack(round.trackId);
       const cost = travelCostFor(seasonState.baseTrackId, round.trackId);
       const miles = travelMilesFor(seasonState.baseTrackId, round.trackId);
-      $("season-current-note").textContent = `Volgende race (${round.index + 1}/${seasonState.calendar.length}): ${track.name} — reiskosten ≈ €${cost.toLocaleString("nl-NL")} (${miles} mijl vanaf teambasis).`;
+      $("season-current-note").textContent = `Volgende race (${round.index + 1}/${seasonState.calendar.length}): ${track.name} — reiskosten ≈ €${cost.toLocaleString("nl-NL")} (${miles} mijl vanaf teambasis), verwacht veld ${track.seasonFieldMin}-${track.seasonFieldMax} auto's (bekend pas als je start).`;
       $("season-attend-btn").style.display = "block";
       $("season-skip-btn").style.display = "block";
     }
@@ -1066,7 +1067,7 @@ $("season-attend-btn").addEventListener("click", () => {
   saveFinancesState();
   renderFinancePanel();
   setMode("event");
-  beginEvent(round.trackId, SEASON_FIELD_SIZE, true);
+  beginEvent(round.trackId, deriveSeasonFieldSize(round.trackId), true);
 });
 
 $("season-skip-btn").addEventListener("click", () => {
