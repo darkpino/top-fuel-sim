@@ -31,6 +31,10 @@ import {
   TEAM_ROLES, defaultTeamConfig, computeTeamEffects, totalTeamWagesPerEvent,
   findTeamMember, hireTeamMember, fireTeamMember,
 } from "../sim-core/team.js";
+import {
+  SEASON_MIN_RACES, SEASON_FIELD_SIZE, defaultSeasonState, addRaceToCalendar, removeRaceFromCalendar,
+  startSeason, recordAttendedResult, recordSkippedResult, currentSeasonRound, travelMilesFor, travelCostFor,
+} from "../sim-core/season.js";
 
 function $(id) { return document.getElementById(id); }
 
@@ -40,7 +44,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "90";
+const APP_BUILD = "91";
 const APP_BUILD_DATE = "2026-09-19";
 $("app-version-note").textContent = `Build ${APP_BUILD} · ${APP_BUILD_DATE}`;
 
@@ -615,10 +619,22 @@ function saveTeamConfig() {
   try { localStorage.setItem(TEAM_KEY, JSON.stringify(teamConfig)); } catch { /* private mode, storage full, etc - silently no-ops */ }
 }
 
+const SEASON_KEY = "topfuel-season";
+function loadSeasonState() {
+  try {
+    const raw = localStorage.getItem(SEASON_KEY);
+    return raw ? { ...defaultSeasonState(), ...JSON.parse(raw) } : defaultSeasonState();
+  } catch { return defaultSeasonState(); }
+}
+function saveSeasonState() {
+  try { localStorage.setItem(SEASON_KEY, JSON.stringify(seasonState)); } catch { /* private mode, storage full, etc - silently no-ops */ }
+}
+
 let financesState = loadFinancesState();
 let garageConfig = loadGarageConfig();
 let teamConfig = loadTeamConfig();
 let marketState = loadMarketState();
+let seasonState = loadSeasonState();
 
 // ---- Evenement opslaan: ladderState (actieve kwalificatie/eliminatie-
 // ladder) leeft normaal alleen in het geheugen - zonder dit zou een
@@ -717,6 +733,7 @@ function serializeLadderState(ls) {
     elimRounds: Object.fromEntries(Object.entries(ls.elimRounds).map(([idx, ed]) => [idx, serializeElimRound(ed)])),
     playerOutcome: ls.playerOutcome,
     finalResultText: ls.finalResultText,
+    isSeasonRound: ls.isSeasonRound,
   });
 }
 function deserializeLadderState(saved) {
@@ -735,6 +752,7 @@ function deserializeLadderState(saved) {
     elimRounds: Object.fromEntries(Object.entries(saved.elimRounds).map(([idx, ed]) => [idx, deserializeElimRound(ed, byId)])),
     playerOutcome: saved.playerOutcome,
     finalResultText: saved.finalResultText,
+    isSeasonRound: !!saved.isSeasonRound,
   };
 }
 function loadEventState() {
@@ -762,12 +780,13 @@ function updateEnvLock() {
   $("event-env-note").style.display = locked ? "block" : "none";
 }
 
-const MODE_TAB_IDS = { test: "tabTest", event: "tabEvent", finance: "tabFinance", garage: "tabGarage", team: "tabTeam" };
+const MODE_TAB_IDS = { test: "tabTest", event: "tabEvent", season: "tabSeason", finance: "tabFinance", garage: "tabGarage", team: "tabTeam" };
 
 function setMode(mode) {
   currentMode = mode;
   Object.entries(MODE_TAB_IDS).forEach(([m, id]) => $(id).classList.toggle("active", m === mode));
   $("eventPanel").style.display = mode === "event" ? "block" : "none";
+  $("seasonPanel").style.display = mode === "season" ? "block" : "none";
   $("financePanel").style.display = mode === "finance" ? "block" : "none";
   $("garagePanel").style.display = mode === "garage" ? "block" : "none";
   $("teamPanel").style.display = mode === "team" ? "block" : "none";
@@ -775,6 +794,7 @@ function setMode(mode) {
   $("runBtn").style.display = mode === "test" ? "block" : "none";
   updateEnvLock();
   if (mode === "event" && eventInProgress()) refreshLadderView();
+  if (mode === "season") renderSeasonPanel();
   if (mode === "finance") renderFinancePanel();
   if (mode === "garage") renderGaragePanel();
   if (mode === "team") renderTeamPanel();
@@ -801,6 +821,9 @@ function roundResultText(result) {
 function entrantLabel(e) { return escapeHtml(e.name) + (e.isPlayer ? " (jij)" : ""); }
 
 $("trackSelect").innerHTML = TRACKS.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+$("season-add-track").innerHTML = TRACKS.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+$("season-base-select").innerHTML = TRACKS.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+$("season-min-races-note").textContent = SEASON_MIN_RACES;
 
 // Shared between starting a fresh event and restoring a saved one on page
 // load - both land on the same "active event" panel state.
@@ -814,6 +837,44 @@ function showEventActiveUI() {
   $("newEventBtn").style.display = "block";
   $("runRoundBtn").style.display = "block";
   $("skipQualBtn").style.display = "block";
+}
+
+// Shared by the manual "Start evenement" button and the season's "Ga naar
+// deze race" button - both already handled their own readiness/budget
+// checks and charged whatever's specific to that flow (entry fee + wages
+// always, travel cost only for a season round) before calling this. Just
+// builds the ladder itself and shows the active-event UI.
+function beginEvent(trackId, totalEntries, isSeasonRound = false) {
+  // The used-parts market turns over between events - fresh stock every
+  // time a new one starts, same "time has passed" checkpoint the rest of
+  // the economy (wages, sponsor offers) already keys off.
+  marketState = generateUsedMarket(Math.random);
+  saveMarketState();
+  if (currentMode === "garage") renderGarageSummary();
+  const bracketSize = deriveBracketSize(totalEntries, 32);
+  const seed = Math.floor(Math.random() * 1e9);
+  const roundDefs = buildRoundDefs(bracketSize);
+  const track = findTrack(trackId);
+  const player = {
+    id: "player", name: "Jij", team: "Jouw team", isPlayer: true,
+    quals: [null, null, null, null], bestEt: null, bestMph: null,
+    qualPosition: null, qualified: false, eliminated: false, eliminatedRound: null,
+  };
+  const rounds = generateEventConditions(roundDefs, seed, track);
+  ladderState = {
+    bracketSize, totalEntries, seed, rounds, trackId: track.id,
+    roundIndex: 0,
+    field: [player, ...generateAiField(totalEntries - 1, seed + 1)],
+    rng: mulberry32(seed + 777),
+    playerHistory: new Array(rounds.length).fill(null),
+    qOrder: null, bracketPool: null, elimRounds: {}, playerOutcome: null, finalResultText: null,
+    isSeasonRound,
+  };
+  viewingRoundIndex = null;
+  showEventActiveUI();
+  activateLadderRound();
+  updateEnvLock();
+  saveEventState();
 }
 
 $("startEventBtn").addEventListener("click", () => {
@@ -834,35 +895,7 @@ $("startEventBtn").addEventListener("click", () => {
   chargeTeamWages(financesState, wagesPerEvent);
   saveFinancesState();
   renderFinancePanel();
-  // The used-parts market turns over between events - fresh stock every
-  // time a new one starts, same "time has passed" checkpoint the rest of
-  // the economy (wages, sponsor offers) already keys off.
-  marketState = generateUsedMarket(Math.random);
-  saveMarketState();
-  if (currentMode === "garage") renderGarageSummary();
-  const bracketSize = deriveBracketSize(totalEntries, 32);
-  const seed = Math.floor(Math.random() * 1e9);
-  const roundDefs = buildRoundDefs(bracketSize);
-  const track = findTrack($("trackSelect").value);
-  const player = {
-    id: "player", name: "Jij", team: "Jouw team", isPlayer: true,
-    quals: [null, null, null, null], bestEt: null, bestMph: null,
-    qualPosition: null, qualified: false, eliminated: false, eliminatedRound: null,
-  };
-  const rounds = generateEventConditions(roundDefs, seed, track);
-  ladderState = {
-    bracketSize, totalEntries, seed, rounds, trackId: track.id,
-    roundIndex: 0,
-    field: [player, ...generateAiField(totalEntries - 1, seed + 1)],
-    rng: mulberry32(seed + 777),
-    playerHistory: new Array(rounds.length).fill(null),
-    qOrder: null, bracketPool: null, elimRounds: {}, playerOutcome: null, finalResultText: null,
-  };
-  viewingRoundIndex = null;
-  showEventActiveUI();
-  activateLadderRound();
-  updateEnvLock();
-  saveEventState();
+  beginEvent($("trackSelect").value, totalEntries);
 });
 
 $("newEventBtn").addEventListener("click", () => {
@@ -875,6 +908,170 @@ $("newEventBtn").addEventListener("click", () => {
   $("startEventBtn").style.display = "block";
   $("newEventBtn").style.display = "none";
   updateEnvLock();
+});
+
+$("backToSeasonBtn").addEventListener("click", () => {
+  ladderState = null;
+  saveEventState();
+  setMode("season");
+});
+
+// ---- Seizoen: speler-samengestelde kalender (circuits mogen vaker
+// voorkomen), per race zelf attend/skip, NHRA-stijl punten (zie
+// season.js) en reiskosten vanaf een gekozen teambasis. Draait de
+// werkelijke race via dezelfde ladder/eventPanel-machinery als een los
+// evenement (beginEvent, isSeasonRound=true) - finishEvent haakt daar
+// zelf de puntentelling aan. ----
+
+function seasonOutcomeLabel(entry) {
+  if (!entry.attended) return "Overgeslagen";
+  const o = entry.outcome;
+  if (!o.qualified) return "Niet gekwalificeerd";
+  if (o.champion) return "Kampioen";
+  return `Uitgeschakeld ronde ${o.eliminatedRound}`;
+}
+
+function renderSeasonRoundRows(tbodyId) {
+  return seasonState.calendar.map((entry, i) => {
+    const track = findTrack(entry.trackId);
+    const result = seasonState.results[i];
+    let cls = "future";
+    let statusTxt = "Nog niet gereden";
+    let pointsTxt = "--";
+    if (result) {
+      cls = "done";
+      statusTxt = seasonOutcomeLabel(result);
+      pointsTxt = result.points;
+    } else if (seasonState.active && i === seasonState.roundIndex) {
+      cls = "current";
+      statusTxt = "Aankomend";
+    }
+    return `<tr class="${cls}"><td>${i + 1}</td><td>${escapeHtml(track.name)}</td><td>${statusTxt}</td><td>${pointsTxt}</td></tr>`;
+  }).join("");
+}
+
+function renderSeasonCalendarBuilder() {
+  $("season-calendar-body").innerHTML = seasonState.calendar.map((entry, i) => {
+    const track = findTrack(entry.trackId);
+    const cost = seasonState.baseTrackId ? travelCostFor(seasonState.baseTrackId, entry.trackId) : null;
+    const costTxt = cost === null ? "--" : `€${cost.toLocaleString("nl-NL")}`;
+    return `<tr><td>${i + 1}</td><td>${escapeHtml(track.name)}</td><td>${costTxt}</td><td><button class="secondary mini-btn" type="button" data-remove-calendar-idx="${i}">Verwijder</button></td></tr>`;
+  }).join("");
+}
+
+function seasonSetupStatusText() {
+  const missing = [];
+  if (seasonState.calendar.length < SEASON_MIN_RACES) missing.push(`nog minstens ${SEASON_MIN_RACES - seasonState.calendar.length} race(s) toevoegen`);
+  if (!seasonState.baseTrackId) missing.push("een teambasis kiezen");
+  if (!teamConfig.driverId) missing.push("een rijder aannemen (zie Team bouwen) - die zit vast zodra het seizoen start");
+  if (missing.length) return `Nog te doen voor je kunt starten: ${missing.join(", ")}.`;
+  return `Klaar om te starten: ${seasonState.calendar.length} races gepland vanaf ${findTrack(seasonState.baseTrackId).name}.`;
+}
+
+function renderSeasonPanel() {
+  const complete = seasonState.calendar.length > 0 && !seasonState.active && seasonState.results.some(r => r !== null);
+  $("season-setup").style.display = seasonState.active || complete ? "none" : "block";
+  $("season-active").style.display = seasonState.active ? "block" : "none";
+  $("season-complete").style.display = complete ? "block" : "none";
+
+  if (!seasonState.active && !complete) {
+    $("season-status").textContent = seasonSetupStatusText();
+    $("season-base-select").value = seasonState.baseTrackId || TRACKS[0].id;
+    $("season-base-select").disabled = seasonState.calendar.length > 0;
+    renderSeasonCalendarBuilder();
+    return;
+  }
+
+  if (seasonState.active) {
+    $("season-status").textContent = "";
+    $("season-total-points").textContent = seasonState.totalPoints;
+    $("season-rounds-body").innerHTML = renderSeasonRoundRows();
+    const round = currentSeasonRound(seasonState);
+    if (round) {
+      const track = findTrack(round.trackId);
+      const cost = travelCostFor(seasonState.baseTrackId, round.trackId);
+      const miles = travelMilesFor(seasonState.baseTrackId, round.trackId);
+      $("season-current-note").textContent = `Volgende race (${round.index + 1}/${seasonState.calendar.length}): ${track.name} — reiskosten ≈ €${cost.toLocaleString("nl-NL")} (${miles} mijl vanaf teambasis).`;
+      $("season-attend-btn").style.display = "block";
+      $("season-skip-btn").style.display = "block";
+    }
+    return;
+  }
+
+  // Season finished - final standings.
+  const attendedCount = seasonState.results.filter(r => r && r.attended).length;
+  $("season-final-summary").textContent = `Seizoen afgerond! Totaal ${seasonState.totalPoints} punten uit ${attendedCount}/${seasonState.calendar.length} bijgewoonde races.`;
+  $("season-final-body").innerHTML = renderSeasonRoundRows();
+}
+
+$("season-base-select").addEventListener("change", () => {
+  if (seasonState.calendar.length > 0) { renderSeasonPanel(); return; } // locked once the calendar has races
+  seasonState.baseTrackId = $("season-base-select").value;
+  saveSeasonState();
+  renderSeasonPanel();
+});
+
+$("season-add-race-btn").addEventListener("click", () => {
+  addRaceToCalendar(seasonState, $("season-add-track").value);
+  saveSeasonState();
+  renderSeasonPanel();
+});
+
+$("season-calendar-body").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-remove-calendar-idx]");
+  if (!btn) return;
+  removeRaceFromCalendar(seasonState, +btn.dataset.removeCalendarIdx);
+  saveSeasonState();
+  renderSeasonPanel();
+});
+
+$("season-start-btn").addEventListener("click", () => {
+  if (seasonState.calendar.length < SEASON_MIN_RACES || !seasonState.baseTrackId || !teamConfig.driverId) {
+    $("season-status").textContent = seasonSetupStatusText();
+    return;
+  }
+  startSeason(seasonState);
+  saveSeasonState();
+  renderSeasonPanel();
+  renderTeamPanel();
+});
+
+$("season-attend-btn").addEventListener("click", () => {
+  const round = currentSeasonRound(seasonState);
+  if (!round) return;
+  if (!isCarRaceReady(garageConfig)) {
+    $("season-status").textContent = `Auto niet compleet of er staat een kapot onderdeel - koop/repareer eerst in Auto bouwen voor je naar deze race kunt.`;
+    return;
+  }
+  const wagesPerEvent = totalTeamWagesPerEvent(teamConfig);
+  const travelCost = travelCostFor(seasonState.baseTrackId, round.trackId);
+  const totalCost = ENTRY_FEE + Math.max(0, wagesPerEvent) + travelCost;
+  if (financesState.budget < totalCost) {
+    $("season-status").textContent = `Onvoldoende budget voor inschrijfgeld + teamsalarissen + reiskosten (€${totalCost.toLocaleString("nl-NL")}) - huidig budget €${financesState.budget.toLocaleString("nl-NL")}. Check Financiën voor sponsorvoorstellen.`;
+    return;
+  }
+  const track = findTrack(round.trackId);
+  const miles = travelMilesFor(seasonState.baseTrackId, round.trackId);
+  chargeEntryFee(financesState);
+  chargeTeamWages(financesState, wagesPerEvent);
+  addTransaction(financesState, `Reiskosten naar ${track.name} (${miles} mijl)`, -travelCost);
+  saveFinancesState();
+  renderFinancePanel();
+  setMode("event");
+  beginEvent(round.trackId, SEASON_FIELD_SIZE, true);
+});
+
+$("season-skip-btn").addEventListener("click", () => {
+  recordSkippedResult(seasonState);
+  saveSeasonState();
+  renderSeasonPanel();
+});
+
+$("season-new-btn").addEventListener("click", () => {
+  seasonState = defaultSeasonState();
+  saveSeasonState();
+  renderSeasonPanel();
+  renderTeamPanel();
 });
 
 // Enters a new round: applies its weather, and for qualifying pre-runs
@@ -1192,6 +1389,7 @@ function renderFinalResult(text) {
   $("event-status").textContent = "Evenement afgerond.";
   $("event-result").style.display = "block";
   $("event-final-result").textContent = text;
+  $("backToSeasonBtn").style.display = ladderState.isSeasonRound ? "block" : "none";
   updateEnvLock();
 }
 
@@ -1278,7 +1476,10 @@ function chargePlayerRun(r) {
 
 // Awards prize money for how the event ended, offers 1-2 sponsor deals
 // (reusing the event's own seeded rng so a given event/seed is
-// reproducible), then shows the final result text.
+// reproducible), then shows the final result text. A season round also
+// banks its points here (qualPosition comes off the player's own field
+// entry, since outcome itself doesn't carry it - see season.js's
+// pointsForOutcome) and advances the season to its next round.
 function finishEvent(outcome, text) {
   awardEventPrize(financesState, outcome);
   if (!financesState.sponsorOffers.length) {
@@ -1286,6 +1487,11 @@ function finishEvent(outcome, text) {
     financesState.sponsorOffers = generateSponsorOffers(ladderState.rng, 2 + teamEffects.teamSponsorOfferCountBonus, teamEffects.teamSponsorOfferAmountMult);
   }
   ladderState.finalResultText = text;
+  if (ladderState.isSeasonRound && seasonState.active) {
+    const player = ladderState.field.find(e => e.isPlayer);
+    recordAttendedResult(seasonState, { ...outcome, qualPosition: player.qualPosition });
+    saveSeasonState();
+  }
   saveFinancesState();
   saveEventState();
   renderFinancePanel();
@@ -2132,6 +2338,16 @@ function renderTeamPanel() {
   $("team-scout-count").textContent = `+${effects.teamSponsorOfferCountBonus}`;
   $("team-scout-amount").textContent = `×${effects.teamSponsorOfferAmountMult.toFixed(2)}`;
 
+  // A running season locks the driver in place (see season.js) - car chief
+  // and sponsor-scout stay freely swappable, only the driver select/hire/
+  // fire controls get disabled.
+  const driverLocked = seasonState.active;
+  $("team-driver-select").disabled = driverLocked;
+  $("teamPanel").querySelector('[data-hire-role="driver"]').disabled = driverLocked;
+  if (driverLocked) $("team-driver-fire").style.display = "none";
+  $("team-driver-lock-note").style.display = driverLocked ? "block" : "none";
+  if (driverLocked) $("team-driver-lock-note").textContent = `Vastgezet voor het lopende seizoen (ronde ${seasonState.roundIndex + 1}/${seasonState.calendar.length}) - pas weer wisselbaar na afloop van het seizoen.`;
+
   renderRijderTeamNote();
 }
 
@@ -2139,6 +2355,7 @@ $("teamPanel").addEventListener("click", (e) => {
   const hireBtn = e.target.closest("[data-hire-role]");
   const fireBtn = e.target.closest("[data-fire-role]");
   if (hireBtn) {
+    if (hireBtn.disabled) return;
     const role = hireBtn.dataset.hireRole;
     const id = $(`team-${role}-select`).value;
     hireTeamMember(teamConfig, role, id);
@@ -2172,6 +2389,7 @@ function collectFullSaveState() {
     team: teamConfig,
     market: marketState,
     event: serializeLadderState(ladderState),
+    season: seasonState,
     setups: loadSetupsStore(),
   };
 }
@@ -2182,12 +2400,14 @@ function applyFullSaveState(data) {
   teamConfig = { ...defaultTeamConfig(), ...(data.team || {}) };
   marketState = data.market || generateUsedMarket(Math.random);
   ladderState = data.event ? deserializeLadderState(data.event) : null;
+  seasonState = { ...defaultSeasonState(), ...(data.season || {}) };
   if (data.setups) saveSetupsStore(data.setups);
   saveFinancesState();
   saveGarageConfig();
   saveTeamConfig();
   saveMarketState();
   saveEventState();
+  saveSeasonState();
 }
 
 $("exportGameBtn").addEventListener("click", () => {
@@ -2259,11 +2479,13 @@ $("newGameConfirmBtn").addEventListener("click", () => {
   teamConfig = defaultTeamConfig();
   marketState = generateUsedMarket(Math.random);
   ladderState = null;
+  seasonState = defaultSeasonState();
   saveFinancesState();
   saveGarageConfig();
   saveTeamConfig();
   saveMarketState();
   saveEventState();
+  saveSeasonState();
   location.reload();
 });
 

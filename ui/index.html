@@ -17,6 +17,7 @@
       <nav class="side-nav">
         <button class="nav-btn active" id="tabTest">Testrun</button>
         <button class="nav-btn" id="tabEvent">Evenement</button>
+        <button class="nav-btn" id="tabSeason">Seizoen</button>
         <button class="nav-btn" id="tabFinance">Financiën</button>
         <button class="nav-btn" id="tabGarage">Auto bouwen</button>
         <button class="nav-btn" id="tabTeam">Team bouwen</button>
@@ -98,10 +99,67 @@
 
     <div id="event-result" style="display:none;">
       <p class="note" style="margin-top:0; font-weight:700;" id="event-final-result">--</p>
+      <button class="secondary" id="backToSeasonBtn" style="display:none;">← Terug naar seizoen</button>
     </div>
 
     <button class="run" id="startEventBtn">Start evenement</button>
     <button class="secondary" id="newEventBtn" style="display:none;">Nieuw evenement</button>
+  </div>
+
+  <div class="panel" id="seasonPanel" style="display:none;">
+    <div class="sec-title">Seizoen</div>
+    <p class="note" style="margin-top:0;">Een puntenseizoen over meerdere evenementen: jij stelt zelf de kalender samen (circuits mogen vaker voorkomen), kiest daarna per race of je gaat of 'm overslaat, en verzamelt onderweg NHRA-stijl punten (per gewonnen eliminatieronde, plus een bonus voor een sterke kwalificatiepositie). Reiskosten worden berekend vanaf je teambasis - hoe verder een circuit weg ligt, hoe duurder de trip. Zodra het seizoen loopt zit je rijder vast (zie Team bouwen) - car chief en sponsor-scout blijven gewoon wisselbaar.</p>
+    <p class="note" id="season-status" style="margin-top:0;"></p>
+
+    <div id="season-setup">
+      <div class="row">
+        <label>Teambasis (VS)</label>
+        <select id="season-base-select"></select>
+      </div>
+      <p class="note" style="margin-top:0;">Waar je team gevestigd is - bepaalt de reisafstand (en dus reiskosten) naar elk circuit in je kalender. Eenmaal gekozen, niet meer te wijzigen zolang er een kalender staat (verwijder eerst alle races om opnieuw te kiezen).</p>
+
+      <div class="row">
+        <label>Circuit toevoegen aan kalender</label>
+        <select id="season-add-track"></select>
+      </div>
+      <button class="secondary" id="season-add-race-btn" type="button">Voeg race toe aan kalender</button>
+      <p class="note" style="margin-top:0;">Stel zelf je seizoenskalender samen - minstens <span id="season-min-races-note">--</span> races, een circuit mag vaker voorkomen. De volgorde waarin je races toevoegt is de volgorde waarin je seizoen ze aanbiedt.</p>
+
+      <div style="overflow-x:auto;">
+        <table class="event-table" id="season-calendar-table">
+          <thead><tr><th>Ronde</th><th>Circuit</th><th>Reiskosten</th><th></th></tr></thead>
+          <tbody id="season-calendar-body"></tbody>
+        </table>
+      </div>
+
+      <button class="run" id="season-start-btn" type="button">Start seizoen</button>
+    </div>
+
+    <div id="season-active" style="display:none;">
+      <p class="note" style="margin-top:0; font-weight:700;" id="season-current-note">--</p>
+      <div class="results-grid" style="grid-template-columns:1fr;">
+        <div class="stat"><div class="lbl">Totaal punten</div><div class="num" id="season-total-points">--</div></div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="event-table" id="season-rounds-table">
+          <thead><tr><th>Ronde</th><th>Circuit</th><th>Status</th><th>Punten</th></tr></thead>
+          <tbody id="season-rounds-body"></tbody>
+        </table>
+      </div>
+      <button class="run" id="season-attend-btn" type="button">Ga naar deze race</button>
+      <button class="secondary" id="season-skip-btn" type="button">Sla deze race over</button>
+    </div>
+
+    <div id="season-complete" style="display:none;">
+      <p class="note" style="margin-top:0; font-weight:700;" id="season-final-summary">--</p>
+      <div style="overflow-x:auto;">
+        <table class="event-table" id="season-final-table">
+          <thead><tr><th>Ronde</th><th>Circuit</th><th>Status</th><th>Punten</th></tr></thead>
+          <tbody id="season-final-body"></tbody>
+        </table>
+      </div>
+      <button class="secondary" id="season-new-btn" type="button">Nieuw seizoen</button>
+    </div>
   </div>
 
   <div class="panel" id="financePanel" style="display:none;">
@@ -393,6 +451,7 @@
     <div class="garage-section" id="team-sec-driver">
       <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:14px;">Rijder</div>
       <p class="note" style="margin-top:0;" id="team-driver-status">Geen rijder aangenomen.</p>
+      <p class="note" style="margin-top:0; display:none;" id="team-driver-lock-note"></p>
       <p class="note" style="margin-top:0;">Reactietijd (op de boom), autobeheersing (hoe goed hij de auto in de groove houdt bij bandenrook - pedalt hij 'm capabel terug of niet) en precisie/discipline (luistert hij naar het ingestelde afschakelpunt, of mist hij het) zijn drie losse eigenschappen. Een pay driver is goedkoop of brengt zelfs geld mee (sponsorgeld via zijn eigen netwerk), maar is vaak zwakker en minder gedisciplineerd - hij rijdt met wat de tune hem geeft, maar luistert minder precies naar de instructies. Er zijn ook pay drivers die gewoon goed zijn, dat is geen garantie de andere kant op.</p>
       <div class="row"><label><span class="name">Kandidaat</span></label><select id="team-driver-select"></select></div>
       <button class="secondary" data-hire-role="driver" type="button">Aannemen</button>
