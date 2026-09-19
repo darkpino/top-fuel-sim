@@ -45,15 +45,9 @@
       <p class="note" style="margin-top:0;">Elk circuit heeft zijn eigen hoogte en klimaat - dat verandert de density altitude (zie Omgeving) voor het hele evenement: hoger en heter kost vermogen (dunnere lucht, minder zuurstof) maar scheelt ook iets in luchtweerstand. Denver ligt bv. hoog en droog, Las Vegas en Phoenix zijn hete woestijnbanen, Gainesville en Houston juist heet en vochtig.</p>
       <div class="row">
         <label>Aantal auto's (incl. jij)</label>
-        <select id="fieldSizeSelect">
-          <option value="8">8</option>
-          <option value="12">12</option>
-          <option value="16" selected>16</option>
-          <option value="20">20</option>
-          <option value="24">24</option>
-          <option value="32">32</option>
-        </select>
+        <input type="number" id="fieldSizeSelect" min="2" max="32" step="1" value="16">
       </div>
+      <p class="note" style="margin-top:0;">Elk aantal tussen 2 en 32 mag, ook een oneven aantal (bv. 15 of 17) - de kwalificatie-ladder rondt zelf af naar de grootste macht van 2 die erin past voor de eliminatie, en een ronde die door een oneven aantal overblijvers een auto tekortkomt geeft de beste overgebleven auto een bye.</p>
     </div>
 
     <div id="event-active" style="display:none;">

@@ -40,7 +40,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "89";
+const APP_BUILD = "90";
 const APP_BUILD_DATE = "2026-09-19";
 $("app-version-note").textContent = `Build ${APP_BUILD} · ${APP_BUILD_DATE}`;
 
@@ -821,6 +821,9 @@ $("startEventBtn").addEventListener("click", () => {
     $("event-status").textContent = `Auto niet compleet of er staat een kapot onderdeel - koop/repareer eerst in Auto bouwen (chassis, motor, koppen, blower, koppeling, koppelingspakket, brandstofpomp en trailer nodig, niets kapot) voor je kunt inschrijven.`;
     return;
   }
+  const rawEntries = Math.round(+$("fieldSizeSelect").value);
+  const totalEntries = Number.isFinite(rawEntries) ? Math.min(32, Math.max(2, rawEntries)) : 16;
+  $("fieldSizeSelect").value = totalEntries;
   const wagesPerEvent = totalTeamWagesPerEvent(teamConfig);
   const totalCost = ENTRY_FEE + Math.max(0, wagesPerEvent);
   if (financesState.budget < totalCost) {
@@ -837,7 +840,6 @@ $("startEventBtn").addEventListener("click", () => {
   marketState = generateUsedMarket(Math.random);
   saveMarketState();
   if (currentMode === "garage") renderGarageSummary();
-  const totalEntries = +$("fieldSizeSelect").value;
   const bracketSize = deriveBracketSize(totalEntries, 32);
   const seed = Math.floor(Math.random() * 1e9);
   const roundDefs = buildRoundDefs(bracketSize);
