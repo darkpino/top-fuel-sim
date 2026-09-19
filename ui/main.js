@@ -19,7 +19,7 @@ import {
   addRunWear, isPartBroken, isPartRepairable, isPackExhausted, estimatePartCondition,
   BLOWER_TYPES, BODY_MATERIALS, CHASSIS_LENGTH_MIN_IN, CHASSIS_LENGTH_MAX_IN,
   chassisBuildPrice, chassisListingPrice, buildNewChassis, buySecondhandChassis, buyNewBody,
-  CLUTCH_BRANDS, CLUTCH_PACK_MAX_RUNS,
+  CLUTCH_PACK_MAX_RUNS,
   sellEquippedUnitValue, sellSpareUnitValue, sellTrailerValue, sellChassisValue,
 } from "../sim-core/garage.js";
 import {
@@ -40,8 +40,8 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "88";
-const APP_BUILD_DATE = "2026-09-18";
+const APP_BUILD = "89";
+const APP_BUILD_DATE = "2026-09-19";
 $("app-version-note").textContent = `Build ${APP_BUILD} · ${APP_BUILD_DATE}`;
 
 // The track's physical elevation isn't a slider (it's fixed for the
@@ -528,7 +528,7 @@ function renderRunResult(r, reactionTime = null) {
 $("runBtn").addEventListener("click", () => {
   if (!isCarRaceReady(garageConfig)) {
     $("placeholder").style.display = "block";
-    $("placeholder").textContent = "Auto niet compleet, of een onderdeel is kapot - koop/repareer eerst in Auto bouwen (chassis, motor, koppen, blower, koppeling en trailer nodig, en geen kapotte onderdelen).";
+    $("placeholder").textContent = "Auto niet compleet, of een onderdeel is kapot - koop/repareer eerst in Auto bouwen (chassis, motor, koppen, blower, koppeling, koppelingspakket, brandstofpomp en trailer nodig, en geen kapotte onderdelen).";
     $("resultsContent").style.display = "none";
     $("inspPanel").style.display = "none";
     return;
@@ -818,7 +818,7 @@ function showEventActiveUI() {
 
 $("startEventBtn").addEventListener("click", () => {
   if (!isCarRaceReady(garageConfig)) {
-    $("event-status").textContent = `Auto niet compleet of er staat een kapot onderdeel - koop/repareer eerst in Auto bouwen (chassis, motor, koppen, blower, koppeling en trailer nodig, niets kapot) voor je kunt inschrijven.`;
+    $("event-status").textContent = `Auto niet compleet of er staat een kapot onderdeel - koop/repareer eerst in Auto bouwen (chassis, motor, koppen, blower, koppeling, koppelingspakket, brandstofpomp en trailer nodig, niets kapot) voor je kunt inschrijven.`;
     return;
   }
   const wagesPerEvent = totalTeamWagesPerEvent(teamConfig);
@@ -1511,23 +1511,7 @@ function populateGarageSelects() {
   ).join("");
 }
 
-// The "new pack" thickness picker only makes sense relative to whichever
-// brand is currently selected (a 5-plate pack is thinner from the factory
-// than a 6-plate one, see CLUTCH_BRANDS' baseThicknessSteps) - reset to
-// that brand's own baseline every time the selection changes, so a
-// leftover value from a previously-picked brand never silently carries
-// over to a different one.
-function syncClutchNewPackThicknessDefault() {
-  const brand = findBrand(CLUTCH_BRANDS, $("g-clutch-spare-brand").value);
-  $("g-clutch-new-pack-thickness").value = brand.baseThicknessSteps;
-  $("v-g-clutch-new-pack-thickness").textContent = formatPackThickness(brand.baseThicknessSteps);
-}
-$("g-clutch-spare-brand").addEventListener("change", syncClutchNewPackThicknessDefault);
-$("g-clutch-new-pack-thickness").addEventListener("input", () => {
-  $("v-g-clutch-new-pack-thickness").textContent = formatPackThickness(+$("g-clutch-new-pack-thickness").value);
-});
 populateGarageSelects();
-syncClutchNewPackThicknessDefault();
 $("clutch-max-runs-note").textContent = CLUTCH_PACK_MAX_RUNS;
 
 // Klikken op een onderdeel in de dragster-tekening springt naar (en licht
@@ -1575,15 +1559,6 @@ function formatAgeMonths(ageMonths) {
   return months ? `${years} jr ${months} mnd oud` : `${years} jr oud`;
 }
 
-// Pack thickness is stored as an absolute step value (same scale
-// calcMaxFingerTravel uses directly, see clutch.js) - shown signed so
-// it's clear at a glance whether a listing/spare runs thicker or thinner
-// than the calibration reference (0), not relative to its own brand's
-// stock baseline.
-function formatPackThickness(steps) {
-  return (steps > 0 ? "+" : "") + steps;
-}
-
 // Renders one part's spare inventory as a small table: brand, age, and a
 // "Monteer" button to swap it in for whatever's currently equipped (which
 // goes back into the inventory slot it came from, not discarded - see
@@ -1597,15 +1572,13 @@ function renderPartInventoryList(part) {
     container.innerHTML = `<p class="note" style="margin-top:0;">Geen reserve op voorraad.</p>`;
     return;
   }
-  const dikteHeader = part === "clutch" ? "<th>Dikte</th>" : "";
   const rows = inv.map((unit, i) => {
     const brand = findBrand(PARTS[part].brands, unit.brandId);
-    const dikteCell = part === "clutch" ? `<td>${formatPackThickness(unit.packThicknessSteps)}</td>` : "";
-    return `<tr><td>${escapeHtml(brand.name)}</td><td>${formatAgeMonths(unit.ageMonths)}</td>${dikteCell}<td>€${unitPrice(part, unit).toLocaleString("nl-NL")}</td>` +
+    return `<tr><td>${escapeHtml(brand.name)}</td><td>${formatAgeMonths(unit.ageMonths)}</td><td>€${unitPrice(part, unit).toLocaleString("nl-NL")}</td>` +
       `<td><button class="secondary mini-btn" type="button" data-install-part="${part}" data-install-idx="${i}">Monteer</button></td>` +
       `<td><button class="secondary mini-btn" type="button" data-sell-spare-part="${part}" data-sell-spare-idx="${i}">Verkoop (+€${sellSpareUnitValue(part, unit).toLocaleString("nl-NL")})</button></td></tr>`;
   }).join("");
-  container.innerHTML = `<table class="event-table"><thead><tr><th>Merk (reserve)</th><th>Leeftijd</th>${dikteHeader}<th>Waarde</th><th></th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  container.innerHTML = `<table class="event-table"><thead><tr><th>Merk (reserve)</th><th>Leeftijd</th><th>Waarde</th><th></th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 // The used-parts market for this one part: whatever's currently listed
@@ -1621,16 +1594,14 @@ function renderPartMarketList(part) {
     container.innerHTML = `<p class="note" style="margin-top:0;">Geen tweedehands aanbod op dit moment - de markt ververst bij het volgende evenement.</p>`;
     return;
   }
-  const dikteHeader = part === "clutch" ? "<th>Dikte</th>" : "";
   const rows = listings.map(listing => {
     const brand = findBrand(PARTS[part].brands, listing.brandId);
     const price = unitPrice(part, listing);
     const relPct = Math.round(brand.reliabilityMult * usedReliabilityMult(listing.ageMonths) * 100);
-    const dikteCell = part === "clutch" ? `<td>${formatPackThickness(listing.packThicknessSteps)}</td>` : "";
-    return `<tr><td>${escapeHtml(brand.name)}</td><td>${formatAgeMonths(listing.ageMonths)}</td>${dikteCell}<td>€${price.toLocaleString("nl-NL")}</td><td>${relPct}%</td>` +
+    return `<tr><td>${escapeHtml(brand.name)}</td><td>${formatAgeMonths(listing.ageMonths)}</td><td>€${price.toLocaleString("nl-NL")}</td><td>${relPct}%</td>` +
       `<td><button class="secondary mini-btn" type="button" data-buy-listing-part="${part}" data-buy-listing-id="${escapeHtml(listing.id)}">Kopen</button></td></tr>`;
   }).join("");
-  container.innerHTML = `<table class="event-table"><thead><tr><th>Merk</th><th>Leeftijd</th>${dikteHeader}<th>Prijs</th><th>Betrouwbaarheid</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  container.innerHTML = `<table class="event-table"><thead><tr><th>Merk</th><th>Leeftijd</th><th>Prijs</th><th>Betrouwbaarheid</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 // Per-part readonly "what's mounted" line, plus the buy button's label -
@@ -1650,9 +1621,9 @@ function renderPartEquippedStatus(part) {
   if (owned) {
     const unit = equippedUnit(garageConfig, part);
     const brand = findBrand(PARTS[part].brands, unit.brandId);
-    const dikteTxt = part === "clutch" ? ` — pakketdikte ${formatPackThickness(unit.packThicknessSteps)}, ${garageConfig.clutchPackRunsUsed}/${CLUTCH_PACK_MAX_RUNS} runs op dit pakket.` : "";
-    $(`g-${part}-equipped`).textContent = `Gemonteerd: ${brand.name} (${formatAgeMonths(unit.ageMonths)}).${dikteTxt}`;
-    const exhausted = part === "clutch" && isPackExhausted(garageConfig);
+    const runsTxt = part === "clutchPack" ? ` — ${garageConfig.clutchPackRunsUsed}/${CLUTCH_PACK_MAX_RUNS} runs op dit pakket.` : "";
+    $(`g-${part}-equipped`).textContent = `Gemonteerd: ${brand.name} (${formatAgeMonths(unit.ageMonths)}).${runsTxt}`;
+    const exhausted = part === "clutchPack" && isPackExhausted(garageConfig);
     const broken = isPartBroken(garageConfig, part);
     if (exhausted) {
       // Worn-out friction material isn't something the "Repareer" action
@@ -1761,8 +1732,8 @@ function renderGarageSummary() {
   $("g-spare-capacity").style.color = spareCount >= spareCap ? "var(--red)" : "var(--text)";
 
   $("garage-readiness-note").innerHTML = isCarRaceReady(garageConfig)
-    ? `<span style="color:var(--green)">Klaar om te racen: chassis, motor, koppen, blower, koppeling en trailer zijn allemaal aanwezig en niets staat kapot.</span>`
-    : `<span style="color:var(--red)">Nog niet klaar om te racen — koop hieronder wat ontbreekt (motor, koppen, blower, koppeling, trailer, chassis), en repareer eventueel kapotte onderdelen, voor je een run of evenement kunt starten.</span>`;
+    ? `<span style="color:var(--green)">Klaar om te racen: chassis, motor, koppen, blower, koppeling, koppelingspakket, brandstofpomp en trailer zijn allemaal aanwezig en niets staat kapot.</span>`
+    : `<span style="color:var(--red)">Nog niet klaar om te racen — koop hieronder wat ontbreekt (motor, koppen, blower, koppeling, koppelingspakket, brandstofpomp, trailer, chassis), en repareer eventueel kapotte onderdelen, voor je een run of evenement kunt starten.</span>`;
 
   $("g-build-value").textContent = "€" + totalBuildValue(garageConfig).toLocaleString("nl-NL");
   const effects = computeGarageEffects(garageConfig);
@@ -1965,10 +1936,6 @@ $("garagePanel").addEventListener("click", (e) => {
 // from what's currently available, not a checkbox next to any brand.
 function buyPart(part) {
   const unit = { brandId: $(`g-${part}-spare-brand`).value, ageMonths: 0 };
-  // Only a NEW clutch purchase lets the player pick pack thickness (a used
-  // one's is fixed by whoever built it, see the market listing itself) -
-  // see the "Pakketdikte (nieuw pakket)" slider next to the brand picker.
-  if (part === "clutch") unit.packThicknessSteps = +$("g-clutch-new-pack-thickness").value;
   const price = unitPrice(part, unit);
   const wasOwned = isPartOwned(garageConfig, part);
   if (wasOwned && totalSpareCount(garageConfig) >= trailerSpareCapacity(garageConfig)) {
@@ -2051,7 +2018,6 @@ function buyUsedListing(part, listingId) {
   const brandName = findBrand(PARTS[part].brands, listing.brandId).name;
   const ageTxt = formatAgeMonths(listing.ageMonths);
   const unit = { brandId: listing.brandId, ageMonths: listing.ageMonths };
-  if (part === "clutch") unit.packThicknessSteps = listing.packThicknessSteps;
   const outcome = buyAndEquipUnit(garageConfig, part, unit);
   const label = spareLabel(part);
   addTransaction(financesState, `${label} gekocht (${brandName}, tweedehands, ${ageTxt})${wasOwned ? " - gemonteerd, oude vervangen" : ""}`, -price);

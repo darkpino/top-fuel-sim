@@ -19,7 +19,7 @@ export const RUN_COST = 850;
 // price - a full bottom-end rebuild (engine) or a clutch pack (labor-
 // intensive, has to come apart every time regardless of what failed) run
 // higher than a head or blower swap.
-export const REPAIR_FRACTION = { engine: 0.35, head: 0.3, blower: 0.3, clutch: 0.5 };
+export const REPAIR_FRACTION = { engine: 0.35, head: 0.3, blower: 0.3, clutch: 0.5, clutchPack: 0.4 };
 
 // Even with a spare on the trailer, a crew still has to pull the dead
 // part and mount the spare between rounds - real labor, on the clock.

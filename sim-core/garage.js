@@ -64,16 +64,7 @@ export function generateUsedMarket(rng = Math.random) {
     market[part] = Array.from({ length: USED_LISTINGS_PER_PART }, (_, i) => {
       const brand = brands[Math.floor(rng() * brands.length)];
       const ageMonths = Math.round(USED_AGE_MIN_MONTHS + rng() * (USED_AGE_MAX_MONTHS - USED_AGE_MIN_MONTHS));
-      const unit = { id: `${part}-${Date.now()}-${i}-${Math.floor(rng() * 1e6)}`, brandId: brand.id, ageMonths };
-      // A used clutch pack's thickness is whatever its previous owner
-      // shimmed it to, not something this listing lets the player choose -
-      // a little scatter around the brand's own baseline, clamped to the
-      // overall legal range.
-      if (part === "clutch") {
-        const jitter = Math.round((rng() * 2 - 1) * CLUTCH_USED_THICKNESS_JITTER_STEPS);
-        unit.packThicknessSteps = Math.max(CLUTCH_PACK_THICKNESS_MIN, Math.min(CLUTCH_PACK_THICKNESS_MAX, brand.baseThicknessSteps + jitter));
-      }
-      return unit;
+      return { id: `${part}-${Date.now()}-${i}-${Math.floor(rng() * 1e6)}`, brandId: brand.id, ageMonths };
     });
   });
   market.chassis = generateChassisMarket(rng);
@@ -153,56 +144,60 @@ export const FUEL_PUMP_BRANDS = [
 // this a complete no-op against LAUNCH_CAP itself (see run-simulator.js's
 // clutchCapacityForce), so the existing calibration is untouched unless a
 // tune's power actually exceeds what the chosen clutch can hold.
-// baseThicknessSteps: the brand's OWN stock pack thickness, in the same
-// step units as the player's pack-thickness choice below - a 5-plate pack
-// simply has less material stacked in it than a 6-plate one, independent
-// of any shims the player adds on top. Only basicgrip5 is a 5-plate
-// design; every other brand here is 6-plate, so they share the same
-// (zero) baseline.
 export const CLUTCH_BRANDS = [
-  { id: "basicgrip5", name: "BasicGrip 5-plaats", priceNew: 4500, plates: 5, heatRateMult: 1.35, reliabilityMult: 0.93, weightDeltaLb: 8, capacityMult: 0.80, baseThicknessSteps: -1 },
-  { id: "steadyhold6", name: "SteadyHold 6-plaats", priceNew: 6500, plates: 6, heatRateMult: 1.0, reliabilityMult: 1.00, weightDeltaLb: 0, capacityMult: 1.00, baseThicknessSteps: 0 },
-  { id: "apexclutch6", name: "Apex Billet 6-plaats", priceNew: 9500, plates: 6, heatRateMult: 0.9, reliabilityMult: 1.06, weightDeltaLb: -6, capacityMult: 1.15, baseThicknessSteps: 0 },
-  { id: "vortanclutch6", name: "Vortan Carbon 6-plaats", priceNew: 13000, plates: 6, heatRateMult: 0.82, reliabilityMult: 1.12, weightDeltaLb: -12, capacityMult: 1.30, baseThicknessSteps: 0 },
+  { id: "basicgrip5", name: "BasicGrip 5-plaats", priceNew: 4500, plates: 5, heatRateMult: 1.35, reliabilityMult: 0.93, weightDeltaLb: 8, capacityMult: 0.80 },
+  { id: "steadyhold6", name: "SteadyHold 6-plaats", priceNew: 6500, plates: 6, heatRateMult: 1.0, reliabilityMult: 1.00, weightDeltaLb: 0, capacityMult: 1.00 },
+  { id: "apexclutch6", name: "Apex Billet 6-plaats", priceNew: 9500, plates: 6, heatRateMult: 0.9, reliabilityMult: 1.06, weightDeltaLb: -6, capacityMult: 1.15 },
+  { id: "vortanclutch6", name: "Vortan Carbon 6-plaats", priceNew: 13000, plates: 6, heatRateMult: 0.82, reliabilityMult: 1.12, weightDeltaLb: -12, capacityMult: 1.30 },
 ];
 
-// Pack thickness (extra/fewer shims stacked into the mounted clutch pack,
-// on top of whatever its brand already ships with, see baseThicknessSteps
-// above) and the throw-out bearing's own static position. Positive
-// (uncompensated) thickness eats into how far the fingers can physically
-// sweep outward unless bearingAdjSteps makes up for it (see
-// calcMaxFingerTravel in clutch.js) - 0/0 is a complete no-op, same
-// guarantee as every other garage build knob.
+// The clutch PACK (the shim/friction-disc stack itself) is bought and
+// mounted entirely separately from the clutch (koppeling) assembly above -
+// two different trolleys in the same garage, same as the engine block and
+// its heads are separate purchases. Thickness is baked into which "brand"
+// (really: which shim tier) is mounted, exactly like plate count is baked
+// into a clutch brand - no free-form slider, no coupling to whichever
+// clutch happens to be bolted on. Flat price across every tier (thicker
+// isn't "better," just different) and reliabilityMult/weightDeltaLb are
+// deliberately neutral (1.0/0, both unused elsewhere) - this catalog is
+// purely a thickness choice, not another quality axis.
 //
-// Thickness is a property of the specific PACK bolted in, not a free dial
-// on the car - you choose it when you build a new pack (like chassis
-// length at build time), a used pack's is fixed by whoever built it
-// (small variance around its brand's baseline, not player-chosen - see
-// generateUsedMarket), and it travels with that physical unit through
-// swaps and inventory the same way ageMonths does. Bearing adjustment
-// stays a free, always-adjustable car-level setting (the crew re-shims
-// the SAME bearing regardless of which pack is currently behind it).
-export const CLUTCH_PACK_THICKNESS_MIN = -3;
-export const CLUTCH_PACK_THICKNESS_MAX = 3;
+// thicknessSteps feeds calcMaxFingerTravel in clutch.js exactly the way
+// the old per-unit packThicknessSteps did - positive (uncompensated)
+// values eat into how far the fingers can physically sweep outward unless
+// the bearing adjustment (still a free, always-adjustable car-level
+// setting - see CLUTCH_BEARING_ADJ_MIN/MAX) makes up for it. The 0
+// (standaard) tier is the calibration reference: mounting it is an exact
+// no-op, same guarantee as every other garage build knob.
+export const CLUTCH_PACK_BRANDS = [
+  { id: "pack-3", name: "Pakket -3 (extra dun)", priceNew: 800, thicknessSteps: -3, reliabilityMult: 1.0, weightDeltaLb: 0 },
+  { id: "pack-2", name: "Pakket -2 (dun)", priceNew: 800, thicknessSteps: -2, reliabilityMult: 1.0, weightDeltaLb: 0 },
+  { id: "pack-1", name: "Pakket -1", priceNew: 800, thicknessSteps: -1, reliabilityMult: 1.0, weightDeltaLb: 0 },
+  { id: "pack0", name: "Pakket 0 (standaard)", priceNew: 800, thicknessSteps: 0, reliabilityMult: 1.0, weightDeltaLb: 0 },
+  { id: "pack1", name: "Pakket +1", priceNew: 800, thicknessSteps: 1, reliabilityMult: 1.0, weightDeltaLb: 0 },
+  { id: "pack2", name: "Pakket +2 (dik)", priceNew: 800, thicknessSteps: 2, reliabilityMult: 1.0, weightDeltaLb: 0 },
+  { id: "pack3", name: "Pakket +3 (extra dik)", priceNew: 800, thicknessSteps: 3, reliabilityMult: 1.0, weightDeltaLb: 0 },
+];
+
+// The throw-out bearing's own static position - a free, always-adjustable
+// car-level setting (the crew re-shims the SAME bearing regardless of
+// which pack is currently bolted in behind it), unlike pack thickness
+// which now travels with whichever physical clutchPack unit is mounted.
 export const CLUTCH_BEARING_ADJ_MIN = -3;
 export const CLUTCH_BEARING_ADJ_MAX = 3;
-// A used pack's thickness isn't dialed in by the player, but it isn't
-// perfectly uniform either - whoever built it made their own shim choice,
-// so listings scatter a little around the brand's own baseline.
-export const CLUTCH_USED_THICKNESS_JITTER_STEPS = 1;
 
 // Friction material only survives so many heat cycles before it's
 // genuinely spent, regardless of how gently a given run treated it - a
 // real clutch pack gets rebuilt with fresh discs on a schedule, not "when
 // it happens to overheat." Tracked as a flat run count (config.
 // clutchPackRunsUsed, reset to 0 whenever a different physical pack gets
-// mounted - see setEquippedUnit), separate from the heat-driven
-// clutchWear/clutchBroken clock: a pack can wear out from sheer mileage
-// even on a run that never got anywhere near its failure threshold. Once
-// exhausted there's nothing to repair (see isPartBroken/isPackExhausted
-// below) - the discs themselves are done, the only way back is a fresh
-// pack (a new build, a new-used listing, or an unworn spare already on
-// the trailer).
+// mounted - see setEquippedUnit), separate from the generic per-run wear
+// every part already accumulates (addRunWear): a pack can wear out from
+// sheer mileage even on a run that never got anywhere near a failure
+// threshold. Once exhausted there's nothing to repair (see isPartBroken/
+// isPackExhausted below) - the discs themselves are done, the only way
+// back is a fresh pack (a new build, a new-used listing, or an unworn
+// spare already on the trailer).
 export const CLUTCH_PACK_MAX_RUNS = 10;
 
 // Setback blowers move the supercharger's mass rearward and shorten the
@@ -362,6 +357,7 @@ export const PARTS = {
   head: { brands: HEAD_BRANDS, label: "cilinderkop" },
   blower: { brands: BLOWER_BRANDS, label: "blower" },
   clutch: { brands: CLUTCH_BRANDS, label: "koppeling" },
+  clutchPack: { brands: CLUTCH_PACK_BRANDS, label: "koppelingspakket" },
   fuelPump: { brands: FUEL_PUMP_BRANDS, label: "brandstofpomp" },
 };
 
@@ -379,7 +375,8 @@ export function defaultGarageConfig() {
     blowerBrandId: null, blowerAgeMonths: 0, blowerWear: 0, blowerBroken: false,
     blowerType: "conventional",
     clutchBrandId: null, clutchAgeMonths: 0, clutchWear: 0, clutchBroken: false,
-    clutchPackThicknessSteps: 0, clutchPackRunsUsed: 0, clutchBearingAdjSteps: 0,
+    clutchPackBrandId: null, clutchPackAgeMonths: 0, clutchPackWear: 0, clutchPackBroken: false, clutchPackRunsUsed: 0,
+    clutchBearingAdjSteps: 0,
     fuelPumpBrandId: null, fuelPumpAgeMonths: 0, fuelPumpWear: 0, fuelPumpBroken: false,
     chassisOwned: false,
     chassisAgeMonths: 0,
@@ -394,6 +391,7 @@ export function defaultGarageConfig() {
     headInventory: [],
     blowerInventory: [],
     clutchInventory: [],
+    clutchPackInventory: [],
     fuelPumpInventory: [],
   };
 }
@@ -427,18 +425,7 @@ export function migrateGarageConfig(config) {
     }
     delete config[secondhandKey];
     const invKey = part + "Inventory";
-    if (Array.isArray(config[invKey])) {
-      config[invKey] = config[invKey].map(migrateUnit);
-      // A save from before pack thickness was tracked per-unit: treat every
-      // existing spare as a stock pack for its own brand (0 steps of extra
-      // shims), not the player's most recently chosen thickness - there's
-      // no history to recover that from either.
-      if (part === "clutch") {
-        config[invKey] = config[invKey].map((unit) => unit.packThicknessSteps === undefined
-          ? { ...unit, packThicknessSteps: findBrand(CLUTCH_BRANDS, unit.brandId).baseThicknessSteps }
-          : unit);
-      }
-    }
+    if (Array.isArray(config[invKey])) config[invKey] = config[invKey].map(migrateUnit);
     // A save from before per-run wear/broken tracking existed - the
     // equipped unit was already out there racing, but 0/false (as-new,
     // not broken) is the only sane default: there's no history to recover
@@ -449,13 +436,13 @@ export function migrateGarageConfig(config) {
     const brokenKey = part + "Broken";
     if (config[brokenKey] === undefined) config[brokenKey] = false;
   });
-  // A save from before pack thickness/run-count existed on the equipped
-  // clutch: default the thickness to its brand's own stock value (not a
-  // blanket 0, which would be wrong for a basicgrip5-equipped save) and
-  // start the run count fresh - there's no history to recover either from.
-  if (config.clutchPackThicknessSteps === undefined && config.clutchBrandId) {
-    config.clutchPackThicknessSteps = findBrand(CLUTCH_BRANDS, config.clutchBrandId).baseThicknessSteps;
-  }
+  // A save from before the clutch pack became its own separate part: its
+  // old per-clutch thickness/run-count fields are gone now (pack thickness
+  // is a brandId choice on the new clutchPack part instead), and there's
+  // no sane way to recover which physical pack an old save "already had" -
+  // same as when the fuel pump first became a purchasable part, this just
+  // leaves clutchPack unowned until the player buys one.
+  delete config.clutchPackThicknessSteps;
   if (config.clutchPackRunsUsed === undefined) config.clutchPackRunsUsed = 0;
   return config;
 }
@@ -488,9 +475,7 @@ export function isCarRaceReady(config) {
 }
 
 export function equippedUnit(config, part) {
-  const unit = { brandId: config[part + "BrandId"], ageMonths: config[part + "AgeMonths"] };
-  if (part === "clutch") unit.packThicknessSteps = config.clutchPackThicknessSteps;
-  return unit;
+  return { brandId: config[part + "BrandId"], ageMonths: config[part + "AgeMonths"] };
 }
 
 // Mounting ANY unit - a spare, a fresh purchase, a swap - always means a
@@ -500,18 +485,15 @@ export function equippedUnit(config, part) {
 // inventory (installUnit) loses its own wear history this way too - spare
 // units in inventory don't carry a wear number at all, only ageMonths -
 // an accepted simplification, since spares by definition haven't been run
-// since they were last serviced. Same idea for the clutch's pack-specific
-// fields: a different physical pack means a different thickness (carried
-// on the unit itself, see equippedUnit) and a fresh run count regardless
-// of how spent the outgoing pack's was.
+// since they were last serviced. Same idea for the clutch pack's run
+// count: a different physical pack means a fresh run count regardless of
+// how spent the outgoing pack's was.
 function setEquippedUnit(config, part, unit) {
   config[part + "BrandId"] = unit.brandId;
   config[part + "AgeMonths"] = unit.ageMonths;
   config[part + "Wear"] = 0;
   config[part + "Broken"] = false;
-  if (part === "clutch") {
-    const brand = findBrand(CLUTCH_BRANDS, unit.brandId);
-    config.clutchPackThicknessSteps = unit.brandId ? (unit.packThicknessSteps ?? brand.baseThicknessSteps) : 0;
+  if (part === "clutchPack") {
     config.clutchPackRunsUsed = 0;
   }
 }
@@ -595,7 +577,7 @@ export function addRunWear(config, severityByPart = {}) {
   // The pack's own run-count clock (CLUTCH_PACK_MAX_RUNS) - flat, one per
   // pass, unaffected by how hard the run was on it (that's what the heat-
   // driven clutchWear/clutchDamage clock above is for).
-  if (isPartOwned(config, "clutch")) {
+  if (isPartOwned(config, "clutchPack")) {
     config.clutchPackRunsUsed = (config.clutchPackRunsUsed || 0) + 1;
   }
 }
@@ -627,14 +609,13 @@ export function isPackExhausted(config) {
 }
 
 // The general "can't safely run" check every part uses for race-readiness
-// gating - for the clutch this also covers a pack that's simply run out
-// of service life (isPackExhausted), on top of the shared heat-damage
-// flag every part has. Exhaustion isn't repairable (see
-// isPartRepairable/repairPartUnit in finances.js) so this can stay true
-// even right after a successful repair, until the pack itself is
-// actually replaced.
+// gating - for the clutch pack this also covers simply running out of
+// service life (isPackExhausted), on top of the shared heat-damage flag
+// every part has. Exhaustion isn't repairable (see isPartRepairable/
+// repairPartUnit in finances.js) so this can stay true even right after a
+// successful repair, until the pack itself is actually replaced.
 export function isPartBroken(config, part) {
-  if (part === "clutch" && isPackExhausted(config)) return true;
+  if (part === "clutchPack" && isPackExhausted(config)) return true;
   return !!config[part + "Broken"];
 }
 
@@ -642,7 +623,7 @@ export function isPartBroken(config, part) {
 // applies here - the heat-damage flag only, never pack exhaustion (worn-
 // out friction material isn't something a repair fixes, only a fresh
 // pack is - see CLUTCH_PACK_MAX_RUNS). Identical to isPartBroken for
-// every part except the clutch.
+// every part except the clutch pack.
 export function isPartRepairable(config, part) {
   return !!config[part + "Broken"];
 }
@@ -785,6 +766,7 @@ export function computeGarageEffects(config) {
   const head = findBrand(HEAD_BRANDS, config.headBrandId);
   const blower = findBrand(BLOWER_BRANDS, config.blowerBrandId);
   const clutch = findBrand(CLUTCH_BRANDS, config.clutchBrandId);
+  const clutchPack = findBrand(CLUTCH_PACK_BRANDS, config.clutchPackBrandId);
   const fuelPump = findBrand(FUEL_PUMP_BRANDS, config.fuelPumpBrandId);
   const body = BODY_MATERIALS[config.bodyMaterial];
   const blowerType = BLOWER_TYPES[config.blowerType];
@@ -830,7 +812,7 @@ export function computeGarageEffects(config) {
     garageClutchHeatRateMult: clutch.heatRateMult,
     garageClutchDamageMult: 1 / clutchReliabilityMult,
     garageClutchCapacityMult: clutch.capacityMult,
-    garageClutchPackThicknessSteps: config.clutchPackThicknessSteps,
+    garageClutchPackThicknessSteps: clutchPack.thicknessSteps,
     garageClutchBearingAdjSteps: config.clutchBearingAdjSteps,
     garageTractionMult: blowerType.tractionMult,
     garagePowerMult: computeEnginePowerMult(config),
@@ -910,6 +892,7 @@ export function equippedPartPrice(config, part) {
   if (part === "head") return partPrice(findBrand(HEAD_BRANDS, config.headBrandId), config.headAgeMonths);
   if (part === "blower") return partPrice(findBrand(BLOWER_BRANDS, config.blowerBrandId), config.blowerAgeMonths) + BLOWER_TYPES[config.blowerType].priceDelta;
   if (part === "clutch") return partPrice(findBrand(CLUTCH_BRANDS, config.clutchBrandId), config.clutchAgeMonths);
+  if (part === "clutchPack") return partPrice(findBrand(CLUTCH_PACK_BRANDS, config.clutchPackBrandId), config.clutchPackAgeMonths);
   if (part === "fuelPump") return partPrice(findBrand(FUEL_PUMP_BRANDS, config.fuelPumpBrandId), config.fuelPumpAgeMonths);
   return 0;
 }
