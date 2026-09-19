@@ -317,6 +317,25 @@ export function calcFuelFlowGpm(rpm, fuelVolFactor, pumpRatedGpm = FUEL_FLOW_BAS
 // than blank checks.
 const IDEAL_FUEL_RPM_FLOOR = 7200;
 
+// The fixed anchor calcIdealFuelPct is called with (run-simulator.js) -
+// deliberately NOT the live fuel1pct slider. It has to be a constant: if
+// the ideal curve were re-derived from whatever fuel1pct the player
+// currently has dialed (the old behavior), fuel1pct cancels out of its
+// own richness check by construction - calcIdealFuelPct(LAUNCH_RPM,
+// fuel1pct) always equals fuel1pct exactly, for ANY fuel1pct - so no
+// amount of retuning fuel1pct (or the whole curve proportionally along
+// with it) could ever change the richness verdict at launch. That made a
+// non-reference fuel pump (calcPumpMixtureScale below) impossible to tune
+// around: its scale factor still multiplied the ACTUAL side, but the
+// target moved in lockstep with it, so a bigger pump ran unavoidably rich
+// (and a smaller one unavoidably lean) no matter what the fuel curve was
+// set to. Anchoring to this fixed constant instead - matching the
+// calibrated default tune's own fuel1pct - makes the target a genuine,
+// pump-independent absolute: scaling the whole curve by the pump's own
+// mixture scale (see calcPumpMixtureScale) now actually cancels it back
+// out, the retune the fuel-pump purchase was always supposed to require.
+export const REFERENCE_FUEL1PCT = 70;
+
 export function calcIdealFuelPct(rpm, referenceFuelPct, oxygenMult = 1) {
   return referenceFuelPct * (LAUNCH_RPM / Math.max(rpm, IDEAL_FUEL_RPM_FLOOR)) * oxygenMult;
 }

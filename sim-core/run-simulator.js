@@ -7,7 +7,7 @@ import {
   calcIdealFuelPct, calcMixtureRichness, activeFuelPct, calcOxygenMult,
   calcIgnEff, activeIgnition, calcIgnitionRetard,
   IGNITION_MAX_ADVANCE_RATE, calcIgnitionHeatDamageRate, HEAT_RISK_THRESHOLD,
-  calcPumpMixtureScale,
+  calcPumpMixtureScale, REFERENCE_FUEL1PCT,
 } from "./engine.js";
 import { activeSetpoint, activeSpeed, calcFingerCapacityMult, calcFingerSpeedMult, calcMaxFingerTravel, stepBearingPos } from "./clutch.js";
 import { calcOptimalPsi, calcPsiPenalty, calcTireWear } from "./tires.js";
@@ -392,7 +392,15 @@ export function runSimulation(settings, rng = Math.random) {
     const ignEff = calcIgnEff(ignitionEffective);
     peakIgnitionRetard = Math.max(peakIgnitionRetard, ignitionRetardDeg);
     ignEffIntegral += ignEff * DT;
-    const { fuelVolFactor, mult } = calcMult({ fuelFactor, fuelVolPct: fuelVolPctNow, blowerFactor, ignEff, compressionFactor, powerMult });
+    // Power comes from actual fuel volume delivered, not the raw dial
+    // position - the same pump-scaled value richness (above) already
+    // compares against the ideal curve. Without this, a bigger pump
+    // "correctly" retuned down (to stop over-fueling - see richness)
+    // would ALSO lose real power it never should have, since the same
+    // dial% now opens the barrel valve less far for the same effective
+    // GPM. Pinned to a no-op at the reference pump (pumpMixtureScale=1),
+    // same guarantee as the richness scale.
+    const { fuelVolFactor, mult } = calcMult({ fuelFactor, fuelVolPct: fuelVolPctNow * pumpMixtureScale, blowerFactor, ignEff, compressionFactor, powerMult });
 
     // Re-anchored again: the previous 18000/6100 pair had 60ft and the
     // "typical" pace right, but left too little headroom underneath it -
@@ -489,7 +497,7 @@ export function runSimulation(settings, rng = Math.random) {
     // mixture aren't the same size of effect.
     const loadFuelMult = 0.7 + 0.3 * loadFraction;
     const loadHeatMult = 0.3 + 0.7 * loadFraction;
-    const idealFuelPct = calcIdealFuelPct(rpm, fuel1pct, oxygenMult * loadFuelMult);
+    const idealFuelPct = calcIdealFuelPct(rpm, REFERENCE_FUEL1PCT, oxygenMult * loadFuelMult);
     const richness = calcMixtureRichness(fuelVolPctNow * pumpMixtureScale, idealFuelPct);
     richnessIntegral += richness * DT;
 

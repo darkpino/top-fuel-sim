@@ -36,7 +36,7 @@
 
   <div class="panel" id="eventPanel" style="display:none;">
     <div class="sec-title">Evenement</div>
-    <p class="note" style="margin-top:0;" id="event-status">Nog geen evenement gestart. Kies het aantal auto's en start: 4 kwalificatierondes bepalen de ladder, het bovenste deel (macht van 2) gaat door naar de eliminatie. Elke ronde heeft eigen gesimuleerde omstandigheden - het hele veld rijdt onder dezelfde condities als jij.</p>
+    <p class="note" style="margin-top:0;" id="event-status">Nog geen evenement gestart. Kies het aantal auto's en start: 4 kwalificatierondes bepalen de ladder, de beste 16 gaan door naar de eliminatie (minder dan 16 starters? dan gaat iedereen met een tijd door, met een bye erbij waar nodig). Elke ronde heeft eigen gesimuleerde omstandigheden - het hele veld rijdt onder dezelfde condities als jij.</p>
 
     <div id="event-setup">
       <div class="row">
@@ -48,7 +48,7 @@
         <label>Aantal auto's (incl. jij)</label>
         <input type="number" id="fieldSizeSelect" min="2" max="32" step="1" value="16">
       </div>
-      <p class="note" style="margin-top:0;">Elk aantal tussen 2 en 32 mag, ook een oneven aantal (bv. 15 of 17) - de kwalificatie-ladder rondt zelf af naar de grootste macht van 2 die erin past voor de eliminatie, en een ronde die door een oneven aantal overblijvers een auto tekortkomt geeft de beste overgebleven auto een bye.</p>
+      <p class="note" style="margin-top:0;">Elk aantal tussen 2 en 32 mag, ook een oneven aantal (bv. 15 of 17) - de eliminatieladder is altijd voor 16 auto's, net als een echte NHRA national event. Minder dan 16 starters? Dan vult een bye de ontbrekende plek(en). Meer dan 16? Dan gaan alleen de beste 16 gekwalificeerden door.</p>
     </div>
 
     <div id="event-active" style="display:none;">

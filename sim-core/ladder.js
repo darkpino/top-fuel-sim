@@ -318,7 +318,12 @@ export function runQualifyingAttempt(entrant, sessionIndex, conditions, skip) {
   const settings = { ...entrant.tune, ...conditions };
   const result = runSimulation(settings);
   entrant.quals[sessionIndex] = result;
-  if (result.finished && !result.weightIllegal && !result.engineFailed && !result.clutchFailed && (entrant.bestEt === null || result.et < entrant.bestEt)) {
+  // finished means a real photocell ET (crossed 1000ft) - see the same
+  // note in ui/main.js's runPlayerQualifying, which this mirrors for AI
+  // entrants: engineFailed/clutchFailed can both still be true on a run
+  // that finished (a late failure right at the stripe), and that ET is
+  // exactly as real as any other.
+  if (result.finished && !result.weightIllegal && (entrant.bestEt === null || result.et < entrant.bestEt)) {
     entrant.bestEt = result.et;
     entrant.bestMph = result.mph;
   }
@@ -335,18 +340,6 @@ export function computeQualifyingLadder(entrants, bracketSize) {
     e.qualified = e.bestEt !== null && i < bracketSize;
   });
   return ranked;
-}
-
-// Largest power of two that both fits the field and doesn't exceed
-// maxBracket. The bracket is sized off total ENTRIES at event start, but
-// only entrants who actually post a valid qualifying time fill it - a car
-// that DNFs all 4 sessions never qualifies even if there'd be room, which
-// can leave a round with an odd number of survivors. See pairBracketRound
-// for how that's handled (a bye), rather than assuming it away.
-export function deriveBracketSize(totalEntries, maxBracket) {
-  let size = 1;
-  while (size * 2 <= totalEntries && size * 2 <= maxBracket) size *= 2;
-  return size;
 }
 
 // Standard NHRA ladder pairing: best seed vs worst seed, working inward.

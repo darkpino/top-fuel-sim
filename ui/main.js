@@ -7,7 +7,7 @@ import { buildRoundDefs, generateEventConditions } from "../sim-core/event.js";
 import { TRACKS, findTrack } from "../sim-core/tracks.js";
 import {
   generateAiField, deriveRunningOrder, runQualifyingAttempt, computeQualifyingLadder,
-  deriveBracketSize, pairBracketRound, calcReactionTime, resolveHeadToHead, mulberry32,
+  pairBracketRound, calcReactionTime, resolveHeadToHead, mulberry32,
   generateLaneVariants, pickBetterLane,
 } from "../sim-core/ladder.js";
 import {
@@ -44,8 +44,16 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "91";
+const APP_BUILD = "92";
 const APP_BUILD_DATE = "2026-09-19";
+
+// Real NHRA Top Fuel national events run a fixed 16-car eliminator ladder
+// regardless of exactly how many cars show up to qualify - a short field
+// (say 13) still fills all 16 slots on paper, with the unfilled spots
+// resolved as byes in round 1 (see pairBracketRound in ladder.js), rather
+// than shrinking the bracket itself. A bigger field than 16 just means
+// only the fastest 16 qualifiers make the show, same as always.
+const ELIMINATION_BRACKET_SIZE = 16;
 $("app-version-note").textContent = `Build ${APP_BUILD} · ${APP_BUILD_DATE}`;
 
 // The track's physical elevation isn't a slider (it's fixed for the
@@ -561,7 +569,7 @@ $("runBtn").addEventListener("click", () => {
 const envSliderIds = ["airtemp", "hum", "baro", "track", "grip"];
 let currentMode = "test";
 let viewingRoundIndex = null; // non-null while browsing a past round read-only via the history table
-const EVENT_IDLE_STATUS = "Nog geen evenement gestart. Kies het aantal auto's en start: 4 kwalificatierondes bepalen de ladder, het bovenste deel (macht van 2) gaat door naar de eliminatie. Elke ronde heeft eigen gesimuleerde omstandigheden - het hele veld rijdt onder dezelfde condities als jij.";
+const EVENT_IDLE_STATUS = "Nog geen evenement gestart. Kies het aantal auto's en start: 4 kwalificatierondes bepalen de ladder, de beste 16 gaan door naar de eliminatie (minder dan 16 starters? dan gaat iedereen met een tijd door, met een bye erbij waar nodig). Elke ronde heeft eigen gesimuleerde omstandigheden - het hele veld rijdt onder dezelfde condities als jij.";
 
 // ---- Financiën & garage: teambudget, transacties, sponsors en de
 // auto-build (motor/kop/blower merken, chassis- en tankkeuzes). Beide
@@ -851,7 +859,7 @@ function beginEvent(trackId, totalEntries, isSeasonRound = false) {
   marketState = generateUsedMarket(Math.random);
   saveMarketState();
   if (currentMode === "garage") renderGarageSummary();
-  const bracketSize = deriveBracketSize(totalEntries, 32);
+  const bracketSize = ELIMINATION_BRACKET_SIZE;
   const seed = Math.floor(Math.random() * 1e9);
   const roundDefs = buildRoundDefs(bracketSize);
   const track = findTrack(trackId);
@@ -1515,7 +1523,14 @@ function runPlayerQualifying(skip) {
   if (!skip) {
     const r = runSimulation(readSettings());
     player.quals[sessionIndex] = r;
-    if (r.finished && !r.weightIllegal && !r.engineFailed && !r.clutchFailed && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
+    // finished means a real photocell ET (crossed 1000ft) - that's true
+    // even when engineFailed/clutchFailed is ALSO true, since either can
+    // let go right at (or just past) the stripe and the car still coasts
+    // across under a time that already counted. Only a run that never
+    // actually finished (or was weight-illegal) has no legitimate ET to
+    // bank - a mechanical failure earlier in the run already shows up as
+    // a slower et anyway, never a flattering one.
+    if (r.finished && !r.weightIllegal && (player.bestEt === null || r.et < player.bestEt)) { player.bestEt = r.et; player.bestMph = r.mph; }
     ladderState.playerHistory[ladderState.roundIndex] = { result: r };
     chargePlayerRun(r);
     // Rolled and shown same as any other run, but never folded into r.et/
