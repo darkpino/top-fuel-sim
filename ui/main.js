@@ -45,7 +45,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "96";
+const APP_BUILD = "97";
 const APP_BUILD_DATE = "2026-09-19";
 
 // Real NHRA Top Fuel national events run a fixed 16-car eliminator ladder
@@ -429,10 +429,11 @@ function renderRunResult(r, reactionTime = null) {
   if (r.clutchWearLockupGainPct > 3 && !r.clutchFailed) flags += `<div class="flag">Koppelingsslijtage heeft het mechanische plafond tijdens deze run zo'n ${r.clutchWearLockupGainPct.toFixed(0)} procentpunt verder laten oplopen — het frictiemateriaal dunt uit, waardoor de vingers verder naar buiten kunnen dan een vers pakket zou toelaten. Bij nog meer slip op deze tune wordt de koppeling geleidelijk agressiever dan bedoeld.</div>`;
   if (r.clutchOverpowered && !r.clutchFailed) flags += `<div class="flag">De motor maakt meer vermogen dan deze koppeling kan vasthouden — hij rijdt er letterlijk doorheen en blijft slippen, ook bij volledige lockup. Dat kost tijd én kookt de koppeling extra hard op. Kies een sterkere koppeling, of temper het vermogen.</div>`;
   if (r.cylindersDropped) {
-    if (r.cylinderDropCause === "rich") flags += `<div class="flag">Cilinder(s) verzopen na ${r.cylinderDropTime.toFixed(2)}s — de brandstofcurve stond op dat moment te rijk voor het toerental. Kost vermogen, maar de motor overleeft het.</div>`;
-    else if (r.cylinderDropCause === "lean") flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Bij aanhouden loopt dit uit op motorschade.</div>`;
-    else flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% liep te heet. Bij aanhouden loopt dit uit op motorschade.</div>`;
+    if (r.cylinderDropCause === "rich") flags += `<div class="flag">Cilinder(s) verzopen na ${r.cylinderDropTime.toFixed(2)}s — de brandstofcurve stond op dat moment te rijk voor het toerental. Kost vermogen; de motor zelf overleeft het altijd, al kan het verzuipen bij aanhouden nog wel verder om zich heen grijpen.</div>`;
+    else if (r.cylinderDropCause === "lean") flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — te mager onder belasting, de brandstofcurve hield het toerental niet bij. Vanaf hier draait de motor zelf ook harder op de rest van de run in - hoe langer dit aanhoudt, hoe groter de kans dat dit alsnog in motorschade eindigt.</div>`;
+    else flags += `<div class="flag">Cilinder(s) beginnen te missen na ${r.cylinderDropTime.toFixed(2)}s — de combinatie van blower, compressie en nitro% liep te heet. Vanaf hier draait de motor zelf ook harder op de rest van de run in - hoe langer dit aanhoudt, hoe groter de kans dat dit alsnog in motorschade eindigt.</div>`;
   }
+  if (r.secondCylinderDropped) flags += `<div class="flag">Nog een cilinder erbij na ${r.secondCylinderDropTime.toFixed(2)}s — het loopt op, niet bij één cilinder gebleven. Hoe eerder in de run de eerste wegviel, hoe meer tijd de rest van de run heeft gehad om dit verder te laten oplopen.</div>`;
   if (r.tireShakeRisk) flags += `<div class="flag">Tire shake-risico: de bandenspanning past niet goed bij deze baan terwijl de launch wel zwaar belast wordt — de band groeit niet goed in, wat in het echt een harde trilling geeft in plaats van een schone hook-up. Stel de bandenspanning bij richting de richtwaarde.</div>`;
   if (r.wheelieRisk) flags += `<div class="flag">Wheelie-risico: de launch belast de voorkant zwaarder dan de neus-ballast, voorvleugel en wheeliebar samen kunnen compenseren — de voorwielen komen te ver los. Meer ballast op de neus, meer voorvleugel, of de wheeliebar lager zetten helpen hier tegen.</div>`;
   if (r.frontWingHuntRisk) flags += `<div class="flag">De voorvleugel staat agressief genoeg, en de auto is snel genoeg, dat de besturing bij topsnelheid kan gaan "zoeken" (lichtjes heen en weer) in plaats van strak recht te lopen. Zet de voorvleugel iets terug.</div>`;
@@ -513,6 +514,7 @@ function renderRunResult(r, reactionTime = null) {
 
   let cylTxt, cylCls;
   if (r.engineFailed) { cylTxt = "motor kapot"; cylCls = "bad"; }
+  else if (r.secondCylinderDropped) { cylTxt = (r.cylinderDropCause === "rich" ? "meerdere verzopen" : "meerdere missen") + ` @ ${r.secondCylinderDropTime.toFixed(2)}s`; cylCls = "bad"; }
   else if (r.cylindersDropped) { cylTxt = (r.cylinderDropCause === "rich" ? "verzopen" : "missen") + ` @ ${r.cylinderDropTime.toFixed(2)}s`; cylCls = "warn"; }
   else { cylTxt = "alle vuren"; cylCls = "ok"; }
   $("i-cyl").textContent = cylTxt;

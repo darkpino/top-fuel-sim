@@ -181,6 +181,31 @@ const ROD_BEARING_FAILURE_THRESHOLD = 0.10;
 // over-rich build hits it, in line with the other margins above.
 const HYDROLOCK_RICHNESS_THRESHOLD = 0.48;
 const CYLINDER_DROP_FORCE_PENALTY = 0.85; // one or more cylinders misfiring
+// A dropped cylinder doesn't leave the rest of the engine exactly as
+// stressed as it was a moment before - the remaining cylinders are now
+// compensating for the missing one, and whatever combustion problem
+// (heat, lean, fouling) actually caused the drop is still there, working
+// on an engine that's already down a cylinder. Real engines get MORE
+// failure-prone from that point on, not equally fragile - so every damage
+// clock that can still climb after the drop (heat/lean/foul/rod-bearing)
+// keeps accumulating at this multiplied rate for the rest of the run.
+// That's what makes WHEN a cylinder drops actually matter: a drop early in
+// the run leaves a lot of remaining time at the elevated rate - genuinely
+// likely to escalate into a full failure before the stripe - while the
+// same drop happening late leaves little time to escalate further, so it
+// mostly just costs the run its finishing speed. A stock default tune
+// never crosses CYLINDER_DROP_THRESHOLD in the first place (see that
+// constant's own comment), so this is an exact no-op there, same
+// protected-baseline guarantee as everything else in this file.
+const CYLINDER_DROP_DAMAGE_ESCALATION = 2.2;
+// Cylinders keep dropping instead of the story stopping at "lost one" -
+// a second, harder step on the way to ENGINE_FAILURE_THRESHOLD, reusing
+// the same (now-escalated) damage clocks rather than a separate roll, so
+// it's a direct consequence of running degraded for a while, not a
+// coin-flip. Placed a third of the way from CYLINDER_DROP_THRESHOLD to
+// ENGINE_FAILURE_THRESHOLD so there's room to actually observe a
+// "losing more cylinders" middle state before the engine goes altogether.
+const CYLINDER_DROP_THRESHOLD_2 = CYLINDER_DROP_THRESHOLD + (ENGINE_FAILURE_THRESHOLD - CYLINDER_DROP_THRESHOLD) / 3;
 // How far (ft) past the commanded shutoff point an undisciplined driver
 // drifts before actually lifting - a pay driver who "doesn't listen," the
 // direct ask. Scales with the driver's own disciplineMult (see team.js):
@@ -308,6 +333,8 @@ export function runSimulation(settings, rng = Math.random) {
   let cylindersDropped = false;
   let cylinderDropTime = null;
   let cylinderDropCause = null;
+  let secondCylinderDropped = false;
+  let secondCylinderDropTime = null;
   let clutchDamage = 0;
   let clutchWeldDamage = 0;
   let clutchFailed = false;
@@ -558,15 +585,20 @@ export function runSimulation(settings, rng = Math.random) {
     // simulated time at the SAME damage rate as full throttle - the tune
     // did nothing wrong, the model just kept counting a stress that had
     // already stopped happening.
-    heatDamage += Math.max(0, heatRisk - HEAT_RISK_THRESHOLD) * loadHeatMult * garageEngineDamageMult * throttle * DT;
+    // See CYLINDER_DROP_DAMAGE_ESCALATION's own comment: read BEFORE this
+    // tick's own drop check below, so the tick that actually crosses the
+    // threshold still accumulates at the normal rate - escalation begins
+    // the tick after, not retroactively on the tick that caused it.
+    const dropEscalation = cylindersDropped ? CYLINDER_DROP_DAMAGE_ESCALATION : 1;
+    heatDamage += Math.max(0, heatRisk - HEAT_RISK_THRESHOLD) * loadHeatMult * garageEngineDamageMult * dropEscalation * throttle * DT;
     // The retarder exists specifically to keep this at bay - it only bites
     // if the curve is dialed aggressively enough that even -30deg of
     // retard can't pull effective timing back under a safe line.
-    heatDamage += calcIgnitionHeatDamageRate(ignitionEffective) * garageEngineDamageMult * throttle * DT;
+    heatDamage += calcIgnitionHeatDamageRate(ignitionEffective) * garageEngineDamageMult * dropEscalation * throttle * DT;
     // Lean under load hurts the most right where lf is high - the clutch
     // is loaded, so the motor can least afford to be starved right then.
-    leanDamage += Math.max(0, -richness) * lf * LEAN_DAMAGE_RATE * garageEngineDamageMult * throttle * DT;
-    foulDamage += Math.max(0, richness) * FOUL_DAMAGE_RATE * throttle * DT;
+    leanDamage += Math.max(0, -richness) * lf * LEAN_DAMAGE_RATE * garageEngineDamageMult * dropEscalation * throttle * DT;
+    foulDamage += Math.max(0, richness) * FOUL_DAMAGE_RATE * dropEscalation * throttle * DT;
     const engineDamage = heatDamage + leanDamage;
 
     // Detonation risk (from either end - too hot, or too lean under load,
@@ -576,12 +608,21 @@ export function runSimulation(settings, rng = Math.random) {
     const detonationHeatExcess = Math.max(0, heatRisk - HEAT_RISK_THRESHOLD);
     const detonationLeanExcess = Math.max(0, -richness) * lf;
     rodBearingDamage += (detonationHeatExcess * detonationHeatExcess + detonationLeanExcess * detonationLeanExcess)
-      * ROD_BEARING_DAMAGE_RATE * loadHeatMult * garageEngineDamageMult * throttle * DT;
+      * ROD_BEARING_DAMAGE_RATE * loadHeatMult * garageEngineDamageMult * dropEscalation * throttle * DT;
 
     if (!cylindersDropped && (engineDamage > CYLINDER_DROP_THRESHOLD || foulDamage > CYLINDER_DROP_THRESHOLD)) {
       cylindersDropped = true;
       cylinderDropTime = t;
       cylinderDropCause = engineDamage > CYLINDER_DROP_THRESHOLD ? (heatDamage >= leanDamage ? "heat" : "lean") : "rich";
+    }
+    // A real second step, not just a worse reading on the same one - see
+    // CYLINDER_DROP_THRESHOLD_2's comment. Reuses the same engineDamage/
+    // foulDamage signals (now climbing at the escalated rate above), so
+    // whether this ever triggers - and how soon - is a direct read of how
+    // much run is left after the first cylinder actually dropped.
+    if (!secondCylinderDropped && cylindersDropped && (engineDamage > CYLINDER_DROP_THRESHOLD_2 || foulDamage > CYLINDER_DROP_THRESHOLD_2)) {
+      secondCylinderDropped = true;
+      secondCylinderDropTime = t;
     }
     if (!engineFailed && engineDamage > ENGINE_FAILURE_THRESHOLD) {
       engineFailed = true;
@@ -606,6 +647,7 @@ export function runSimulation(settings, rng = Math.random) {
     // math below already handles that shock, nothing extra needed here).
     // Only a dead ENGINE (engineFailed) actually zeroes propulsion.
     if (engineFailed) appliedForce = 0;
+    else if (secondCylinderDropped) appliedForce *= CYLINDER_DROP_FORCE_PENALTY * CYLINDER_DROP_FORCE_PENALTY;
     else if (cylindersDropped) appliedForce *= CYLINDER_DROP_FORCE_PENALTY;
 
     const drag = 0.5 * RHO_REF * airDensityRatio * CDA * garageDragCdaMult * v * v;
@@ -760,7 +802,8 @@ export function runSimulation(settings, rng = Math.random) {
     finished, et, mph, et60, et330, et660, mph660, trace, densityAltitude,
     clutchHeat, avgSlipPct, plugBalance, bearingWear, tireWear, detonationRisk, nitroIllegal, tireShakeRisk,
     peakFuelGpm, fuelConsumedGal, engineFailed, engineFailTime, engineFailCause, fuelStarved,
-    cylindersDropped, cylinderDropTime, cylinderDropCause, engineDamagePct, foulDamagePct, rodBearingDamagePct,
+    cylindersDropped, cylinderDropTime, cylinderDropCause, secondCylinderDropped, secondCylinderDropTime,
+    engineDamagePct, foulDamagePct, rodBearingDamagePct,
     clutchFailed, clutchFailTime, clutchFailCause,
     driverLifted: driverState.lifted, driverLiftTime: driverState.liftTime, driverLiftReason: driverState.liftReason, pedalCount: driverState.pedalCount,
     clutchWearLockupGainPct: peakWornGain * 100,
