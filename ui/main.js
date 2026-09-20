@@ -6,7 +6,7 @@ import { runSimulation, WEIGHT_LB as WEIGHT_LB_MIN } from "../sim-core/run-simul
 import { buildRoundDefs, generateEventConditions } from "../sim-core/event.js";
 import { TRACKS, findTrack } from "../sim-core/tracks.js";
 import {
-  generateAiField, deriveRunningOrder, runQualifyingAttempt, computeQualifyingLadder,
+  generateAiField, generateAiFieldFromRoster, generateRivalPool, deriveRunningOrder, runQualifyingAttempt, computeQualifyingLadder,
   pairBracketRound, calcReactionTime, resolveHeadToHead, mulberry32,
   generateLaneVariants, pickBetterLane,
 } from "../sim-core/ladder.js";
@@ -32,9 +32,9 @@ import {
   findTeamMember, hireTeamMember, fireTeamMember,
 } from "../sim-core/team.js";
 import {
-  SEASON_MIN_RACES, defaultSeasonState, addRaceToCalendar, removeRaceFromCalendar,
+  SEASON_MIN_RACES, RIVAL_POOL_SIZE, defaultSeasonState, addRaceToCalendar, removeRaceFromCalendar,
   startSeason, recordAttendedResult, recordSkippedResult, currentSeasonRound, travelMilesFor, travelCostFor,
-  deriveSeasonFieldSize,
+  deriveSeasonFieldSize, addRivalPoints, seasonStandings, pointsForOutcome,
 } from "../sim-core/season.js";
 
 function $(id) { return document.getElementById(id); }
@@ -45,7 +45,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "94";
+const APP_BUILD = "95";
 const APP_BUILD_DATE = "2026-09-19";
 
 // Real NHRA Top Fuel national events run a fixed 16-car eliminator ladder
@@ -848,6 +848,24 @@ function showEventActiveUI() {
   $("skipQualBtn").style.display = "block";
 }
 
+// The AI half of a season round's field is drawn from the season's own
+// fixed rival roster (same named rivals all season, freshly re-tuned each
+// week) instead of a fully anonymous one-off field - see season.js's
+// RIVAL_POOL_SIZE/generateRivalPool. A season saved before this roster
+// existed (or, defensively, a roster somehow short of what this week's
+// field needs) gets topped up with regular one-off opponents rather than
+// leaving seats empty.
+function buildSeasonAiField(totalEntries, seed) {
+  if (seasonState.rivalPool.length === 0) {
+    seasonState.rivalPool = generateRivalPool(RIVAL_POOL_SIZE, Math.floor(Math.random() * 1e9));
+    saveSeasonState();
+  }
+  const needed = totalEntries - 1;
+  const field = generateAiFieldFromRoster(seasonState.rivalPool.slice(0, needed), seed);
+  if (field.length < needed) field.push(...generateAiField(needed - field.length, seed + 999));
+  return field;
+}
+
 // Shared by the manual "Start evenement" button and the season's "Ga naar
 // deze race" button - both already handled their own readiness/budget
 // checks and charged whatever's specific to that flow (entry fee + wages
@@ -873,7 +891,7 @@ function beginEvent(trackId, totalEntries, isSeasonRound = false) {
   ladderState = {
     bracketSize, totalEntries, seed, rounds, trackId: track.id,
     roundIndex: 0,
-    field: [player, ...generateAiField(totalEntries - 1, seed + 1)],
+    field: [player, ...(isSeasonRound ? buildSeasonAiField(totalEntries, seed + 1) : generateAiField(totalEntries - 1, seed + 1))],
     rng: mulberry32(seed + 777),
     playerHistory: new Array(rounds.length).fill(null),
     qOrder: null, bracketPool: null, elimRounds: {}, playerOutcome: null, finalResultText: null,
@@ -959,6 +977,20 @@ function renderSeasonRoundRows(tbodyId) {
   }).join("");
 }
 
+// Player + every rival who's raced at least once, ranked by season points -
+// used both for the running "tussenstand" during an active season and the
+// final table once it's over. Returns the row HTML plus the player's own
+// rank (1-based) and the field size, so callers can also show "P4 van 22".
+function renderSeasonStandings() {
+  const rows = seasonStandings(seasonState, "Jij", "Jouw team");
+  const playerRank = rows.findIndex(r => r.isPlayer) + 1;
+  const html = rows.map((r, i) => {
+    const cls = r.isPlayer ? "current" : "done";
+    return `<tr class="${cls}"><td>${i + 1}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.team)}</td><td>${r.points}</td></tr>`;
+  }).join("");
+  return { html, playerRank, fieldSize: rows.length };
+}
+
 function renderSeasonCalendarBuilder() {
   $("season-calendar-body").innerHTML = seasonState.calendar.map((entry, i) => {
     const track = findTrack(entry.trackId);
@@ -986,7 +1018,6 @@ function renderSeasonPanel() {
   if (!seasonState.active && !complete) {
     $("season-status").textContent = seasonSetupStatusText();
     $("season-base-select").value = seasonState.baseTrackId || TRACKS[0].id;
-    $("season-base-select").disabled = seasonState.calendar.length > 0;
     renderSeasonCalendarBuilder();
     return;
   }
@@ -1004,6 +1035,9 @@ function renderSeasonPanel() {
       $("season-attend-btn").style.display = "block";
       $("season-skip-btn").style.display = "block";
     }
+    const standings = renderSeasonStandings();
+    $("season-standings-body").innerHTML = standings.html;
+    $("season-standings-note").textContent = seasonState.results.some(r => r) ? `Jij staat op P${standings.playerRank} van ${standings.fieldSize}.` : "Nog geen races gereden dit seizoen - de tussenstand vult zich na je eerste bijgewoonde race.";
     return;
   }
 
@@ -1011,10 +1045,14 @@ function renderSeasonPanel() {
   const attendedCount = seasonState.results.filter(r => r && r.attended).length;
   $("season-final-summary").textContent = `Seizoen afgerond! Totaal ${seasonState.totalPoints} punten uit ${attendedCount}/${seasonState.calendar.length} bijgewoonde races.`;
   $("season-final-body").innerHTML = renderSeasonRoundRows();
+  $("season-final-standings-body").innerHTML = renderSeasonStandings().html;
 }
 
+// Free to change for as long as the setup screen is showing (no travel cost
+// is actually charged until you attend a race) - only visible during setup
+// in the first place, so nothing further needs locking it once a season is
+// under way.
 $("season-base-select").addEventListener("change", () => {
-  if (seasonState.calendar.length > 0) { renderSeasonPanel(); return; } // locked once the calendar has races
   seasonState.baseTrackId = $("season-base-select").value;
   saveSeasonState();
   renderSeasonPanel();
@@ -1039,6 +1077,8 @@ $("season-start-btn").addEventListener("click", () => {
     $("season-status").textContent = seasonSetupStatusText();
     return;
   }
+  seasonState.rivalPool = generateRivalPool(RIVAL_POOL_SIZE, Math.floor(Math.random() * 1e9));
+  seasonState.rivalPoints = {};
   startSeason(seasonState);
   saveSeasonState();
   renderSeasonPanel();
@@ -1488,12 +1528,82 @@ function chargePlayerRun(r) {
   return { fatalParts, brokenParts };
 }
 
+// The player's own event stops the moment they're out (a real elimination
+// ladder doesn't wait around for them), which normally leaves whatever
+// rounds come after that unresolved - only the pairs that actually involved
+// or preceded the player got simulated. For season standings to mean
+// anything, the REST of the bracket still needs a genuine result: who those
+// remaining AI cars keep beating, and who ultimately wins the thing. This
+// finishes that off silently (no UI, nothing the player watches) using the
+// exact same pairing/lane/reaction-time logic the interactive rounds use,
+// then returns whichever entrant is left standing (or null if the bracket
+// never got underway at all, i.e. the player didn't even qualify AND no AI
+// ever raced eliminations either - can't happen once qualifying computed a
+// bracketPool, since qualifying always runs the WHOLE field regardless of
+// who makes the cut).
+function resolveRemainingBracket() {
+  if (!ladderState.bracketPool) {
+    if (!ladderState.field.some(e => e.qualified)) return null;
+    const ranked = computeQualifyingLadder(ladderState.field, ladderState.bracketSize);
+    ladderState.bracketPool = ranked.filter(e => e.qualified).slice(0, ladderState.bracketSize);
+  }
+  const elimRoundDefs = ladderState.rounds.filter(r => r.phase === "elimination");
+  const roundsResolved = Object.keys(ladderState.elimRounds).length;
+  let survivors = ladderState.bracketPool.filter(e => !e.eliminated && !e.isPlayer);
+  for (const roundDef of elimRoundDefs.slice(roundsResolved)) {
+    if (survivors.length <= 1) break;
+    const { pairs } = pairBracketRound(survivors);
+    const lanes = generateLaneVariants(roundDef.conditions, ladderState.rng);
+    pairs.forEach(([a, b]) => {
+      const higherSeed = a.qualPosition < b.qualPosition ? a : b;
+      const lowerSeed = higherSeed === a ? b : a;
+      const higherLane = pickBetterLane(lanes);
+      const lowerLane = higherLane === "A" ? "B" : "A";
+      const resultHigher = runSimulation({ ...higherSeed.tune, ...lanes[higherLane] });
+      const resultLower = runSimulation({ ...lowerSeed.tune, ...lanes[lowerLane] });
+      const resultA = higherSeed === a ? resultHigher : resultLower;
+      const resultB = higherSeed === a ? resultLower : resultHigher;
+      const reactA = calcReactionTime(a.tune.driverAggressiveness, ladderState.rng);
+      const reactB = calcReactionTime(b.tune.driverAggressiveness, ladderState.rng);
+      const winner = resolveHeadToHead(reactA, resultA, reactB, resultB) === "A" ? a : b;
+      const loser = winner === a ? b : a;
+      loser.eliminated = true;
+      loser.eliminatedRound = roundDef.roundNumber;
+    });
+    survivors = ladderState.bracketPool.filter(e => !e.eliminated && !e.isPlayer);
+  }
+  return survivors.length === 1 ? survivors[0] : null;
+}
+
+// Every rival still in the field (qualified or not) earns the same
+// NHRA-style points the player does, via the same pointsForOutcome formula -
+// resolveRemainingBracket above is what makes eliminatedRound/champion
+// honest for AI cars whose bracket run wasn't already fully played out by
+// the time the player's own event ended.
+function computeRivalPointsForEvent() {
+  const champion = resolveRemainingBracket();
+  const totalElimRounds = totalElimRoundsFor(ladderState.bracketSize);
+  const points = {};
+  ladderState.field.forEach((e) => {
+    if (e.isPlayer) return;
+    points[e.id] = pointsForOutcome({
+      qualified: e.qualified,
+      champion: e === champion,
+      eliminatedRound: e.eliminatedRound,
+      totalElimRounds,
+      qualPosition: e.qualPosition,
+    });
+  });
+  return points;
+}
+
 // Awards prize money for how the event ended, offers 1-2 sponsor deals
 // (reusing the event's own seeded rng so a given event/seed is
 // reproducible), then shows the final result text. A season round also
 // banks its points here (qualPosition comes off the player's own field
 // entry, since outcome itself doesn't carry it - see season.js's
-// pointsForOutcome) and advances the season to its next round.
+// pointsForOutcome), tallies rival standings, and advances the season to
+// its next round.
 function finishEvent(outcome, text) {
   awardEventPrize(financesState, outcome);
   if (!financesState.sponsorOffers.length) {
@@ -1504,6 +1614,7 @@ function finishEvent(outcome, text) {
   if (ladderState.isSeasonRound && seasonState.active) {
     const player = ladderState.field.find(e => e.isPlayer);
     recordAttendedResult(seasonState, { ...outcome, qualPosition: player.qualPosition });
+    addRivalPoints(seasonState, computeRivalPointsForEvent());
     saveSeasonState();
   }
   saveFinancesState();

@@ -10,9 +10,16 @@
 // skipping costs nothing but earns no points that round either). Pure
 // data/functions, no DOM access, same pattern as garage.js/team.js.
 
-import { findTrack } from "./tracks.js";
+import { findTrack, TRACKS } from "./tracks.js";
 
 export const SEASON_MIN_RACES = 4;
+
+// The rival roster needs to cover the AI half of the biggest field any
+// track can draw (see tracks.js's seasonFieldMax) - Indianapolis' 25 is
+// currently the ceiling, so a pool of 24 always has enough named rivals to
+// fill out even that round without ever needing to top up with anonymous
+// one-off opponents.
+export const RIVAL_POOL_SIZE = Math.max(...TRACKS.map((t) => t.seasonFieldMax)) - 1;
 
 // How many cars actually show up to qualify at a given round - drawn
 // fresh each time the player attends (same "not decided until you show
@@ -63,7 +70,31 @@ export function defaultSeasonState() {
     roundIndex: 0, // index into calendar of the next round to decide on
     results: [], // one slot per calendar round once started: { trackId, attended, points, outcome? } | null
     totalPoints: 0,
+    rivalPool: [], // [{ id, name, team, archetype }] - fixed for the season, drawn once in startSeason
+    rivalPoints: {}, // rivalPool id -> cumulative season points, only rivals who've actually raced appear
   };
+}
+
+// Merges one event's rival points (id -> points earned THIS round) into the
+// season's running totals - a rival not in the map yet (never raced before,
+// or this is their first attended round) starts from 0.
+export function addRivalPoints(season, pointsById) {
+  for (const [id, points] of Object.entries(pointsById)) {
+    season.rivalPoints[id] = (season.rivalPoints[id] || 0) + points;
+  }
+}
+
+// Player + every rival who has raced at least once, ranked by points
+// (descending, ties broken by whoever's listed first - stable sort).
+// playerName/playerTeam let the caller supply the same labels shown
+// elsewhere in the UI instead of season.js hardcoding "Jij".
+export function seasonStandings(season, playerName, playerTeam) {
+  const rows = [{ id: "player", name: playerName, team: playerTeam, points: season.totalPoints, isPlayer: true }];
+  for (const rival of season.rivalPool) {
+    if (!(rival.id in season.rivalPoints)) continue;
+    rows.push({ id: rival.id, name: rival.name, team: rival.team, points: season.rivalPoints[rival.id], isPlayer: false });
+  }
+  return rows.sort((a, b) => b.points - a.points);
 }
 
 export function addRaceToCalendar(season, trackId) {

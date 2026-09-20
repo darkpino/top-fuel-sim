@@ -108,7 +108,7 @@
 
   <div class="panel" id="seasonPanel" style="display:none;">
     <div class="sec-title">Seizoen</div>
-    <p class="note" style="margin-top:0;">Een puntenseizoen over meerdere evenementen: jij stelt zelf de kalender samen (circuits mogen vaker voorkomen), kiest daarna per race of je gaat of 'm overslaat, en verzamelt onderweg NHRA-stijl punten (per gewonnen eliminatieronde, plus een bonus voor een sterke kwalificatiepositie). Reiskosten worden berekend vanaf je teambasis - hoe verder een circuit weg ligt, hoe duurder de trip. Het aantal inschrijvingen per race (13-25) hangt af van hoe groot dat circuit in het echt is - Indianapolis (de U.S. Nationals) trekt altijd een vol veld, een kleinere markt als Epping draait vaker dunner - en wordt pas bekend zodra je daadwerkelijk start. Zodra het seizoen loopt zit je rijder vast (zie Team bouwen) - car chief en sponsor-scout blijven gewoon wisselbaar.</p>
+    <p class="note" style="margin-top:0;">Een puntenseizoen over meerdere evenementen: jij stelt zelf de kalender samen (circuits mogen vaker voorkomen), kiest daarna per race of je gaat of 'm overslaat, en verzamelt onderweg NHRA-stijl punten (per gewonnen eliminatieronde, plus een bonus voor een sterke kwalificatiepositie). Reiskosten worden berekend vanaf je teambasis - hoe verder een circuit weg ligt, hoe duurder de trip; vrij te kiezen/wijzigen zolang je nog aan het plannen bent. Het aantal inschrijvingen per race (13-25) hangt af van hoe groot dat circuit in het echt is - Indianapolis (de U.S. Nationals) trekt altijd een vol veld, een kleinere markt als Epping draait vaker dunner - en wordt pas bekend zodra je daadwerkelijk start. Je rijdt tegen dezelfde vaste groep rivalen het hele seizoen (iedere week een verse tune, maar wel dezelfde naam/team) - de tussenstand (en, aan het einde, de eindstand) laat zien waar jij tussen hen staat. Zodra het seizoen loopt zit je rijder vast (zie Team bouwen) - car chief en sponsor-scout blijven gewoon wisselbaar.</p>
     <p class="note" id="season-status" style="margin-top:0;"></p>
 
     <div id="season-setup">
@@ -116,7 +116,7 @@
         <label>Teambasis (VS)</label>
         <select id="season-base-select"></select>
       </div>
-      <p class="note" style="margin-top:0;">Waar je team gevestigd is - bepaalt de reisafstand (en dus reiskosten) naar elk circuit in je kalender. Eenmaal gekozen, niet meer te wijzigen zolang er een kalender staat (verwijder eerst alle races om opnieuw te kiezen).</p>
+      <p class="note" style="margin-top:0;">Waar je team gevestigd is - bepaalt de reisafstand (en dus reiskosten) naar elk circuit in je kalender. Vrij te wijzigen zolang je nog aan het plannen bent (er wordt pas echt reisgeld betaald zodra je een race bijwoont); zodra het seizoen loopt ligt de basis vast.</p>
 
       <div class="row">
         <label>Circuit toevoegen aan kalender</label>
@@ -148,6 +148,15 @@
       </div>
       <button class="run" id="season-attend-btn" type="button">Ga naar deze race</button>
       <button class="secondary" id="season-skip-btn" type="button">Sla deze race over</button>
+
+      <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:16px;">Tussenstand</div>
+      <p class="note" style="margin-top:0;" id="season-standings-note">--</p>
+      <div style="overflow-x:auto;">
+        <table class="event-table" id="season-standings-table">
+          <thead><tr><th>Pos</th><th>Naam</th><th>Team</th><th>Punten</th></tr></thead>
+          <tbody id="season-standings-body"></tbody>
+        </table>
+      </div>
     </div>
 
     <div id="season-complete" style="display:none;">
@@ -156,6 +165,14 @@
         <table class="event-table" id="season-final-table">
           <thead><tr><th>Ronde</th><th>Circuit</th><th>Status</th><th>Punten</th></tr></thead>
           <tbody id="season-final-body"></tbody>
+        </table>
+      </div>
+
+      <div class="sec-title" style="font-size:13px; border-top:none; padding-top:0; margin-top:16px;">Eindstand</div>
+      <div style="overflow-x:auto;">
+        <table class="event-table" id="season-final-standings-table">
+          <thead><tr><th>Pos</th><th>Naam</th><th>Team</th><th>Punten</th></tr></thead>
+          <tbody id="season-final-standings-body"></tbody>
         </table>
       </div>
       <button class="secondary" id="season-new-btn" type="button">Nieuw seizoen</button>

@@ -267,6 +267,22 @@ function shuffle(arr, rng) {
   return a;
 }
 
+function buildAiEntrant(id, name, team, archetype, rng) {
+  return {
+    id, name, team,
+    archetype: archetype.name,
+    tune: { ...jitterTune(archetype.tune, rng), ...jitterReliability(archetype.name, rng) },
+    isPlayer: false,
+    quals: [null, null, null, null],
+    bestEt: null,
+    bestMph: null,
+    qualPosition: null,
+    qualified: false,
+    eliminated: false,
+    eliminatedRound: null,
+  };
+}
+
 // Generates the AI half of the field (the player is added separately by
 // the caller, since only the player has a UI-driven tune). Names are drawn
 // without replacement so nobody in one event shares a full name.
@@ -278,23 +294,31 @@ export function generateAiField(count, seed) {
   const entrants = [];
   for (let i = 0; i < count; i++) {
     const archetype = AI_ARCHETYPES[Math.floor(rng() * AI_ARCHETYPES.length)];
-    entrants.push({
-      id: `ai${i}`,
-      name: `${firstNames[i % firstNames.length]} ${lastNames[i % lastNames.length]}`,
-      team: teamNames[i % teamNames.length],
-      archetype: archetype.name,
-      tune: { ...jitterTune(archetype.tune, rng), ...jitterReliability(archetype.name, rng) },
-      isPlayer: false,
-      quals: [null, null, null, null],
-      bestEt: null,
-      bestMph: null,
-      qualPosition: null,
-      qualified: false,
-      eliminated: false,
-      eliminatedRound: null,
-    });
+    entrants.push(buildAiEntrant(`ai${i}`, `${firstNames[i % firstNames.length]} ${lastNames[i % lastNames.length]}`, teamNames[i % teamNames.length], archetype, rng));
   }
   return entrants;
+}
+
+// A stable roster of named rivals - built once (see generateRivalPool) and
+// re-tuned fresh from that same identity every time it's drawn on, so a
+// season's field is "the same regulars every week" (real name, real team,
+// same archetype "philosophy") rather than a wholly new cast per event, but
+// still races a freshly-jittered tune each week like anyone else - nobody's
+// literally running the exact same numbers race after race.
+export function generateAiFieldFromRoster(roster, seed) {
+  const rng = mulberry32(seed);
+  return roster.map((r) => {
+    const archetype = AI_ARCHETYPES.find((a) => a.name === r.archetype) || AI_ARCHETYPES[0];
+    return buildAiEntrant(r.id, r.name, r.team, archetype, rng);
+  });
+}
+
+// The identities (name/team/archetype) for a season-long rival roster -
+// reuses generateAiField purely for its name/archetype assignment, keeping
+// only the identity fields a season round needs to re-draw a fresh tune
+// from later via generateAiFieldFromRoster.
+export function generateRivalPool(size, seed) {
+  return generateAiField(size, seed).map((e) => ({ id: e.id, name: e.name, team: e.team, archetype: e.archetype }));
 }
 
 // Q1 has no prior standings to order by, so it's shuffled. From Q2 on, the
