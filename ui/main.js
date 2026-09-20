@@ -45,7 +45,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "97";
+const APP_BUILD = "98";
 const APP_BUILD_DATE = "2026-09-19";
 
 // Real NHRA Top Fuel national events run a fixed 16-car eliminator ladder

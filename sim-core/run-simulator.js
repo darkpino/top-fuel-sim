@@ -588,27 +588,42 @@ export function runSimulation(settings, rng = Math.random) {
     // See CYLINDER_DROP_DAMAGE_ESCALATION's own comment: read BEFORE this
     // tick's own drop check below, so the tick that actually crosses the
     // threshold still accumulates at the normal rate - escalation begins
-    // the tick after, not retroactively on the tick that caused it.
-    const dropEscalation = cylindersDropped ? CYLINDER_DROP_DAMAGE_ESCALATION : 1;
-    heatDamage += Math.max(0, heatRisk - HEAT_RISK_THRESHOLD) * loadHeatMult * garageEngineDamageMult * dropEscalation * throttle * DT;
+    // the tick after, not retroactively on the tick that caused it. Scoped
+    // to whichever side of the mixture actually caused THIS drop, not
+    // blanket-applied to both: heat/lean/rod-bearing are one family (all
+    // downstream of the same too-hot-or-too-lean detonation risk), foul is
+    // the other (a rich mixture fouling a cylinder), and they're opposite
+    // directions on the very same fuel-curve dial. Without this split, a
+    // lean-caused drop kept escalating foulDamage too even after the
+    // driver corrected BACK toward richer - so the normal, otherwise-safe
+    // richness of the later stages started tripping a SECOND ("rich")
+    // drop purely because escalation was already active, regardless of
+    // what the player actually did. Now correcting the actual problem that
+    // caused the drop is what it takes to stop things getting worse - the
+    // other side of the dial stays at the normal, un-escalated rate.
+    const engineDropEscalation = cylindersDropped && cylinderDropCause !== "rich" ? CYLINDER_DROP_DAMAGE_ESCALATION : 1;
+    const foulDropEscalation = cylindersDropped && cylinderDropCause === "rich" ? CYLINDER_DROP_DAMAGE_ESCALATION : 1;
+    heatDamage += Math.max(0, heatRisk - HEAT_RISK_THRESHOLD) * loadHeatMult * garageEngineDamageMult * engineDropEscalation * throttle * DT;
     // The retarder exists specifically to keep this at bay - it only bites
     // if the curve is dialed aggressively enough that even -30deg of
     // retard can't pull effective timing back under a safe line.
-    heatDamage += calcIgnitionHeatDamageRate(ignitionEffective) * garageEngineDamageMult * dropEscalation * throttle * DT;
+    heatDamage += calcIgnitionHeatDamageRate(ignitionEffective) * garageEngineDamageMult * engineDropEscalation * throttle * DT;
     // Lean under load hurts the most right where lf is high - the clutch
     // is loaded, so the motor can least afford to be starved right then.
-    leanDamage += Math.max(0, -richness) * lf * LEAN_DAMAGE_RATE * garageEngineDamageMult * dropEscalation * throttle * DT;
-    foulDamage += Math.max(0, richness) * FOUL_DAMAGE_RATE * dropEscalation * throttle * DT;
+    leanDamage += Math.max(0, -richness) * lf * LEAN_DAMAGE_RATE * garageEngineDamageMult * engineDropEscalation * throttle * DT;
+    foulDamage += Math.max(0, richness) * FOUL_DAMAGE_RATE * foulDropEscalation * throttle * DT;
     const engineDamage = heatDamage + leanDamage;
 
     // Detonation risk (from either end - too hot, or too lean under load,
     // same two signals heatDamage/leanDamage above already track) hammers
     // the rod bearings, not the cylinders - see ROD_BEARING_DAMAGE_RATE's
-    // comment above for why it's squared instead of linear.
+    // comment above for why it's squared instead of linear. Same
+    // heat/lean family as engineDropEscalation above - fouling doesn't
+    // feed detonation risk, so a rich-caused drop never escalates this.
     const detonationHeatExcess = Math.max(0, heatRisk - HEAT_RISK_THRESHOLD);
     const detonationLeanExcess = Math.max(0, -richness) * lf;
     rodBearingDamage += (detonationHeatExcess * detonationHeatExcess + detonationLeanExcess * detonationLeanExcess)
-      * ROD_BEARING_DAMAGE_RATE * loadHeatMult * garageEngineDamageMult * dropEscalation * throttle * DT;
+      * ROD_BEARING_DAMAGE_RATE * loadHeatMult * garageEngineDamageMult * engineDropEscalation * throttle * DT;
 
     if (!cylindersDropped && (engineDamage > CYLINDER_DROP_THRESHOLD || foulDamage > CYLINDER_DROP_THRESHOLD)) {
       cylindersDropped = true;
