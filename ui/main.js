@@ -45,7 +45,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "95";
+const APP_BUILD = "96";
 const APP_BUILD_DATE = "2026-09-19";
 
 // Real NHRA Top Fuel national events run a fixed 16-car eliminator ladder
@@ -1899,12 +1899,17 @@ function formatAgeMonths(ageMonths) {
   return months ? `${years} jr ${months} mnd oud` : `${years} jr oud`;
 }
 
-// Renders one part's spare inventory as a small table: brand, age, and a
-// "Monteer" button to swap it in for whatever's currently equipped (which
-// goes back into the inventory slot it came from, not discarded - see
-// installUnit in garage.js). Visibility into "what do I actually own" is
-// the direct ask: the equipped select above only ever shows ONE unit,
-// this shows the rest, brand and all.
+// Renders one part's spare inventory as a small table: brand, age,
+// condition, and a "Monteer" button to swap it in for whatever's currently
+// equipped (which goes back into the inventory slot it came from, not
+// discarded - see installUnit in garage.js). Visibility into "what do I
+// actually own" is the direct ask: the equipped select above only ever
+// shows ONE unit, this shows the rest, brand and all. Condition matters
+// here too, not just on the equipped unit - a spare that was itself run
+// for a while before being swapped off keeps whatever wear it had (see
+// garage.js's equippedUnit/setEquippedUnit), it doesn't un-wear just by
+// sitting in the trailer - a brand-new or freshly-bought-used spare simply
+// reads "als nieuw" since it has no run history yet.
 function renderPartInventoryList(part) {
   const inv = garageConfig[part + "Inventory"];
   const container = $(`g-${part}-inventory-list`);
@@ -1914,11 +1919,14 @@ function renderPartInventoryList(part) {
   }
   const rows = inv.map((unit, i) => {
     const brand = findBrand(PARTS[part].brands, unit.brandId);
-    return `<tr><td>${escapeHtml(brand.name)}</td><td>${formatAgeMonths(unit.ageMonths)}</td><td>€${unitPrice(part, unit).toLocaleString("nl-NL")}</td>` +
+    const c = estimatePartCondition(unit.wear || 0);
+    const color = c.cls === "ok" ? "var(--green)" : c.cls === "warn" ? "var(--amber)" : "var(--red)";
+    const runsTxt = part === "clutchPack" ? ` (${unit.runsUsed || 0}/${CLUTCH_PACK_MAX_RUNS} runs)` : "";
+    return `<tr><td>${escapeHtml(brand.name)}</td><td>${formatAgeMonths(unit.ageMonths)}</td><td><span style="color:${color}">${c.label}</span>${runsTxt}</td><td>€${unitPrice(part, unit).toLocaleString("nl-NL")}</td>` +
       `<td><button class="secondary mini-btn" type="button" data-install-part="${part}" data-install-idx="${i}">Monteer</button></td>` +
       `<td><button class="secondary mini-btn" type="button" data-sell-spare-part="${part}" data-sell-spare-idx="${i}">Verkoop (+€${sellSpareUnitValue(part, unit).toLocaleString("nl-NL")})</button></td></tr>`;
   }).join("");
-  container.innerHTML = `<table class="event-table"><thead><tr><th>Merk (reserve)</th><th>Leeftijd</th><th>Waarde</th><th></th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  container.innerHTML = `<table class="event-table"><thead><tr><th>Merk (reserve)</th><th>Leeftijd</th><th>Conditie</th><th>Waarde</th><th></th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 // The used-parts market for this one part: whatever's currently listed

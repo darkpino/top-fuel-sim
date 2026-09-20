@@ -474,27 +474,33 @@ export function isCarRaceReady(config) {
     && !!config.trailerId && !!config.chassisOwned;
 }
 
+// Includes the unit's OWN accumulated wear (and, for the clutch pack, its
+// own run count) alongside brandId/ageMonths - this is what lets a unit
+// that gets swapped off the car (installUnit/buyAndEquipUnit) carry its
+// condition with it into inventory, instead of the physical part itself
+// magically un-wearing the moment it comes off.
 export function equippedUnit(config, part) {
-  return { brandId: config[part + "BrandId"], ageMonths: config[part + "AgeMonths"] };
+  const unit = { brandId: config[part + "BrandId"], ageMonths: config[part + "AgeMonths"], wear: config[part + "Wear"] || 0 };
+  if (part === "clutchPack") unit.runsUsed = config.clutchPackRunsUsed || 0;
+  return unit;
 }
 
 // Mounting ANY unit - a spare, a fresh purchase, a swap - always means a
-// physically different part than whatever was there before, so wear and
-// broken always reset here: they describe the specific unit currently
-// bolted in, not the slot. A spare that gets swapped back OUT to
-// inventory (installUnit) loses its own wear history this way too - spare
-// units in inventory don't carry a wear number at all, only ageMonths -
-// an accepted simplification, since spares by definition haven't been run
-// since they were last serviced. Same idea for the clutch pack's run
-// count: a different physical pack means a fresh run count regardless of
-// how spent the outgoing pack's was.
+// physically different part than whatever was there before, so "broken"
+// always resets here (a broken unit is scrapped, never parked - see
+// installUnit/buyAndEquipUnit - so nothing mounted from inventory is ever
+// already broken). Wear and the clutch pack's run count, though, are the
+// INCOMING unit's own history, not the slot's: a fresh purchase starts at
+// 0 (unit.wear/runsUsed are simply absent), but a unit that was parked via
+// equippedUnit above still carries whatever it had worn down to while it
+// was last mounted - swapping it back in doesn't rebuild it for free.
 function setEquippedUnit(config, part, unit) {
   config[part + "BrandId"] = unit.brandId;
   config[part + "AgeMonths"] = unit.ageMonths;
-  config[part + "Wear"] = 0;
+  config[part + "Wear"] = unit.wear || 0;
   config[part + "Broken"] = false;
   if (part === "clutchPack") {
-    config.clutchPackRunsUsed = 0;
+    config.clutchPackRunsUsed = unit.runsUsed || 0;
   }
 }
 
