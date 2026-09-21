@@ -223,6 +223,11 @@ export function runSimulation(settings, rng = Math.random) {
     s4time, s4pct, s4speed, s5time, s5pct, s5speed, s6time, s6pct, s6speed,
     fuel1time, fuel1pct, fuel2time, fuel2pct, fuel3time, fuel3pct,
     fuel4time, fuel4pct, fuel5time, fuel5pct, fuel6time, fuel6pct,
+    // 100: wide open (no bypass) - the return jet trims delivered fuel
+    // DOWN from there, so this is a complete no-op for AI opponents and
+    // any caller that doesn't set it, same guarantee as the fuel-pump
+    // default below.
+    returnJetPct = 100,
     fingerWeight, tirePsi, wingAngle, driverAggressiveness, driverWatchUntilFt, driverShutoffFt,
     ballastFrontLb, ballastRearLb, frontWingPct, wheelieBarHeightIn,
     garageWeightDeltaLb = 0, garageWheelieRiskBallastEquivLb = 0, garageRearWeightShiftLb = 0,
@@ -302,7 +307,18 @@ export function runSimulation(settings, rng = Math.random) {
   // reference point: the pack's own mechanical ceiling with zero slip
   // damage, before any wear this run adds back on top of it.
   const baseMaxFingerTravel = calcMaxFingerTravel(garageClutchPackThicknessSteps, garageClutchBearingAdjSteps, 0);
+  // Two independent, stacking ways to scale the WHOLE fuel curve down from
+  // what the stages alone say - the pump's own rated flow (a garage/
+  // equipment choice, see calcPumpMixtureScale) and the return jet (a
+  // tune dial, see returnJetPct above): a smaller jet opening bypasses
+  // more of the pump's output straight back to the tank, trimming
+  // everything downstream of the barrel valve uniformly across every
+  // stage, the whole run, at once - not a seventh stage, a multiplier on
+  // top of all six. Both are pinned to an exact 1.0 no-op at their
+  // defaults (reference pump, wide-open jet), so a build that never
+  // touches either reproduces the exact prior fuelVolPctNow behavior.
   const pumpMixtureScale = calcPumpMixtureScale(garageFuelPumpGpm);
+  const fuelDeliveryMult = pumpMixtureScale * (returnJetPct / 100);
   const disciplineDeficit = Math.max(0, 1 - garageDriverDisciplineMult);
   const effectiveDriverShutoffFt = Math.min(1000, driverShutoffFt + disciplineDeficit * DRIVER_DISCIPLINE_OVERSHOOT_FT);
 
@@ -425,9 +441,9 @@ export function runSimulation(settings, rng = Math.random) {
     // "correctly" retuned down (to stop over-fueling - see richness)
     // would ALSO lose real power it never should have, since the same
     // dial% now opens the barrel valve less far for the same effective
-    // GPM. Pinned to a no-op at the reference pump (pumpMixtureScale=1),
-    // same guarantee as the richness scale.
-    const { fuelVolFactor, mult } = calcMult({ fuelFactor, fuelVolPct: fuelVolPctNow * pumpMixtureScale, blowerFactor, ignEff, compressionFactor, powerMult });
+    // GPM. Pinned to a no-op at the reference pump and a wide-open return
+    // jet (fuelDeliveryMult=1), same guarantee as the richness scale.
+    const { fuelVolFactor, mult } = calcMult({ fuelFactor, fuelVolPct: fuelVolPctNow * fuelDeliveryMult, blowerFactor, ignEff, compressionFactor, powerMult });
 
     // Re-anchored again: the previous 18000/6100 pair had 60ft and the
     // "typical" pace right, but left too little headroom underneath it -
@@ -525,7 +541,7 @@ export function runSimulation(settings, rng = Math.random) {
     const loadFuelMult = 0.7 + 0.3 * loadFraction;
     const loadHeatMult = 0.3 + 0.7 * loadFraction;
     const idealFuelPct = calcIdealFuelPct(rpm, REFERENCE_FUEL1PCT, oxygenMult * loadFuelMult);
-    const richness = calcMixtureRichness(fuelVolPctNow * pumpMixtureScale, idealFuelPct);
+    const richness = calcMixtureRichness(fuelVolPctNow * fuelDeliveryMult, idealFuelPct);
     richnessIntegral += richness * DT;
 
     const wingDownforce = WING_K * v * v;

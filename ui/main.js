@@ -45,7 +45,7 @@ function $(id) { return document.getElementById(id); }
 // latest build. Commit count is a convenient, always-increasing source:
 // `git rev-list --count HEAD` just before committing, +1 for the commit
 // about to land.
-const APP_BUILD = "98";
+const APP_BUILD = "99";
 const APP_BUILD_DATE = "2026-09-19";
 
 // Real NHRA Top Fuel national events run a fixed 16-car eliminator ladder
@@ -66,7 +66,7 @@ $("app-version-note").textContent = `Build ${APP_BUILD} · ${APP_BUILD_DATE}`;
 // hint (updateEngineHints, called at module load below) can read it.
 let currentTrackElevationFt = 0;
 
-const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "fuel1t", "fuel1p", "fuel2t", "fuel2p", "fuel3t", "fuel3p", "fuel4t", "fuel4p", "fuel5t", "fuel5p", "fuel6t", "fuel6p", "gasket", "ign1", "ign2", "ign3", "ign4", "ign5", "ign6", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "s4t", "s4p", "s4speed", "s5t", "s5p", "s5speed", "s6t", "s6p", "s6speed", "fw", "tpsi", "wing", "fwing", "wbar", "ballfront", "ballrear", "aggro", "shutoff"];
+const sliders = ["airtemp", "hum", "baro", "track", "grip", "blower", "fuel", "returnjet", "fuel1t", "fuel1p", "fuel2t", "fuel2p", "fuel3t", "fuel3p", "fuel4t", "fuel4p", "fuel5t", "fuel5p", "fuel6t", "fuel6p", "gasket", "ign1", "ign2", "ign3", "ign4", "ign5", "ign6", "s1t", "s1p", "s1speed", "s2t", "s2p", "s2speed", "s3t", "s3p", "s3speed", "s4t", "s4p", "s4speed", "s5t", "s5p", "s5speed", "s6t", "s6p", "s6speed", "fw", "tpsi", "wing", "fwing", "wbar", "ballfront", "ballrear", "aggro", "shutoff"];
 
 function fmt(id, val) {
   switch (id) {
@@ -77,6 +77,7 @@ function fmt(id, val) {
     case "grip": return val + "%";
     case "blower": return val + "%";
     case "fuel": return val + "%";
+    case "returnjet": return val + "%";
     case "fuel1p": case "fuel2p": case "fuel3p": case "fuel4p": case "fuel5p": case "fuel6p": return val + "%";
     case "fuel1t": case "fuel2t": case "fuel3t": case "fuel4t": case "fuel5t": case "fuel6t": return (val / 100).toFixed(2) + "s";
     case "gasket": return (val / 1000).toFixed(3) + '"';
@@ -337,6 +338,7 @@ function readSettings() {
     trackElevationFt: currentTrackElevationFt,
     blowerOD: +$("blower").value,
     fuelPct: +$("fuel").value,
+    returnJetPct: +$("returnjet").value,
     gasketThou: +$("gasket").value,
     ignitionCurve: ["ign1", "ign2", "ign3", "ign4", "ign5", "ign6"].map(id => +$(id).value),
     ...readClutchStages(),
